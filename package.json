@@ -1,0 +1,13 @@
+{
+  "name": "renatel-shop-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Serves the Renatel Shop POS page on the web",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
