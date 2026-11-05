@@ -98,7 +98,7 @@ main{padding-bottom:84px}.pt{font-size:18px}}
 .lgs.on{border-color:var(--ac);box-shadow:0 0 0 3px rgba(15,110,86,.18)}.lgs small,.lgme small{color:var(--mut);font-size:.78rem}
 .lga{width:44px;height:44px;flex:0 0 auto;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;font-size:1rem;letter-spacing:.5px}
 .lgme{display:flex;align-items:center;gap:12px;margin:2px 0 16px}
-.lgpw{position:relative;margin-top:4px}.lgpw input{width:100%;box-sizing:border-box;padding-right:50px;font-size:1.05rem;min-height:48px}
+.lgin{width:100%;box-sizing:border-box;font-size:1.05rem;min-height:48px;margin-top:4px}.lgpw{position:relative;margin-top:4px}.lgpw input{width:100%;box-sizing:border-box;padding-right:50px;font-size:1.05rem;min-height:48px}
 .lgeye{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;font-size:1.2rem;cursor:pointer;padding:8px;line-height:1}
 .lgbtn{width:100%;min-height:50px;font-size:1.05rem;margin-top:6px}
 .lglink{display:block;margin:12px auto 2px;border:0;background:none;color:var(--ac);font:inherit;cursor:pointer;text-decoration:underline;padding:6px}
@@ -336,47 +336,51 @@ function setup(){return box('Welcome: create the owner account','<span class="mu
 async function doSetup(){const n=$('#sn').value.trim(),p=$('#sp').value;if(!n)return uiAlert('Enter your name.');if(pwRule(p))return uiAlert(pwRule(p));const s={id:id(),name:n,role:'owner',pin:await mkHash(p)};db.staff.push(s);me=s;loginAt=Date.now();logit('Owner account created',n);save();tab='home';render();newRc(true)}
 let lsel='';
 const RCOL={owner:'#b7791f',manager:'#2b6cb0',accountant:'#6b46c1',cashier:'#0f6e56',stock:'#c05621',warehouse:'#7b5e3b',delivery:'#2c7a7b'},inits=n=>String(n||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
-function loginView(){if(!lsel){try{lsel=localStorage.getItem(K+'-lastu')||''}catch(e){}}const ST=db.staff,sel=ST.find(x=>x.id==lsel)||ST[0];lsel=sel.id;
- const h=new Date().getHours(),hi=h<12?'Good morning':h<17?'Good afternoon':'Good evening',lg=db.set.rx&&db.set.rx.logo,first=String(sel.name).split(' ')[0];
- const av=(x,big)=>`<span class="lga" aria-hidden="true" style="background:${RCOL[x.role]||'#555'}${big?';width:54px;height:54px;font-size:1.2rem':''}">${esc(inits(x.name))}</span>`,rl=x=>x.locked?'🔒 Locked':(RICON[x.role]||'')+' '+esc(ROLES[x.role].label);
+try{localStorage.removeItem(K+'-lastu')}catch(e){}
+const nmz=v=>String(v||'').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+function findStaff(v){const q=nmz(v);if(!q)return null;const ex=db.staff.filter(x=>nmz(x.name)==q);if(ex.length)return ex.length==1?ex[0]:null;const fn=db.staff.filter(x=>nmz(x.name).split(' ')[0]==q);return fn.length==1?fn[0]:null}
+function loginView(){const pre=lsel&&db.staff.find(x=>x.id==lsel),h=new Date().getHours(),hi=h<12?'Good morning':h<17?'Good afternoon':'Good evening',lg=db.set.rx&&db.set.rx.logo;
  let where='Saved on this device';try{if(cloud)where='Saved in the shop database';else if(ONWEB&&BK.code)where='Saved on this device · backed up online'}catch(e){}
  return `<div class="lgw"><div class="lgh"><div class="lgl">${lg?`<img src="${lg}" alt="">`:'🛍️'}</div><h1>${esc(db.set.name)}</h1><p class="mut">${hi} · ${new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'})}</p></div>
- <div class="card lgc">${ST.length>1?`<b>Who is working?</b><div class="lgs-g" role="radiogroup" aria-label="Choose your name">${ST.map(x=>`<button type="button" class="lgs${x.id==lsel?' on':''}" role="radio" aria-checked="${x.id==lsel}" onclick="lpick('${esc(String(x.id))}')">${av(x)}<span>${esc(x.name)}</span><small id="lc_${x.id}">${rl(x)}</small></button>`).join('')}</div>`
-  :`<div class="lgme">${av(sel,true)}<div><b style="font-size:1.1rem">Welcome back, ${esc(first)}</b><br><small id="lc_${sel.id}">${rl(sel)}</small></div></div>`}
-  <input type="hidden" id="ls" value="${esc(String(sel.id))}">
-  <label for="lp" class="mut" style="font-size:.9rem">${ST.length>1?'Password or PIN for '+esc(first):'Your password or PIN'}</label>
-  <div class="lgpw"><input id="lp" type="password" placeholder="Type it here" autocomplete="current-password" onkeydown="if(event.key=='Enter')doLogin()" oninput="pwClear('lp','lmsg')"><button type="button" class="lgeye" onclick="lpEye(this)" aria-label="Show password" title="Show password">👁️</button></div>
+ <div class="card lgc"><b style="font-size:1.1rem">Staff login</b><p class="mut ln" style="margin:2px 0 14px">Type your name and password.</p>
+  <label for="lu" class="mut" style="font-size:.9rem">Your name</label>
+  <input id="lu" class="lgin" type="text" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="e.g. Kofi Mensah" value="${pre?esc(pre.name):''}" onkeydown="if(event.key=='Enter'){event.preventDefault();$('#lp').focus()}" oninput="pwClear('lu','lmsg')">
+  <label for="lp" class="mut" style="font-size:.9rem;display:block;margin-top:12px">Password or PIN</label>
+  <div class="lgpw"><input id="lp" type="password" placeholder="Type it here" autocomplete="off" onkeydown="if(event.key=='Enter')doLogin()" oninput="pwClear('lp','lmsg')"><button type="button" class="lgeye" onclick="lpEye(this)" aria-label="Show password" title="Show password">👁️</button></div>
   <p id="lmsg" class="msg" role="status" aria-live="polite"></p>
   <button class="btn pri lgbtn" id="lbtn" onclick="doLogin()">Log in</button>
   <button type="button" class="lglink" onclick="forgotDlg()">Forgot password?</button></div>
  <p class="lgf mut">🔒 ${where}</p></div>`}
-function lpick(i){if(lbusy)return;lsel=i;$('#app').innerHTML=loginView();const p=$('#lp');if(p)p.focus()}
 function lpEye(b){const i=$('#lp');if(!i)return;const show=i.type=='password';i.type=show?'text':'password';b.textContent=show?'🙈':'👁️';b.setAttribute('aria-label',show?'Hide password':'Show password');b.title=b.getAttribute('aria-label');i.focus()}
 const MAXF=6,sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function failTry(s,what){s.fails=(s.fails||0)+1;const left=MAXF-s.fails;db.log.push({ts:Date.now(),sid:s.id,who:s.name,a:left<=0?'Account locked':'Failed '+what,d:left<=0?MAXF+' wrong tries in a row':(s.fails+' of '+MAXF)});if(left<=0){s.locked=true;s.fails=0}save();
  return left<=0?s.name+'’s account is now locked after '+MAXF+' wrong tries. Use “Forgot password?” on the login screen to reset it.':'Wrong password / PIN for '+s.name+'. '+left+' '+(left==1?'try':'tries')+' left before the account is locked.'}
 const lockedMsg=s=>s.name+'’s account is locked after too many wrong tries. Use “Forgot password?” to reset it.';
 const canApprove=(a,t)=>a.id!=t.id&&(a.role=='owner'||(a.role=='manager'&&!['owner','manager'].includes(t.role)));
-function forgotDlg(){const sid=$('#ls')?$('#ls').value:'',F=(l,i)=>`<label class="fl" style="margin-top:8px"><span class="mut">${l}</span>${i}</label>`,sup=db.staff.filter(s=>['owner','manager'].includes(s.role));
+function forgotDlg(){const typed=$('#lu')?$('#lu').value.trim():'',F=(l,i)=>`<label class="fl" style="margin-top:8px"><span class="mut">${l}</span>${i}</label>`,sup=db.staff.filter(s=>['owner','manager'].includes(s.role));
  $('#dlgc').innerHTML=`<b>Reset a forgotten password</b><p class="mut ln" style="margin:4px 0 0">This also unlocks a locked account.</p>
- ${F('Whose password?',`<select id="fs" onchange="fgUpd()">${db.staff.map(s=>`<option value="${s.id}" ${s.id==sid?'selected':''}>${esc(s.name)} (${ROLES[s.role].label})${s.locked?' 🔒':''}</option>`).join('')}</select>`)}
+ ${F('Your name',`<input id="fsn" type="text" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="Type your name" value="${esc(typed)}" oninput="fgName()"><input type="hidden" id="fs" value="">`)}
  <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px" class="ln"><label><input type="radio" name="fm" value="em" checked onchange="fgUpd()"> Email me a reset code</label><label><input type="radio" name="fm" value="sup" onchange="fgUpd()"> An owner or manager approves</label><label><input type="radio" name="fm" value="rc" onchange="fgUpd()"> Use the shop recovery code</label></div>
  <div id="fg_em"><p id="fg_emn" class="mut ln" style="margin:8px 0 6px"></p><button class="btn" id="fg_send" onclick="fgSendCode()">Send code</button><div id="fg_emw" hidden>${F('6-digit code from the email',`<input id="fcode" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code" style="letter-spacing:.25em">`)}</div></div>
- <div id="fg_sup" hidden>${F('Approved by',`<select id="fa">${sup.map(s=>`<option value="${s.id}">${esc(s.name)} (${ROLES[s.role].label})</option>`).join('')}</select>`)}${F('Their password / PIN',`<input id="fap" type="password" autocomplete="off">`)}<p id="fg_note" class="mut ln" style="margin:6px 0 0"></p></div>
+ <div id="fg_sup" hidden>${F('Name of the owner or manager approving',`<input id="fan" type="text" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="They type their name" oninput="fgUpd()"><input type="hidden" id="fa" value="">`)}${F('Their password / PIN',`<input id="fap" type="password" autocomplete="off">`)}<p id="fg_note" class="mut ln" style="margin:6px 0 0"></p></div>
  <div id="fg_rc" hidden>${F('Recovery code',`<input id="frc" placeholder="XXXX-XXXX-XXXX" autocomplete="off" style="text-transform:uppercase">`)}<p class="mut ln" style="margin:6px 0 0">The owner got this code when the shop was set up, or from Settings → Password recovery.</p></div>
  ${F('New password (6+ letters and numbers)',`<input id="fn1" type="password" autocomplete="new-password">`)}${F('Type it again',`<input id="fn2" type="password" autocomplete="new-password" onkeydown="if(event.key=='Enter')doForgot()">`)}
  <p id="fe" class="bad ln" style="margin:8px 0 0"></p><div class="form" style="margin-top:10px"><button class="btn pri" id="fgo" onclick="doForgot()">Reset password</button><button class="btn" onclick="$('#dlg').classList.remove('on')">Cancel</button></div>`;
- $('#dlg').classList.add('on');fgUpd()}
-function fgUpd(){const mth=document.querySelector('input[name=fm]:checked').value,rc=mth=='rc',t=db.staff.find(x=>x.id==$('#fs').value);$('#fg_sup').hidden=mth!='sup';$('#fg_rc').hidden=!rc;$('#fg_em').hidden=mth!='em';$('#fg_emw').hidden=!(t.rst&&Date.now()<t.rst.exp);
- const n=$('#fg_emn');n.style.color='';n.className='mut ln';n.textContent=t.email&&t.emailOK?'We’ll email a 6-digit code to '+mask(t.email)+'.':'No confirmed email is saved for '+t.name+'. Choose another way below.';$('#fg_send').disabled=!(t.email&&t.emailOK);
- const ok=db.staff.filter(a=>canApprove(a,t));[...$('#fa').options].forEach(o=>{const a=db.staff.find(x=>x.id==o.value);o.disabled=!canApprove(a,t)||!!a.locked});if($('#fa').selectedOptions[0]&&$('#fa').selectedOptions[0].disabled){const f=[...$('#fa').options].find(o=>!o.disabled);if(f)f.selected=true}
- $('#fg_note').textContent=!ok.length?'Nobody else can approve this. Use the recovery code instead.':t.role=='owner'||t.role=='manager'?'Only an owner can approve a reset for an owner or a manager.':''}
-async function doForgot(){const e=m=>$('#fe').textContent=m,t=db.staff.find(x=>x.id==$('#fs').value),mth=document.querySelector('input[name=fm]:checked').value,rc=mth=='rc',n1=$('#fn1').value,n2=$('#fn2').value;let by;e('');
+ $('#dlg').classList.add('on');fgName()}
+function fgName(){const t=findStaff($('#fsn').value);$('#fs').value=t?t.id:'';fgUpd()}
+function fgUpd(){const mth=document.querySelector('input[name=fm]:checked').value,rc=mth=='rc',t=db.staff.find(x=>x.id==$('#fs').value);$('#fg_sup').hidden=mth!='sup';$('#fg_rc').hidden=!rc;$('#fg_em').hidden=mth!='em';$('#fgo').disabled=!t;
+ const n=$('#fg_emn');n.style.color='';n.className='mut ln';
+ if(!t){$('#fg_emw').hidden=true;$('#fg_send').disabled=true;n.textContent=$('#fsn').value.trim()?'No staff account has that name. Check the spelling, or ask the owner.':'Type your name above first.';$('#fg_note').textContent='';$('#fa').value='';return}
+ $('#fg_emw').hidden=!(t.rst&&Date.now()<t.rst.exp);
+ n.textContent=t.email&&t.emailOK?'We’ll email a 6-digit code to '+mask(t.email)+'.':'No confirmed email is saved for this account. Choose another way below.';$('#fg_send').disabled=!(t.email&&t.emailOK);
+ const ok=db.staff.some(a=>canApprove(a,t)),an=$('#fan').value.trim(),a=an?findStaff(an):null,good=!!(a&&canApprove(a,t)&&!a.locked),top=t.role=='owner'||t.role=='manager';$('#fa').value=good?a.id:'';
+ $('#fg_note').textContent=!ok?'Nobody else can approve this. Use the recovery code instead.':an&&!good?(a&&a.locked?'That account is locked.':'That name can’t approve this reset. '+(top?'Only an owner can approve a reset for an owner or a manager.':'An owner or manager must approve.')):(top?'Only an owner can approve a reset for an owner or a manager.':'An owner or manager types their name and password.')}
+async function doForgot(){const e=m=>$('#fe').textContent=m,t=db.staff.find(x=>x.id==$('#fs').value),mth=document.querySelector('input[name=fm]:checked').value,rc=mth=='rc',n1=$('#fn1').value,n2=$('#fn2').value;let by;e('');if(!t)return e('Type your name as the owner saved it.');
  if(pwRule(n1))return e(pwRule(n1));if(n1!==n2)return e('The two new entries don’t match.');
  if(mth=='em'){if(!t.rst||Date.now()>t.rst.exp)return e('Tap “Send code” first. Codes expire after 15 minutes.');if(!(await pwOK('rst:'+($('#fcode').value||'').replace(/\D/g,''),t.rst.h))){t.rst.tries=(t.rst.tries||0)+1;const left=5-t.rst.tries;if(left<=0)t.rst=null;db.log.push({ts:Date.now(),sid:t.id,who:t.name,a:'Failed reset code',d:''});save();fgUpd();return e(left<=0?'Too many wrong codes. Send a new code.':'That code is not right. '+left+' '+(left==1?'try':'tries')+' left.')}t.rst=null;by='a code emailed to '+mask(t.email)}
  else if(rc){if(!db.set.rc)return e('This shop has no recovery code yet. The owner can create one in Settings → Password recovery.');$('#fgo').disabled=true;await sleep(1500);$('#fgo').disabled=false;
   if(!(await pwOK('rc:'+rcNorm($('#frc').value),db.set.rc))){db.log.push({ts:Date.now(),sid:t.id,who:t.name,a:'Failed recovery code',d:''});save();return e('That recovery code is not right.')}by='the recovery code'}
- else{const a=db.staff.find(x=>x.id==$('#fa').value);if(!a)return e('Nobody else can approve this. Use the recovery code instead.');if(!canApprove(a,t))return e('Only an owner can approve a reset for an owner or a manager.');if(a.locked)return e(lockedMsg(a));
+ else{const a=db.staff.find(x=>x.id==$('#fa').value);if(!a)return e(db.staff.some(x=>canApprove(x,t))?'Type the name of the owner or manager who approves.':'Nobody else can approve this. Use the recovery code instead.');if(!canApprove(a,t))return e('Only an owner can approve a reset for an owner or a manager.');if(a.locked)return e(lockedMsg(a));
   if(!(await pwOK($('#fap').value,a.pin))){$('#fap').value='';const m=failTry(a,'approval');fgUpd();return e(m)}a.fails=0;by=a.name}
  t.pin=await mkHash(n1);t.locked=false;t.fails=0;lsel=t.id;db.log.push({ts:Date.now(),sid:t.id,who:t.name,a:'Password reset',d:'approved by '+by});save();$('#dlg').classList.remove('on');render();uiAlert('Password reset. '+t.name+' can log in with the new password now.')}
 const rcNorm=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
@@ -386,17 +390,22 @@ async function newRc(first){const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',r=crypto.
  $('#dlg').classList.add('on')}
 function pwShow(inp,box,ok,t){const i=inp&&$('#'+inp),m=$('#'+box);if(i){i.classList.remove('pw-bad','pw-ok');void i.offsetWidth;i.classList.add(ok?'pw-ok':'pw-bad')}if(m){m.className='msg '+(ok?'ok':'bad');m.textContent=t}}
 function pwClear(inp,box){const i=$('#'+inp),m=$('#'+box);if(i)i.classList.remove('pw-bad','pw-ok');if(m&&!m.classList.contains('ok')){m.className='msg';m.textContent=''}}
-let lbusy=false;
-async function doLogin(){if(lbusy)return;const s=db.staff.find(x=>x.id==$('#ls').value);if(!s)return;lsel=s.id;
- if(s.locked)return pwShow('lp','lmsg',false,'🔒 '+lockedMsg(s));
+let lbusy=false,ufail=0,unext=0;
+async function doLogin(){if(lbusy)return;const nm=($('#lu').value||'').trim();if(!nm)return pwShow('lu','lmsg',false,'Type your name first.');
+ if(unext>Date.now())return pwShow('lp','lmsg',false,'⏳ Too many wrong tries. Wait '+Math.ceil((unext-Date.now())/1000)+' seconds, then try again.');
+ const s=findStaff(nm);if(!s){if(!$('#lp').value)return pwShow('lp','lmsg',false,'Type your password / PIN too.');ufail++;unext=Date.now()+(DELAYS[Math.min(ufail,DELAYS.length-1)]||0)*1000;$('#lp').value='';db.log.push({ts:Date.now(),sid:null,who:'—',a:'Failed login',d:'name not recognised'});save();
+  return pwShow('lp','lmsg',false,'✖ That name and password don’t match. Check how your name is spelled and try again.')}
+ lsel=s.id;
+ const asT=t=>String(t).split(s.name).join(nm);
+ if(s.locked)return pwShow('lp','lmsg',false,'🔒 '+asT(lockedMsg(s)));
  if(!$('#lp').value)return pwShow('lp','lmsg',false,'Type your password / PIN first.');
  if(s.nextTry&&s.nextTry>Date.now())return pwShow('lp','lmsg',false,'⏳ Too many wrong tries. Wait '+Math.ceil((s.nextTry-Date.now())/1000)+' seconds, then try again.');
  lbusy=true;$('#lbtn').disabled=true;
  if(!(await pwOK($('#lp').value,s.pin))){$('#lp').value='';const m=failTry(s,'login');s.nextTry=Date.now()+(DELAYS[Math.min(s.fails||0,DELAYS.length-1)]||0)*1000;save();lbusy=false;$('#lbtn').disabled=false;
   if(s.locked){const o=$('#lc_'+s.id);if(o)o.textContent='🔒 Locked'}
-  pwShow('lp','lmsg',false,'✖ '+m);$('#lp').focus();return}
- if(!String(s.pin).startsWith('p2$'))s.pin=await mkHash($('#lp').value);s.fails=0;s.nextTry=0;loginAt=Date.now();lastAct=Date.now();pwShow('lp','lmsg',true,'✔ Password correct. Welcome, '+s.name.split(' ')[0]+'!');$('#lbtn').textContent='Opening your shop…';$('#lp').disabled=true;
- setTimeout(()=>{lbusy=false;me=s;try{localStorage.setItem(K+'-lastu',s.id)}catch(e){}tab='home';cart=[];logit('Logged in');save();render();scrollTo(0,0)},900)}
+  pwShow('lp','lmsg',false,'✖ '+asT(m));$('#lp').focus();return}
+ if(!String(s.pin).startsWith('p2$'))s.pin=await mkHash($('#lp').value);s.fails=0;s.nextTry=0;loginAt=Date.now();lastAct=Date.now();pwShow('lp','lmsg',true,'✔ Password correct. Welcome!');$('#lbtn').textContent='Opening your shop…';$('#lp').disabled=true;
+ setTimeout(()=>{lbusy=false;ufail=0;unext=0;lsel='';me=s;tab='home';cart=[];logit('Logged in');save();render();scrollTo(0,0)},900)}
 function logout(){logit('Logged out');save();me=null;cart=[];render()}
 let lf='';
 const RICON={warehouse:'🏭',owner:'👑',manager:'🧑‍💼',accountant:'📒',cashier:'🛒',stock:'📦',delivery:'🚚'},RPLUR={warehouse:'Warehouse keepers',owner:'Owners',manager:'Managers',accountant:'Accountants',cashier:'Cashiers',stock:'Stock keepers',delivery:'Delivery riders'},REXTRA={warehouse:['Transfers to the shop','Own purchases'],owner:['Staff & settings','Change stock','Recovery code'],manager:['Refunds','Edit receipts','Any discount'],accountant:['Sees all sales','Supplier payments'],cashier:['Own sales only','Discount up to '+'LIMIT%'],stock:['Restock & damages'],delivery:['Only their deliveries']};
@@ -954,7 +963,7 @@ async function obFinish(verified){const s=me,first=!s.setupDone,chg=[];if(ob.ema
  logit(first?'Completed staff details':'Updated my details',('email '+s.email)+(chg.length?' · changed '+chg.join(', '):''));save();ob=null;tab='home';render();scrollTo(0,0)}
 function myDetails(){$('#dlg').classList.remove('on');obInit(true);tab='me';render()}
 /* forgot password by email */
-async function fgSendCode(){const t=db.staff.find(x=>x.id==$('#fs').value),e=m=>$('#fe').textContent=m;e('');if(!t.email||!t.emailOK)return e('No confirmed email is saved for '+t.name+'. Use another way to reset.');
+async function fgSendCode(){const t=db.staff.find(x=>x.id==$('#fs').value),e=m=>$('#fe').textContent=m;e('');if(!t)return e('Type your name first.');if(!t.email||!t.emailOK)return e('No confirmed email is saved for this account. Use another way to reset.');
  const c=code6();$('#fg_send').disabled=true;$('#fg_send').textContent='Sending…';
  try{await gmailText(t.email,db.set.name+' - password reset code: '+c,'Hello '+t.name+',\n\nSomeone asked to reset your password for '+db.set.name+'. Your reset code is:\n\n    '+c+'\n\nIt expires in 15 minutes. If this wasn’t you, ignore this email and tell the shop owner.');
   t.rst={h:await mkHash('rst:'+c),exp:Date.now()+15*60000,tries:0};db.log.push({ts:Date.now(),sid:t.id,who:t.name,a:'Reset code emailed',d:mask(t.email)});save();
