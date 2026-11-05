@@ -229,9 +229,26 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     return res.end('User-agent: *\nDisallow: /\n');
   }
-  if (url === '/favicon.ico') {
-    res.writeHead(204);
-    return res.end();
+  // App icon and "Add to Home screen" details
+  const ICONS = { '/icon-192.png': 'icon-192.png', '/icon-512.png': 'icon-512.png', '/apple-touch-icon.png': 'apple-touch-icon.png', '/apple-touch-icon-precomposed.png': 'apple-touch-icon.png', '/favicon.ico': 'icon-192.png' };
+  if (ICONS[url]) {
+    fs.readFile(path.join(__dirname, 'icons', ICONS[url]), (e, buf) => {
+      if (e) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=604800' });
+      res.end(buf);
+    });
+    return;
+  }
+  if (url === '/manifest.webmanifest') {
+    res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'public, max-age=86400' });
+    return res.end(JSON.stringify({
+      name: 'Renatel Shop', short_name: 'Renatel Shop', start_url: '/', scope: '/', display: 'standalone',
+      background_color: '#f6f5f1', theme_color: '#0f6e56',
+      icons: [
+        { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+        { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+      ]
+    }));
   }
   // Every other address shows the shop page (it is a single-page app).
   try {
