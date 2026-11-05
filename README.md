@@ -12,13 +12,15 @@ A point-of-sale system for a small retail shop, in a single file (`index.html`).
 - Staff accounts with roles (owner, manager, accountant, cashier, stock keeper, delivery), password reset, and an activity trail
 - Ghana regions and towns for customers, deliveries and the shop address
 
-## Running it
-Open `index.html` in a browser. When it is opened on its own, data is saved in that browser only (localStorage).
+## Using it
+The shop runs online at https://renatel.shop. Open it in any browser on a phone, tablet or computer. There is no app to install.
 
-Inside Claude, the page also uses Claude's built-in shop database so every device sees the same data, and Gmail for emailed reports and reset codes. Those features are not available when the file is hosted elsewhere.
+On the website, data is saved in each browser (localStorage). Inside Claude, the page also uses Claude's built-in shop database so every device sees the same data, and Gmail for emailed reports and reset codes.
 
 ## Hosting
-Any static host works, for example GitHub Pages (Settings, Pages, deploy from the `main` branch). A hosted copy keeps its data per device unless it is connected to a shared database.
+The site is hosted on Hostinger as a small Node.js app: `server.js` serves `index.html` and has no dependencies. Every push to `main` deploys automatically.
+
+To try it on your own computer: `npm start`, then open http://localhost:3000.
 
 ## Notes
 - No keys or secrets are stored in this repository.
