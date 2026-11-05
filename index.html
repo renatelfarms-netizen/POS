@@ -90,6 +90,20 @@ main{padding-bottom:84px}.pt{font-size:18px}}
 #modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:16px;z-index:20}
 #modal.on{display:flex}
 #dlg{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:16px;z-index:21}#dlg.on{display:flex}#ask{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:40}#ask.on{display:flex}#ask>.card{width:100%;max-width:400px}.askm{margin:0;font-size:15px;line-height:1.45}#dlg>.card{width:100%;max-width:460px;max-height:90vh;overflow:auto}#dlg>.card.wide{max-width:900px}
+.lgw{max-width:440px;margin:0 auto;padding:26px 0 24px}.lgh{text-align:center;margin-bottom:16px}
+.lgl{width:76px;height:76px;border-radius:22px;margin:0 auto 10px;display:grid;place-items:center;font-size:40px;background:var(--card);border:1px solid var(--bd);box-shadow:0 4px 16px rgba(0,0,0,.07);overflow:hidden}.lgl img{max-width:88%;max-height:88%;object-fit:contain}
+.lgh h1{font-size:1.45rem;margin:0;line-height:1.2}.lgh p{margin:4px 0 0}.lgc{padding:18px 18px 14px}
+.lgs-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:10px 0 16px}
+.lgs{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:9px;align-items:center;padding:8px 10px;border:1.5px solid var(--bd);border-radius:14px;background:var(--card);color:var(--tx);cursor:pointer;font:inherit;text-align:left;line-height:1.25;word-break:break-word}.lgs .lga{grid-row:1/3;width:38px;height:38px;font-size:.9rem}.lgs>span:not(.lga){font-weight:600;align-self:end}.lgs small{align-self:start}
+.lgs.on{border-color:var(--ac);box-shadow:0 0 0 3px rgba(15,110,86,.18)}.lgs small,.lgme small{color:var(--mut);font-size:.78rem}
+.lga{width:44px;height:44px;flex:0 0 auto;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;font-size:1rem;letter-spacing:.5px}
+.lgme{display:flex;align-items:center;gap:12px;margin:2px 0 16px}
+.lgpw{position:relative;margin-top:4px}.lgpw input{width:100%;box-sizing:border-box;padding-right:50px;font-size:1.05rem;min-height:48px}
+.lgeye{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;font-size:1.2rem;cursor:pointer;padding:8px;line-height:1}
+.lgbtn{width:100%;min-height:50px;font-size:1.05rem;margin-top:6px}
+.lglink{display:block;margin:12px auto 2px;border:0;background:none;color:var(--ac);font:inherit;cursor:pointer;text-decoration:underline;padding:6px}
+.lgf{text-align:center;font-size:.85rem;margin:14px 0 0}.lgc .msg.ok,.lgc .msg.bad{margin-top:8px}@media(max-width:520px){.lgw{padding-top:12px}.lgl{width:58px;height:58px;font-size:30px;border-radius:17px;margin-bottom:6px}.lgh{margin-bottom:12px}.lgh h1{font-size:1.25rem}.lgc{padding:14px}}
+
 a.btn{text-decoration:none;color:var(--tx);display:inline-block}.ln{font-size:13px}.strike{text-decoration:line-through;color:var(--mut);font-weight:400}
 #receipt{background:#fff;color:#111;width:300px;max-height:90vh;overflow:auto;padding:16px;border-radius:10px;font:13px/1.45 ui-monospace,Menlo,monospace}
 #receipt .r{display:flex;justify-content:space-between;gap:8px}
@@ -144,7 +158,7 @@ function chunks(){const out={'shop/main':{set:db.set,staff:db.staff,suppliers:db
 function assemble(m){const g=p=>m[p]?JSON.parse(m[p]):undefined,sh=g('shop/main')||{},list=c=>Object.keys(m).filter(p=>p.startsWith(c+'/')).map(g);
  db={set:sh.set,staff:sh.staff||[],suppliers:sh.suppliers||[],seq:sh.seq||1,products:list('products').sort((a,b)=>a.id-b.id),customers:list('customers').sort((a,b)=>a.id-b.id)};
  Object.keys(LISTS).forEach(k=>db[k]=list(k).flatMap(x=>x.recs||[]).sort((a,b)=>(a.ts||0)-(b.ts||0)));norm()}
-function syncUI(){const e=$('#sync');if(!e)return;e.textContent={connecting:'⏳ Connecting…',off:'💾 Device only',offline:'⚠️ Offline',saving:'☁️ Saving…',saved:'☁️ Saved',error:'⚠️ Not saved yet'}[cstate]||'';e.title={connecting:'Connecting to the shop database',off:'The database isn’t available here, so data is saved only in this browser',offline:'Can’t reach the database. Changes are kept on this device and saved when the connection is back',saving:'Saving to the shop database',saved:'Everything is saved to the shop database',error:'Some changes aren’t in the database yet. Retrying.'}[cstate]||''}
+function syncUI(){const e=$('#sync');if(!e)return;e.textContent={connecting:'⏳ Connecting…',off:'💾 On this device',offline:'⚠️ Offline',saving:'☁️ Saving…',saved:'☁️ Saved',error:'⚠️ Not saved yet'}[cstate]||'';e.title={connecting:'Connecting to the shop database',off:'The database isn’t available here, so data is saved only in this browser',offline:'Can’t reach the database. Changes are kept on this device and saved when the connection is back',saving:'Saving to the shop database',saved:'Everything is saved to the shop database',error:'Some changes aren’t in the database yet. Retrying.'}[cstate]||''}
 function cloudSave(){dirty=true;clearTimeout(stT);stT=setTimeout(flush,500)}
 async function flush(){if(!cloud||!ready||syncing)return;syncing=true;dirty=false;const cur=chunks(),ops=[];
  for(const p in cur){const j=cj(cur[p]);if(last[p]!==j)ops.push([p,j,cur[p]])}for(const p in last)if(!(p in cur)&&!p.startsWith('devices/'))ops.push([p,null]);
@@ -321,7 +335,23 @@ const box=(t,b)=>`<div class="card" style="max-width:380px;margin:30px auto"><b>
 function setup(){return box('Welcome: create the owner account','<span class="mut">The owner manages stock, staff and sees every report.</span><input id="sn" placeholder="Your name"><input id="sp" type="password" inputmode="numeric" placeholder="Choose a password (6+ letters and numbers)"><button class="btn pri" onclick="doSetup()">Create owner</button>')}
 async function doSetup(){const n=$('#sn').value.trim(),p=$('#sp').value;if(!n)return uiAlert('Enter your name.');if(pwRule(p))return uiAlert(pwRule(p));const s={id:id(),name:n,role:'owner',pin:await mkHash(p)};db.staff.push(s);me=s;loginAt=Date.now();logit('Owner account created',n);save();tab='home';render();newRc(true)}
 let lsel='';
-function loginView(){return box('Staff login',`<select id="ls" onchange="lsel=this.value">${db.staff.map(s=>`<option value="${s.id}" ${s.id==lsel?'selected':''}>${esc(s.name)} (${ROLES[s.role].label})${s.locked?' 🔒 locked':''}</option>`).join('')}</select><input id="lp" type="password" placeholder="PIN / password" autocomplete="current-password" onkeydown="if(event.key=='Enter')doLogin()" oninput="pwClear('lp','lmsg')"><p id="lmsg" class="msg" role="status" aria-live="polite"></p><button class="btn pri" id="lbtn" onclick="doLogin()">Log in</button><button class="btn" onclick="forgotDlg()">Forgot password?</button>`)}
+const RCOL={owner:'#b7791f',manager:'#2b6cb0',accountant:'#6b46c1',cashier:'#0f6e56',stock:'#c05621',warehouse:'#7b5e3b',delivery:'#2c7a7b'},inits=n=>String(n||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
+function loginView(){if(!lsel){try{lsel=localStorage.getItem(K+'-lastu')||''}catch(e){}}const ST=db.staff,sel=ST.find(x=>x.id==lsel)||ST[0];lsel=sel.id;
+ const h=new Date().getHours(),hi=h<12?'Good morning':h<17?'Good afternoon':'Good evening',lg=db.set.rx&&db.set.rx.logo,first=String(sel.name).split(' ')[0];
+ const av=(x,big)=>`<span class="lga" aria-hidden="true" style="background:${RCOL[x.role]||'#555'}${big?';width:54px;height:54px;font-size:1.2rem':''}">${esc(inits(x.name))}</span>`,rl=x=>x.locked?'🔒 Locked':(RICON[x.role]||'')+' '+esc(ROLES[x.role].label);
+ let where='Saved on this device';try{if(cloud)where='Saved in the shop database';else if(ONWEB&&BK.code)where='Saved on this device · backed up online'}catch(e){}
+ return `<div class="lgw"><div class="lgh"><div class="lgl">${lg?`<img src="${lg}" alt="">`:'🛍️'}</div><h1>${esc(db.set.name)}</h1><p class="mut">${hi} · ${new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'})}</p></div>
+ <div class="card lgc">${ST.length>1?`<b>Who is working?</b><div class="lgs-g" role="radiogroup" aria-label="Choose your name">${ST.map(x=>`<button type="button" class="lgs${x.id==lsel?' on':''}" role="radio" aria-checked="${x.id==lsel}" onclick="lpick('${esc(String(x.id))}')">${av(x)}<span>${esc(x.name)}</span><small id="lc_${x.id}">${rl(x)}</small></button>`).join('')}</div>`
+  :`<div class="lgme">${av(sel,true)}<div><b style="font-size:1.1rem">Welcome back, ${esc(first)}</b><br><small id="lc_${sel.id}">${rl(sel)}</small></div></div>`}
+  <input type="hidden" id="ls" value="${esc(String(sel.id))}">
+  <label for="lp" class="mut" style="font-size:.9rem">${ST.length>1?'Password or PIN for '+esc(first):'Your password or PIN'}</label>
+  <div class="lgpw"><input id="lp" type="password" placeholder="Type it here" autocomplete="current-password" onkeydown="if(event.key=='Enter')doLogin()" oninput="pwClear('lp','lmsg')"><button type="button" class="lgeye" onclick="lpEye(this)" aria-label="Show password" title="Show password">👁️</button></div>
+  <p id="lmsg" class="msg" role="status" aria-live="polite"></p>
+  <button class="btn pri lgbtn" id="lbtn" onclick="doLogin()">Log in</button>
+  <button type="button" class="lglink" onclick="forgotDlg()">Forgot password?</button></div>
+ <p class="lgf mut">🔒 ${where}</p></div>`}
+function lpick(i){if(lbusy)return;lsel=i;$('#app').innerHTML=loginView();const p=$('#lp');if(p)p.focus()}
+function lpEye(b){const i=$('#lp');if(!i)return;const show=i.type=='password';i.type=show?'text':'password';b.textContent=show?'🙈':'👁️';b.setAttribute('aria-label',show?'Hide password':'Show password');b.title=b.getAttribute('aria-label');i.focus()}
 const MAXF=6,sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function failTry(s,what){s.fails=(s.fails||0)+1;const left=MAXF-s.fails;db.log.push({ts:Date.now(),sid:s.id,who:s.name,a:left<=0?'Account locked':'Failed '+what,d:left<=0?MAXF+' wrong tries in a row':(s.fails+' of '+MAXF)});if(left<=0){s.locked=true;s.fails=0}save();
  return left<=0?s.name+'’s account is now locked after '+MAXF+' wrong tries. Use “Forgot password?” on the login screen to reset it.':'Wrong password / PIN for '+s.name+'. '+left+' '+(left==1?'try':'tries')+' left before the account is locked.'}
@@ -363,10 +393,10 @@ async function doLogin(){if(lbusy)return;const s=db.staff.find(x=>x.id==$('#ls')
  if(s.nextTry&&s.nextTry>Date.now())return pwShow('lp','lmsg',false,'⏳ Too many wrong tries. Wait '+Math.ceil((s.nextTry-Date.now())/1000)+' seconds, then try again.');
  lbusy=true;$('#lbtn').disabled=true;
  if(!(await pwOK($('#lp').value,s.pin))){$('#lp').value='';const m=failTry(s,'login');s.nextTry=Date.now()+(DELAYS[Math.min(s.fails||0,DELAYS.length-1)]||0)*1000;save();lbusy=false;$('#lbtn').disabled=false;
-  if(s.locked){const o=$('#ls').selectedOptions[0];if(o)o.textContent=s.name+' ('+ROLES[s.role].label+') 🔒 locked'}
+  if(s.locked){const o=$('#lc_'+s.id);if(o)o.textContent='🔒 Locked'}
   pwShow('lp','lmsg',false,'✖ '+m);$('#lp').focus();return}
  if(!String(s.pin).startsWith('p2$'))s.pin=await mkHash($('#lp').value);s.fails=0;s.nextTry=0;loginAt=Date.now();lastAct=Date.now();pwShow('lp','lmsg',true,'✔ Password correct. Welcome, '+s.name.split(' ')[0]+'!');$('#lbtn').textContent='Opening your shop…';$('#lp').disabled=true;
- setTimeout(()=>{lbusy=false;me=s;tab='home';cart=[];logit('Logged in');save();render();scrollTo(0,0)},900)}
+ setTimeout(()=>{lbusy=false;me=s;try{localStorage.setItem(K+'-lastu',s.id)}catch(e){}tab='home';cart=[];logit('Logged in');save();render();scrollTo(0,0)},900)}
 function logout(){logit('Logged out');save();me=null;cart=[];render()}
 let lf='';
 const RICON={warehouse:'🏭',owner:'👑',manager:'🧑‍💼',accountant:'📒',cashier:'🛒',stock:'📦',delivery:'🚚'},RPLUR={warehouse:'Warehouse keepers',owner:'Owners',manager:'Managers',accountant:'Accountants',cashier:'Cashiers',stock:'Stock keepers',delivery:'Delivery riders'},REXTRA={warehouse:['Transfers to the shop','Own purchases'],owner:['Staff & settings','Change stock','Recovery code'],manager:['Refunds','Edit receipts','Any discount'],accountant:['Sees all sales','Supplier payments'],cashier:['Own sales only','Discount up to '+'LIMIT%'],stock:['Restock & damages'],delivery:['Only their deliveries']};
