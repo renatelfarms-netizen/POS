@@ -990,6 +990,9 @@ const PAL={
  royal:{n:'Royal',d:'Rich purple',L:{ac:'#6d3fc0',act:'#ffffff',bg:'#f6f3fb',card:'#ffffff',bd:'#e3dcf0'},D:{ac:'#b79bff',act:'#1b0f33',bg:'#15121c',card:'#1f1a2a',bd:'#342c45'}},
  cocoa:{n:'Cocoa',d:'Warm brown',L:{ac:'#7a4a21',act:'#ffffff',bg:'#f8f3ec',card:'#ffffff',bd:'#e6dccd'},D:{ac:'#d6a06a',act:'#25160a',bg:'#19140f',card:'#231c15',bd:'#382d22'}},
  graphite:{n:'Graphite',d:'Neutral grey',L:{ac:'#3b4452',act:'#ffffff',bg:'#f3f4f6',card:'#ffffff',bd:'#dfe2e7'},D:{ac:'#aab4c3',act:'#11151b',bg:'#121417',card:'#1b1e23',bd:'#2d3239'}},
+ mint:{n:'Mint',d:'Light and fresh',L:{ac:'#047857',act:'#ffffff',bg:'#f0faf6',card:'#ffffff',bd:'#d3ece2'},D:{ac:'#6ee7b7',act:'#052e22',bg:'#0f1815',card:'#17231f',bd:'#27382f'}},
+ lavender:{n:'Lavender',d:'Soft and gentle',L:{ac:'#7c5cc4',act:'#ffffff',bg:'#f8f6fc',card:'#ffffff',bd:'#e6e0f3'},D:{ac:'#c4b0ff',act:'#1d1238',bg:'#16131d',card:'#201b2b',bd:'#352d46'}},
+ gold:{n:'Gold',d:'Classic and premium',L:{ac:'#8a6500',act:'#ffffff',bg:'#faf7ee',card:'#ffffff',bd:'#ebe3cc'},D:{ac:'#f2c94c',act:'#241a00',bg:'#17140d',card:'#221d12',bd:'#3a3220'}},
  contrast:{n:'High contrast',d:'Sharp, easiest to read',L:{ac:'#0a2bd1',act:'#ffffff',bg:'#ffffff',card:'#ffffff',bd:'#6b6b6b',mut:'#3d3d3a',tx:'#000000'},D:{ac:'#ffd60a',act:'#000000',bg:'#000000',card:'#0d0d0d',bd:'#bdbdbd',mut:'#d0d0d0',tx:'#ffffff'}}
 };
 (function(){const v=o=>Object.entries(o).map(([k,x])=>'--'+k+':'+x).join(';');
@@ -1007,6 +1010,18 @@ const FONTS={
  georgia:{n:'Georgia (serif)',stack:'Georgia,"Times New Roman",serif'},
  mono:{n:'Typewriter (monospace)',stack:'ui-monospace,"Cascadia Mono",Consolas,Menlo,monospace'}
 };
+const PRESETS={
+ fresh:{n:'Fresh Market',d:'Emerald + Nunito',pal:'emerald',font:'nunito'},
+ clean:{n:'Clean Modern',d:'Ocean + Inter',pal:'ocean',font:'inter'},
+ boutique:{n:'Boutique',d:'Rose + Poppins',pal:'rose',font:'poppins'},
+ classic:{n:'Classic Store',d:'Cocoa + Merriweather',pal:'cocoa',font:'merri'},
+ luxe:{n:'Luxe Gold',d:'Gold + Georgia',pal:'gold',font:'georgia'},
+ sunny:{n:'Sunny Day',d:'Sunset + Lato',pal:'sunset',font:'lato'},
+ calm:{n:'Calm Mint',d:'Mint + Roboto',pal:'mint',font:'roboto'},
+ royalty:{n:'Royal Night',d:'Royal + Poppins',pal:'royal',font:'poppins'},
+ office:{n:'Office',d:'Graphite + Inter',pal:'graphite',font:'inter'},
+ easy:{n:'Easy Read',d:'High contrast + Atkinson',pal:'contrast',font:'atkinson'}
+};
 const SIZES={sm:{n:'Small'},md:{n:'Normal'},lg:{n:'Large'},xl:{n:'Extra large'}};
 const MODES={auto:'Match the device',light:'Light',dark:'Dark'};
 const LOOKDEF={pal:'emerald',font:'system',size:'md'},LOOKK={pal:'colour theme',font:'font',size:'text size',mode:'light / dark'};
@@ -1022,6 +1037,7 @@ function applyTheme(){const L=effLook(),r=document.documentElement,F=FONTS[L.fon
  if(L.pal=='emerald')r.removeAttribute('data-pal');else r.setAttribute('data-pal',L.pal);
  if(L.font=='system'){r.removeAttribute('data-font');r.style.removeProperty('--font')}else{r.setAttribute('data-font','1');r.style.setProperty('--font',F.stack);loadFont(F)}
  if(L.size=='md')r.removeAttribute('data-size');else r.setAttribute('data-size',L.size)}
+function presetTiles(cur,fn){return `<div class="pal-grid">${Object.entries(PRESETS).map(([k,p])=>`<button type="button" class="pal ${cur&&cur.pal==p.pal&&cur.font==p.font?'on':''}" onclick="${fn}('${k}')"><span class="sw"><i style="background:${PAL[p.pal].L.bg}"></i><i style="background:${PAL[p.pal].L.card}"></i><i style="background:${PAL[p.pal].L.ac}"></i></span><b style="font-family:${FONTS[p.font].stack.replace(/"/g,"'")}">${p.n}</b><small class="mut">${p.d}</small></button>`).join('')}</div>`}
 function palTiles(cur,fn,same){const sw=(a,b,c)=>`<span class="sw"><i style="background:${a}"></i><i style="background:${b}"></i><i style="background:${c}"></i></span>`;
  return `<div class="pal-grid">${same?`<button type="button" class="pal ${cur?'':'on'}" aria-pressed="${!cur}" onclick="${fn}('pal','')">${sw('var(--bg)','var(--card)','var(--ac)')}<b>Same as shop</b><small class="mut">Follow the shop’s theme</small></button>`:''}${Object.entries(PAL).map(([k,p])=>`<button type="button" class="pal ${k==cur?'on':''}" aria-pressed="${k==cur}" onclick="${fn}('pal','${k}')">${sw(p.L.bg,p.L.card,p.L.ac)}<b>${p.n}</b><small class="mut">${p.d}</small></button>`).join('')}</div>`}
 const selOpts=(map,cur,same)=>(same?`<option value="" ${cur?'':'selected'}>Same as shop</option>`:'')+Object.entries(map).map(([k,v])=>`<option value="${k}" ${k==cur?'selected':''}>${esc(typeof v=='string'?v:v.n)}</option>`).join('');
@@ -1030,7 +1046,7 @@ function lookSettings(){
  if(!me||me.role!='owner')return `<div class="card"><b>Themes</b><p class="mut ln" style="margin:4px 0 0">Only the owner can change the shop’s theme.${canLook(me)?' You can change your own look from your name at the top right.':''}</p></div>`;
  const L=Object.assign({},LOOKDEF,db.set.look||{}),F=(l,x)=>`<label class="fl"><span class="mut">${l}</span>${x}</label>`,others=db.staff.filter(s=>s.role!='owner');
  return `<div class="card"><b>🎨 Shop theme</b><p class="mut ln" style="margin:4px 0 0">This is what everyone sees, unless you let them choose their own below.</p>
-  <p class="ln" style="margin:12px 0 0;font-weight:600">Colour theme</p>${palTiles(L.pal,'setShopLook',false)}
+  <p class="ln" style="margin:12px 0 0;font-weight:600">Ready-made themes</p>${presetTiles(L,'shopPreset')}<p class="ln" style="margin:12px 0 0;font-weight:600">Or mix your own: colour</p>${palTiles(L.pal,'setShopLook',false)}
   <div class="fg" style="margin-top:12px">${F('Light or dark',`<select onchange="setShopLook('mode',this.value)">${selOpts(MODES,db.set.theme||'auto',false)}</select>`)}${F('Font',`<select onchange="setShopLook('font',this.value)">${selOpts(FONTS,L.font,false)}</select>`)}${F('Text size',`<select onchange="setShopLook('size',this.value)">${selOpts(SIZES,L.size,false)}</select>`)}</div>
   ${lookPreview()}<p class="mut ln" style="margin:8px 0 0">Fonts other than Standard need an internet connection the first time they are used.</p></div>
  <div class="card"><b>👥 Who can change their own theme</b><p class="mut ln" style="margin:4px 0 8px">Tick the people you trust to pick their own colour theme, font and text size. What they choose only changes their own screen. People who aren’t ticked always see the shop look. The owner can always change the shop look.</p>
@@ -1039,12 +1055,14 @@ function lookSettings(){
 function setShopLook(k,v){if(!me||me.role!='owner')return uiAlert('Only the owner can change the shop look.');
  if(k=='mode'){if(db.set.theme==v)return;db.set.theme=v}else{const c=db.set.look||{};if(c[k]===v)return;db.set.look=Object.assign({},LOOKDEF,c,{[k]:v})}
  logit('Look changed','Shop '+LOOKK[k]+': '+lookVal(k,v));save();render()}
+function shopPreset(k){if(!me||me.role!='owner')return uiAlert('Only the owner can change the shop theme.');const p=PRESETS[k];if(!p)return;db.set.look=Object.assign({},LOOKDEF,db.set.look,{pal:p.pal,font:p.font});logit('Theme changed','Shop theme: '+p.n);save();render()}
+function myPreset(k){if(!canLook(me))return uiAlert('The owner hasn’t given you access to change the theme.');const p=PRESETS[k];if(!p)return;me.look=Object.assign({},me.look,{pal:p.pal,font:p.font});logit('Own theme changed',me.name+': '+p.n);save();applyTheme();lookDlg()}
 function grantLook(i,on){if(!me||me.role!='owner')return;const s=db.staff.find(x=>x.id==i);if(!s)return;s.perms=Object.assign({},s.perms,{look:!!on});logit(on?'Allowed own look':'Removed own look access',s.name);save();render()}
 function grantAllLook(on){if(!me||me.role!='owner')return;db.staff.filter(s=>s.role!='owner').forEach(s=>{s.perms=Object.assign({},s.perms,{look:!!on})});logit(on?'Allowed own look':'Removed own look access','everyone');save();render()}
 function resetLook(i){if(!me||me.role!='owner')return;const s=db.staff.find(x=>x.id==i);if(!s)return;s.look=null;logit('Own look reset',s.name);save();render()}
 function lookDlg(){if(!canLook(me))return;const m=me.look||{},F=(l,x)=>`<label class="fl"><span class="mut">${l}</span>${x}</label>`;
  $('#dlgc').innerHTML=`<b>🎨 My theme</b><p class="mut ln" style="margin:4px 0 0">This only changes your own screen, when you are logged in as ${esc(me.name)}. Choose “Same as shop” to follow the shop’s look.</p>
- <p class="ln" style="margin:12px 0 0;font-weight:600">Colour theme</p>${palTiles(m.pal||'','setMyLook',true)}
+ <p class="ln" style="margin:12px 0 0;font-weight:600">Ready-made themes</p>${presetTiles(m,'myPreset')}<p class="ln" style="margin:12px 0 0;font-weight:600">Or mix your own: colour</p>${palTiles(m.pal||'','setMyLook',true)}
  <div class="fg" style="margin-top:12px">${F('Light or dark',`<select onchange="setMyLook('mode',this.value)">${selOpts(MODES,m.mode||'',true)}</select>`)}${F('Font',`<select onchange="setMyLook('font',this.value)">${selOpts(FONTS,m.font||'',true)}</select>`)}${F('Text size',`<select onchange="setMyLook('size',this.value)">${selOpts(SIZES,m.size||'',true)}</select>`)}</div>
  ${lookPreview()}
  <div class="form" style="margin-top:12px"><button type="button" class="btn" onclick="setMyLook('all','')">Use the shop look</button><button type="button" class="btn pri" onclick="$('#dlg').classList.remove('on')">Done</button></div>`;
