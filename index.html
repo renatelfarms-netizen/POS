@@ -116,6 +116,36 @@ a.btn{text-decoration:none;color:var(--tx);display:inline-block}.ln{font-size:13
 #receipt hr{border:0;border-top:1px dashed #888}
 @media print{body>*:not(#modal){display:none!important}html,body{background:#fff!important}#modal,#modal.on{position:static!important;display:block!important;background:none!important;padding:0!important}#modal>div{all:unset;display:block}#rbtns{display:none!important}#receipt{max-height:none!important;overflow:visible!important;border-radius:0!important;box-shadow:none!important;color:#000!important;background:#fff!important}#receipt hr{border-top-color:#000!important}}
 .pal-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:8px}.pal{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;padding:8px;border:2px solid var(--bd);border-radius:10px;background:var(--card);color:var(--tx);cursor:pointer}.pal.on{border-color:var(--ac)}.pal small{font-size:12px}.sw{display:flex;gap:0;border-radius:6px;overflow:hidden;border:1px solid var(--bd);width:100%;height:22px}.sw i{flex:1}html[data-size=sm]{zoom:.92}html[data-size=lg]{zoom:1.12}html[data-size=xl]{zoom:1.25}
+
+/* ---------- login screen (modern) ---------- */
+body.lgmode header,body.lgmode #tabs,body.lgmode #bnav{display:none!important}
+body.lgmode{background:radial-gradient(1100px 520px at 50% -8%,color-mix(in srgb,var(--ac) 16%,var(--bg)),var(--bg) 62%) fixed}
+body.lgmode main#app{padding:0;max-width:none}
+.lg2{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 18px 24px}
+.lg2-card{width:100%;max-width:400px;background:var(--card);border:1px solid var(--bd);border-radius:22px;padding:30px 26px 22px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 12px 40px rgba(0,0,0,.08)}
+.lg2-brand{text-align:center;margin-bottom:26px}
+.lg2-logo{width:64px;height:64px;margin:0 auto 14px;border-radius:18px;display:grid;place-items:center;font-size:32px;background:color-mix(in srgb,var(--ac) 12%,var(--card));overflow:hidden}
+.lg2-logo img{max-width:86%;max-height:86%;object-fit:contain}
+.lg2-brand h1{margin:0;font-size:1.5rem;font-weight:700;letter-spacing:-.01em;line-height:1.2}
+.lg2-brand p{margin:6px 0 0;color:var(--mut);font-size:.92rem}
+.lg2-f{display:block;margin:0 0 14px}
+.lg2-f>span{display:block;font-size:.85rem;font-weight:600;color:var(--tx);margin:0 0 6px}
+.lg2-in{position:relative;display:flex;align-items:center}
+.lg2-in .lg2-ic{position:absolute;left:14px;width:18px;height:18px;color:var(--mut);pointer-events:none;z-index:1}
+.lg2-in input{width:100%;min-height:50px;margin:0;padding:0 46px 0 44px;border:1.5px solid var(--bd);border-radius:12px;background:var(--bg);color:var(--tx);font:inherit;font-size:1rem;outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
+.lg2-in input::placeholder{color:var(--mut);opacity:.8}
+.lg2-in input:focus{border-color:var(--ac);background:var(--card);box-shadow:0 0 0 4px color-mix(in srgb,var(--ac) 18%,transparent)}
+.lg2-eye{position:absolute;right:6px;width:38px;height:38px;border:0;border-radius:10px;background:none;color:var(--mut);cursor:pointer;display:grid;place-items:center;padding:0}
+.lg2-eye:hover{background:color-mix(in srgb,var(--mut) 12%,transparent);color:var(--tx)}
+.lg2-eye svg{width:20px;height:20px}
+.lg2-card .msg{min-height:1.3em;margin:2px 0 10px;font-size:.9rem}
+.lg2-btn{width:100%;min-height:52px;border:0;border-radius:12px;background:var(--ac);color:var(--act);font:inherit;font-size:1.02rem;font-weight:600;cursor:pointer;transition:filter .15s,transform .05s}
+.lg2-btn:hover{filter:brightness(1.07)}.lg2-btn:active{transform:translateY(1px)}.lg2-btn:disabled{opacity:.65;cursor:default}
+.lg2-link{display:block;margin:14px auto 0;border:0;background:none;color:var(--mut);font:inherit;font-size:.9rem;cursor:pointer;padding:6px 8px;border-radius:8px}
+.lg2-link:hover{color:var(--ac)}
+.lg2-foot{margin:18px 0 0;color:var(--mut);font-size:.8rem;display:flex;align-items:center;gap:6px}
+.lg2-foot svg{width:14px;height:14px}
+@media (max-width:420px){.lg2-card{padding:26px 20px 18px;border-radius:20px}.lg2{justify-content:flex-start;padding-top:9vh}}
 </style>
 </head>
 <body>
@@ -222,7 +252,7 @@ const prod=i=>db.products.find(p=>p.id==i), cu=i=>db.customers.find(c=>c.id==i);
 
 
 const TABS={sell:'🛒 Sell',cust:'👥 Customers',inv:'📦 Inventory',exp:'💸 Expenses',rep:'📊 Reports',staff:'🔐 Staff & activity',po:'🧾 Purchases',docs:'📄 Receipts & invoices'},OWN=['inv','exp','rep','staff','set'],GROUPS=[['Sales',['sell','docs','cust','del']],['Manage',['inv','po','exp']],['Insights',['rep']],['Admin',['staff','set']]];
-function render(){
+function render(){document.body.classList.remove('lgmode');
  $('#who').textContent=me?'👤 '+me.name+' ▾':'';$('#who').hidden=!me;$('#brand').textContent=db.set.name;document.title=db.set.name+' POS';applyTheme();
  const ok=t=>!!me&&staffTabs(me).includes(t),pc=ok('rep')?pendQ().length:0;$('#bell').hidden=!pc;$('#bell').textContent='🔔 '+pc+' report'+(pc>1?'s':'');
  if(me){brCheck();const ob=staffBranches(me).length>1;$('#brsw').hidden=false;$('#brsw').textContent='📍 '+BRN()+(ob?' ▾':'');$('#brsw').style.cursor=ob?'pointer':'default'}else $('#brsw').hidden=true;
@@ -362,34 +392,14 @@ function repOld(){
  <div class="card"><b>Low stock</b>${low.map(p=>`<div class="row"><span>${esc(p.name)}</span><span class="low">${p.stock} left</span></div>`).join('')||'<p class="mut">All stocked up.</p>'}</div></div>
  <div class="card" style="margin-top:12px"><b>Recent sales</b><div class="tw"><table><tr><th>#</th><th>Time</th><th>Items</th><th>Method</th><th>Total</th><th></th></tr>${ss.slice(-30).reverse().map(s=>`<tr><td>${s.id}</td><td>${new Date(s.ts).toLocaleString()}</td><td>${s.items.reduce((a,i)=>a+i.qty,0)}</td><td>${s.method}</td><td>${money(s.total)}</td><td><button class="btn sm" onclick="showReceipt(db.sales.find(x=>x.id==${s.id}))">Receipt</button></td></tr>`).join('')}</table></div></div>`}
 const box=(t,b)=>`<div class="card" style="max-width:380px;margin:30px auto"><b>${t}</b><div class="form" style="margin-top:10px;flex-direction:column">${b}</div></div>`;
-function webLoginView(){const h=new Date().getHours(),hi=h<12?'Good morning':h<17?'Good afternoon':'Good evening';
- return `<div class="lgw"><div class="lgh"><div class="lgl">🛍️</div><h1>${esc(db.set.name)}</h1><p class="mut">${hi} · ${new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'})}</p></div>
- <div class="card lgc"><b style="font-size:1.1rem">Staff login</b><p class="mut ln" style="margin:2px 0 14px">Type your name and password.</p>
-  <label for="wu" class="mut" style="font-size:.9rem">Your name</label>
-  <input id="wu" class="lgin" type="text" autocomplete="username" autocapitalize="words" spellcheck="false" placeholder="e.g. Kofi Mensah" onkeydown="if(event.key=='Enter'){event.preventDefault();$('#wp').focus()}">
-  <label for="wp" class="mut" style="font-size:.9rem">Password or PIN</label>
-  <div class="lgpw"><input id="wp" type="password" placeholder="Type it here" autocomplete="current-password" onkeydown="if(event.key=='Enter'){event.preventDefault();doWebLogin()}"><button type="button" class="lgeye" onclick="eyeFor(this,'wp')" aria-label="Show password" title="Show password">👁️</button></div>
-  <p id="wmsg" class="ln" style="margin:8px 0 0;min-height:1.2em"></p>
-  <button id="wbtn" class="btn pri" style="width:100%;margin-top:6px" onclick="doWebLogin()">Log in</button>
-  <button class="btn" style="width:100%;margin-top:8px" onclick="webForgot()">Forgot password?</button></div></div>`}
-function webForgot(){$('#dlgc').innerHTML=`<b>🔑 Reset a password</b><p class="mut ln" style="margin:4px 0 10px">Use the shop recovery code (the owner created it in Settings → Security). If you don’t have it, ask the owner or a manager to reset your password for you.</p>
- <label class="fl"><span class="mut">Your name</span><input id="wf_n" value="${esc(($('#wu')||{}).value||'')}" autocapitalize="words" spellcheck="false"></label>
- <label class="fl" style="margin-top:8px"><span class="mut">Recovery code</span><input id="wf_c" placeholder="XXXX-XXXX-XXXX" autocapitalize="characters" autocomplete="off" spellcheck="false"></label>
- <label class="fl" style="margin-top:8px"><span class="mut">New password</span><div class="lgpw"><input id="wf_p" type="password" autocomplete="new-password" placeholder="6+ letters and numbers"><button type="button" class="lgeye" onclick="eyeFor(this,'wf_p')" aria-label="Show password" title="Show password">👁️</button></div></label>
- <p id="wf_m" class="ln" style="margin:8px 0 0;min-height:1.2em"></p>
- <div class="form" style="margin-top:8px"><button class="btn pri" id="wf_b" onclick="doWebReset()">Reset and log in</button><button class="btn" onclick="$('#dlg').classList.remove('on')">Cancel</button></div>`;$('#dlg').classList.add('on')}
-async function doWebReset(){const n=$('#wf_n').value.trim(),c=$('#wf_c').value.trim(),p=$('#wf_p').value,m=$('#wf_m'),b=$('#wf_b');if(!n||!c||!p){m.textContent='Fill in your name, the recovery code and a new password.';return}
- b.disabled=true;m.textContent='Checking…';
- try{const r=await fetch('/api/reset',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,code:c,password:p})});let j={};try{j=await r.json()}catch(e){}if(!r.ok)throw new Error(j.error||('The server answered '+r.status+'.'));
-  try{sessionStorage.setItem(K+'-sess',JSON.stringify({t:j.token,sid:j.sid,exp:j.exp}));sessionStorage.setItem(K+'-auto',JSON.stringify({sid:j.sid,ts:Date.now()}))}catch(e){}m.textContent='✔ Password changed. Opening your shop…';setTimeout(()=>location.reload(),600)}
- catch(e){b.disabled=false;m.textContent='✖ '+(e.message==='Failed to fetch'?'Can’t reach renatel.shop. Check the internet connection.':e.message)}}
+function webLoginView(){return loginShell({u:'wu',p:'wp',msg:'wmsg',btn:'wbtn',go:'doWebLogin',forgot:'webForgot',foot:'Secure login · everything runs online'})}
 async function webLoginCall(name,password){const r=await fetch('/api/login',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,password,dev:DEV.id})});let j={};try{j=await r.json()}catch(e){}if(!r.ok)throw new Error(j.error||('The server answered '+r.status+'.'));
  try{sessionStorage.setItem(K+'-sess',JSON.stringify({t:j.token,sid:j.sid,exp:j.exp}))}catch(e){}return j}
 async function doWebLogin(){const n=($('#wu').value||'').trim(),p=$('#wp').value||'',m=$('#wmsg'),b=$('#wbtn');
- if(!n){m.textContent='Type your name first.';return $('#wu').focus()}if(!p){m.textContent='Type your password / PIN too.';return $('#wp').focus()}
- b.disabled=true;b.textContent='Checking…';m.textContent='';
- try{const j=await webLoginCall(n,p);try{sessionStorage.setItem(K+'-auto',JSON.stringify({sid:j.sid,ts:Date.now()}))}catch(e){}b.textContent='Opening your shop…';m.textContent='✔ Password correct. Welcome, '+j.name+'!';setTimeout(()=>location.reload(),300)}
- catch(e){b.disabled=false;b.textContent='Log in';$('#wp').value='';m.textContent='✖ '+(e.message==='Failed to fetch'?'Can’t reach renatel.shop. Check the internet connection.':e.message);$('#wp').focus()}}
+ if(!n){pwShow('wu','wmsg',false,'Type your name first.');return $('#wu').focus()}if(!p){pwShow('wp','wmsg',false,'Type your password too.');return $('#wp').focus()}
+ b.disabled=true;b.textContent='Checking…';m.className='msg';m.textContent='';
+ try{const j=await webLoginCall(n,p);try{sessionStorage.setItem(K+'-auto',JSON.stringify({sid:j.sid,ts:Date.now()}))}catch(e){}b.textContent='Opening your shop…';pwShow('wp','wmsg',true,'✔ Welcome, '+j.name+'!');setTimeout(()=>location.reload(),300)}
+ catch(e){b.disabled=false;b.textContent='Log in';$('#wp').value='';pwShow('wp','wmsg',false,'✖ '+(e.message==='Failed to fetch'?'Can’t reach renatel.shop. Check the internet connection.':e.message));$('#wp').focus()}}
 function webRelogin(n,p){if(!n||!p)return;webLoginCall(n,p).catch(()=>{})}
 function autoIn(){let a=null;try{a=JSON.parse(sessionStorage.getItem(K+'-auto')||'null')}catch(e){}if(!a)return;try{sessionStorage.removeItem(K+'-auto')}catch(e){}
  if(Date.now()-a.ts>120000)return;const s=db.staff.find(x=>x.id==a.sid);if(!s||s.locked)return;me=s;loginAt=Date.now();lastAct=Date.now();tab='home';cart=[];logit('Logged in','on renatel.shop');save();if(s.mustChange)setTimeout(()=>pinDlg(true),600)}
@@ -404,18 +414,23 @@ const RCOL={owner:'#b7791f',manager:'#2b6cb0',accountant:'#6b46c1',cashier:'#0f6
 try{localStorage.removeItem(K+'-lastu')}catch(e){}
 const nmz=v=>String(v||'').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
 function findStaff(v){const q=nmz(v);if(!q)return null;const w=n=>nmz(n).split(' ').sort().join(' ');let L=db.staff.filter(x=>nmz(x.name)==q);if(!L.length)L=db.staff.filter(x=>w(x.name)==q.split(' ').sort().join(' '));if(!L.length&&!q.includes(' '))L=db.staff.filter(x=>nmz(x.name).split(' ').includes(q));if(!L.length)L=db.staff.filter(x=>nmz(x.name).replace(/ /g,'')==q.replace(/ /g,'')||nmz(x.name).split(' ').reverse().join('')==q.replace(/ /g,''));return L.length==1?L[0]:null}
-function loginView(){const pre=lsel&&db.staff.find(x=>x.id==lsel),h=new Date().getHours(),hi=h<12?'Good morning':h<17?'Good afternoon':'Good evening',lg=db.set.rx&&db.set.rx.logo;
- let where='Saved on this device';try{if(cloud)where='Saved in the shop database';else if(ONWEB&&BK.code)where='Saved on this device · backed up online'}catch(e){}
- return `<div class="lgw"><div class="lgh"><div class="lgl">${lg?`<img src="${lg}" alt="">`:'🛍️'}</div><h1>${esc(db.set.name)}</h1><p class="mut">${hi} · ${new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'})}</p></div>
- <div class="card lgc"><b style="font-size:1.1rem">Staff login</b><p class="mut ln" style="margin:2px 0 14px">Type your name and password.</p>
-  <label for="lu" class="mut" style="font-size:.9rem">Your name</label>
-  <input id="lu" class="lgin" type="text" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="e.g. Kofi Mensah" value="${pre?esc(pre.name):''}" onkeydown="if(event.key=='Enter'){event.preventDefault();$('#lp').focus()}" oninput="pwClear('lu','lmsg')">
-  <label for="lp" class="mut" style="font-size:.9rem;display:block;margin-top:12px">Password or PIN</label>
-  <div class="lgpw"><input id="lp" type="password" placeholder="Type it here" autocomplete="off" onkeydown="if(event.key=='Enter')doLogin()" oninput="pwClear('lp','lmsg')"><button type="button" class="lgeye" onclick="lpEye(this)" aria-label="Show password" title="Show password">👁️</button></div>
-  <p id="lmsg" class="msg" role="status" aria-live="polite"></p>
-  <button class="btn pri lgbtn" id="lbtn" onclick="doLogin()">Log in</button>
-  <button type="button" class="lglink" onclick="forgotDlg()">Forgot password?</button></div>
- <p class="lgf mut">🔒 ${where}</p></div>`}
+const LGI={user:'<svg class="lg2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>',lock:'<svg class="lg2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',eye:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',off:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7a10 10 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>',shield:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg>'};
+function lgEye(b,id){const i=$('#'+id);if(!i)return;const show=i.type=='password';i.type=show?'text':'password';b.innerHTML=show?LGI.off:LGI.eye;b.setAttribute('aria-label',show?'Hide password':'Show password');b.title=show?'Hide password':'Show password';i.focus()}
+// One login screen for the website and the Claude version: o = {u,p,msg,btn,go,forgot,name,foot}
+function loginShell(o){document.body.classList.add('lgmode');const h=new Date().getHours(),hi=h<12?'Good morning':h<17?'Good afternoon':'Good evening',lg=db.set.rx&&db.set.rx.logo;
+ return `<div class="lg2"><div class="lg2-card">
+  <div class="lg2-brand"><div class="lg2-logo">${lg?`<img src="${lg}" alt="">`:'🛍️'}</div><h1>${esc(db.set.name)}</h1><p>${hi} · ${new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'})}</p></div>
+  <form onsubmit="event.preventDefault();${o.go}()" novalidate>
+   <label class="lg2-f" for="${o.u}"><span>Name</span><div class="lg2-in">${LGI.user}<input id="${o.u}" type="text" autocomplete="username" autocapitalize="words" spellcheck="false" placeholder="Your name" value="${esc(o.name||'')}" onkeydown="if(event.key=='Enter'){event.preventDefault();$('#${o.p}').focus()}" oninput="pwClear('${o.u}','${o.msg}')"></div></label>
+   <label class="lg2-f" for="${o.p}"><span>Password</span><div class="lg2-in">${LGI.lock}<input id="${o.p}" type="password" autocomplete="current-password" placeholder="Password or PIN" oninput="pwClear('${o.p}','${o.msg}')"><button type="button" class="lg2-eye" onclick="lgEye(this,'${o.p}')" aria-label="Show password" title="Show password">${LGI.eye}</button></div></label>
+   <p id="${o.msg}" class="msg" role="status" aria-live="polite"></p>
+   <button class="lg2-btn" id="${o.btn}" type="submit">Log in</button>
+   <button type="button" class="lg2-link" onclick="${o.forgot}()">Forgot password?</button>
+  </form></div>
+  <p class="lg2-foot">${LGI.shield}${esc(o.foot)}</p></div>`}
+function loginView(){const pre=lsel&&db.staff.find(x=>x.id==lsel);
+ let where='Saved on this device';try{if(WEB0)where='Secure login · everything runs online';else if(cloud)where='Saved in the shop database'}catch(e){}
+ return loginShell({u:'lu',p:'lp',msg:'lmsg',btn:'lbtn',go:'doLogin',forgot:'forgotDlg',name:pre?pre.name:'',foot:where})}
 function eyeFor(b,id){const i=$('#'+id);if(!i)return;const show=i.type=='password';i.type=show?'text':'password';b.textContent=show?'🙈':'👁️';b.setAttribute('aria-label',show?'Hide password':'Show password');b.title=show?'Hide password':'Show password';i.focus()}
 function lpEye(b){const i=$('#lp');if(!i)return;const show=i.type=='password';i.type=show?'text':'password';b.textContent=show?'🙈':'👁️';b.setAttribute('aria-label',show?'Hide password':'Show password');b.title=b.getAttribute('aria-label');i.focus()}
 const MAXF=6,sleep=ms=>new Promise(r=>setTimeout(r,ms));
