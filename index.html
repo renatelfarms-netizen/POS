@@ -186,6 +186,18 @@ html,body{overscroll-behavior-y:contain}
  /* form fields share the width */
  .card .form>input:not([type=checkbox]):not([type=radio]),.card .form>select{flex:1 1 140px;min-width:0}
 }
+
+/* invoices printed on a receipt roll: narrow, black and white */
+@media print{
+ #receipt.invroll{font-size:10.5px!important}
+ #receipt.invroll *{color:#000!important;box-shadow:none!important}
+ #receipt.invroll [style*="background"]{background:none!important}
+ #receipt.invroll table{width:100%!important;table-layout:fixed;border-collapse:collapse}
+ #receipt.invroll th,#receipt.invroll td{padding:3px 2px!important;white-space:normal!important;overflow-wrap:anywhere;font-size:10px!important}
+ #receipt.invroll th{background:none!important;border-bottom:1px solid #000!important;font-weight:700}
+ #receipt.invroll div[style*="flex"]{flex-wrap:wrap!important;gap:4px!important}
+ #receipt.invroll div[style*="font-size:2"]{font-size:15px!important}
+}
 </style>
 </head>
 <body>
@@ -1663,7 +1675,7 @@ new MutationObserver(()=>{if(!$('#dlg').classList.contains('on'))$('#dlgc').clas
 /* ---------- receipt printing (website) ---------- */
 function printRcpt(){const r=$('#receipt');if(!r||!r.innerHTML.trim())return;const pz=db.set.paper||'80',inv=r.classList.contains('inv'),W={'80':'72mm','58':'48mm'}[pz];
  let st=$('#prnSt');if(!st){st=document.createElement('style');st.id='prnSt';document.head.appendChild(st)}
- st.textContent='@media print{@page{'+(W?'margin:0':'size:A4;margin:12mm')+'}#receipt{'+(W?'width:'+W+'!important;margin:0 '+(pz=='58'?'5mm':'4mm')+'!important;padding:3mm 0!important;font-size:'+(pz=='58'?'10.5px':'12px')+'!important':(inv?'width:100%!important':'width:90mm!important;margin:0 auto!important'))+'}}';
+ r.classList.toggle('invroll',!!(inv&&W));st.textContent='@media print{@page{'+(W?'margin:0':'size:A4;margin:12mm')+'}#receipt{'+(W?'width:'+W+'!important;margin:0 '+(pz=='58'?'5mm':'4mm')+'!important;padding:3mm 0!important;font-size:'+(pz=='58'?'10.5px':'12px')+'!important':(inv?'width:100%!important':'width:90mm!important;margin:0 auto!important'))+'}}';
  try{window.print()}catch(e){uiAlert('Printing isn’t available here. Use Save PDF instead.')}}
 function prnCard(){const s=db.set;if(!ONWEB)return `<div class="card"><b>🖨️ Receipt printing</b><p class="mut ln" style="margin:4px 0 0">Printing works on the website, renatel.shop. Here, use Save PDF.</p></div>`;
  return `<div class="card"><b>🖨️ Receipt printing</b><p class="mut ln" style="margin:4px 0 8px">Works with receipt (thermal) printers and normal printers connected to this phone or computer. Pick the printer in the print window the first time; most devices remember it.</p><div class="form" style="flex-direction:column">
