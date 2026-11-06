@@ -3,221 +3,276 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Point of sale for your shop</title>
+<title>Tessa POS · Point of sale for your shop</title>
 <meta name="description" content="Sell, track stock, manage staff and branches from any phone or computer. Free trial.">
 <meta name="theme-color" content="#0f6e56">
 <link rel="icon" href="/icon-192.png">
+<link rel="stylesheet" href="/assets/site.css">
 <!--PLAT-->
 <style>
-:root{--ac:#0f6e56;--ac2:#14a37f;--tx:#14201b;--mut:#5d6b65;--bd:#e3e7e4;--bg:#f6f5f1;--card:#fff;--bad:#c2410c;--r:16px}
-*{box-sizing:border-box}html{scroll-behavior:smooth}
-body{margin:0;font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--tx);background:var(--bg)}
-a{color:var(--ac)}
-.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
-header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--bd)}
-header .wrap{display:flex;align-items:center;gap:14px;height:64px}
-.logo{display:flex;align-items:center;gap:10px;font-weight:750;font-size:1.1rem;color:var(--tx);text-decoration:none}
-.logo i{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--ac);color:#fff;font-style:normal}
-header nav{margin-left:auto;display:flex;gap:6px;align-items:center}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 18px;border-radius:12px;border:1px solid var(--bd);background:var(--card);color:var(--tx);font:inherit;font-weight:600;cursor:pointer;text-decoration:none;transition:transform .15s,box-shadow .15s,background .15s}
-.btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px -10px rgba(0,0,0,.35)}
-.btn.pri{background:var(--ac);border-color:var(--ac);color:#fff}.btn.pri:hover{background:#0c5a46}
-.btn.ghost{border-color:transparent;background:transparent}
-.btn:disabled{opacity:.6;cursor:wait;transform:none}
-.hero{padding:72px 0 56px;display:grid;grid-template-columns:1.1fr .9fr;gap:48px;align-items:center}
+.hero{padding:64px 0 40px;display:grid;grid-template-columns:1fr 1.05fr;gap:44px;align-items:center}
 .pill{display:inline-flex;gap:8px;align-items:center;padding:6px 12px;border-radius:99px;background:color-mix(in srgb,var(--ac) 10%,transparent);color:var(--ac);font-weight:600;font-size:.88rem}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--ac2);animation:pulse 1.6s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(20,163,127,.5)}70%{box-shadow:0 0 0 9px rgba(20,163,127,0)}100%{box-shadow:0 0 0 0 rgba(20,163,127,0)}}
 h1{font-size:clamp(2rem,4.6vw,3.3rem);line-height:1.08;letter-spacing:-.02em;margin:18px 0 16px}
 h1 em{font-style:normal;color:var(--ac)}
-.lead{font-size:1.15rem;color:var(--mut);max-width:560px;margin:0 0 26px}
+.lead{font-size:1.12rem;color:var(--mut);max-width:540px;margin:0 0 26px}
 .cta{display:flex;gap:10px;flex-wrap:wrap}
-.small{font-size:.88rem;color:var(--mut);margin-top:14px}
-.mock{background:var(--card);border:1px solid var(--bd);border-radius:22px;padding:18px;box-shadow:0 30px 60px -30px rgba(15,110,86,.35)}
-.mock-top{display:flex;gap:6px;margin-bottom:14px}.mock-top span{width:10px;height:10px;border-radius:50%;background:var(--bd)}
-.mock-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
-.mock-stats div{border:1px solid var(--bd);border-radius:12px;padding:10px}.mock-stats small{display:block;color:var(--mut);font-size:.75rem}.mock-stats b{font-size:1.05rem}
-.mock-row{display:flex;align-items:center;gap:10px;padding:9px 4px;border-top:1px solid var(--bd);font-size:.9rem}.mock-row b{margin-left:auto}
-.qi{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;color:var(--qc);background:color-mix(in srgb,var(--qc) 13%,transparent);flex:0 0 auto}
-.qi svg{width:22px;height:22px}
-.mock-row .qi{width:30px;height:30px;border-radius:9px}.mock-row .qi svg{width:17px;height:17px}
 section{padding:56px 0}
 h2{font-size:clamp(1.5rem,3vw,2.1rem);letter-spacing:-.01em;margin:0 0 8px}
-.sub{color:var(--mut);margin:0 0 28px;max-width:620px}
+.sub{color:var(--mut);margin:0 0 28px;max-width:640px}
+
+/* video-like frames */
+.vid{position:relative;background:#0e1714;border-radius:20px;padding:10px;box-shadow:0 30px 60px -30px rgba(15,110,86,.55)}
+.vid-in{position:relative;overflow:hidden;border-radius:13px;background:#f6f5f1}
+.stage{position:absolute;left:0;top:0;transform-origin:0 0;font-size:14px}
+.vbar{display:flex;align-items:center;gap:10px;padding:9px 6px 2px;color:#cfe3dc;font-size:.8rem}
+.vbtn{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;border:0;background:rgba(255,255,255,.12);color:#fff;cursor:pointer;flex:0 0 auto}
+.vbtn svg{width:12px;height:12px}
+.vprog{flex:1;height:4px;border-radius:4px;background:rgba(255,255,255,.15);overflow:hidden}.vprog b{display:block;height:100%;width:0;background:var(--ac2)}
+.live{display:inline-flex;align-items:center;gap:6px;font-weight:700;letter-spacing:.06em;font-size:.7rem;color:#9ee6cf}.live i{width:7px;height:7px;border-radius:50%;background:#ef4444;animation:pulse 1.6s infinite}
+
+/* hero scene: selling */
+.pos{width:600px;height:380px;display:grid;grid-template-rows:42px 1fr;background:#f6f5f1;color:#14201b}
+.pos-top{display:flex;align-items:center;gap:10px;padding:0 14px;background:#fff;border-bottom:1px solid #e3e7e4;font-weight:700}
+.pos-top small{margin-left:auto;font-weight:500;color:#5d6b65}
+.pos-body{display:grid;grid-template-columns:1fr 220px;gap:12px;padding:12px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;align-content:start}
+.tile{position:relative;background:#fff;border:1px solid #e3e7e4;border-radius:12px;padding:10px;height:96px;display:flex;flex-direction:column;justify-content:space-between;transition:transform .15s,border-color .15s}
+.tile b{font-size:.86rem;line-height:1.2}.tile span{color:#0f6e56;font-weight:700;font-size:.9rem}
+.tile .qi{width:30px;height:30px;border-radius:9px}.tile .qi svg{width:17px;height:17px}
+.tile.tap{transform:scale(.94);border-color:#0f6e56}
+.tile .rip{position:absolute;left:50%;top:50%;width:10px;height:10px;margin:-5px;border-radius:50%;background:rgba(15,110,86,.25);opacity:0}
+.tile.tap .rip{animation:rip .5s ease-out}
+@keyframes rip{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(14)}}
+.cart{background:#fff;border:1px solid #e3e7e4;border-radius:12px;padding:12px;display:flex;flex-direction:column}
+.cart h4{margin:0 0 8px;font-size:.9rem}
+.cl{display:flex;justify-content:space-between;font-size:.84rem;padding:6px 0;border-bottom:1px dashed #e3e7e4;opacity:0;transform:translateX(18px);transition:all .35s}
+.cl.on{opacity:1;transform:none}
+.ctot{margin-top:auto;display:flex;justify-content:space-between;align-items:baseline;padding-top:10px}.ctot b{font-size:1.35rem}
+.pay{margin-top:10px;border-radius:10px;background:#0f6e56;color:#fff;text-align:center;padding:10px;font-weight:700;transition:transform .15s}
+.pay.tap{transform:scale(.95);background:#0c5a46}
+.paid{position:absolute;inset:42px 0 0 0;background:rgba(246,245,241,.88);backdrop-filter:blur(2px);display:grid;place-items:center;opacity:0;transition:opacity .35s;pointer-events:none}
+.paid.on{opacity:1}
+.paid-in{display:flex;gap:22px;align-items:center}
+.ok{width:74px;height:74px;border-radius:50%;background:#0f6e56;display:grid;place-items:center;transform:scale(.4);transition:transform .45s cubic-bezier(.3,1.6,.5,1)}
+.paid.on .ok{transform:scale(1)}.ok svg{width:38px;height:38px;color:#fff}
+.rcpt{width:170px;background:#fff;border-radius:6px;padding:12px 12px 16px;font:12px/1.5 ui-monospace,Menlo,monospace;box-shadow:0 14px 30px -14px rgba(0,0,0,.35);transform:translateY(40px);opacity:0;transition:all .6s .2s;-webkit-mask:linear-gradient(#000 92%,transparent)}
+.paid.on .rcpt{transform:none;opacity:1}.rcpt b{display:block;text-align:center;margin-bottom:4px}.rcpt div{display:flex;justify-content:space-between}.rcpt hr{border:0;border-top:1px dashed #bbb;margin:6px 0}
+.cursor{position:absolute;left:0;top:0;width:22px;height:22px;pointer-events:none;z-index:4;filter:drop-shadow(0 2px 3px rgba(0,0,0,.3))}
+
+/* scenes grid */
+.vids{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.vcap{margin:12px 2px 0}.vcap b{display:block}.vcap span{color:var(--mut);font-size:.95rem}
+/* scene: warehouse to branch */
+.sc{width:360px;height:240px;position:relative;background:#f6f5f1;color:#14201b}
+.place{position:absolute;top:70px;width:110px;text-align:center}
+.place .qi{width:62px;height:62px;border-radius:16px;margin:0 auto 6px}.place .qi svg{width:32px;height:32px}
+.place b{display:block;font-size:.85rem}.place small{display:block;color:#5d6b65;font-size:.78rem}
+.place .n{font-size:1.25rem;font-weight:800}
+.box{position:absolute;width:20px;height:20px;border-radius:5px;background:#d97706;box-shadow:inset 0 -6px 0 rgba(0,0,0,.12);opacity:0}
+.chip{position:absolute;left:50%;top:18px;transform:translateX(-50%) translateY(-8px);background:#0f6e56;color:#fff;border-radius:99px;padding:5px 12px;font-size:.78rem;font-weight:700;opacity:0;transition:all .3s;white-space:nowrap}
+.chip.on{opacity:1;transform:translateX(-50%)}
+.track{position:absolute;left:105px;right:105px;top:104px;border-top:2px dashed #cfd6d2}
+/* scene: reports */
+.rp-h{position:absolute;left:18px;top:16px}.rp-h small{color:#5d6b65;display:block;font-size:.78rem}.rp-h b{font-size:1.4rem}
+.bars{position:absolute;left:18px;right:18px;bottom:28px;height:120px;display:flex;align-items:flex-end;gap:10px}
+.bars i{flex:1;background:linear-gradient(#14a37f,#0f6e56);border-radius:6px 6px 2px 2px;height:0}
+.days{position:absolute;left:18px;right:18px;bottom:8px;display:flex;gap:10px;font-size:.7rem;color:#5d6b65}.days span{flex:1;text-align:center}
+.rp-line{position:absolute;left:18px;right:18px;bottom:28px;height:120px}
+.rp-line path{fill:none;stroke:#4f46e5;stroke-width:2.5;stroke-linecap:round;stroke-dasharray:400;stroke-dashoffset:400}
+/* scene: devices in sync */
+.phone{position:absolute;left:22px;top:22px;width:104px;height:196px;border-radius:18px;background:#14201b;padding:6px}
+.phone .scr,.lap .scr{background:#fff;border-radius:13px;height:100%;padding:8px;overflow:hidden}
+.lap{position:absolute;right:20px;top:40px;width:190px;height:128px;border-radius:10px;background:#14201b;padding:5px}
+.lap .scr{border-radius:6px}.lap::after{content:"";position:absolute;left:-14px;right:-14px;bottom:-10px;height:10px;border-radius:0 0 8px 8px;background:#2a3833}
+.srow{font-size:.66rem;padding:5px 6px;border-radius:6px;background:#f2f4f3;margin-bottom:5px;display:flex;justify-content:space-between;transition:background .6s,opacity .35s,transform .35s}
+.srow.new{opacity:0;transform:translateY(-6px)}.srow.new.on{opacity:1;transform:none}.srow.hl{background:#d9f3ea}
+.scr h5{margin:0 0 6px;font-size:.68rem;color:#5d6b65}
+.dot{position:absolute;width:12px;height:12px;border-radius:50%;background:#14a37f;box-shadow:0 0 0 5px rgba(20,163,127,.2);opacity:0}
+.cloud{position:absolute;left:50%;top:10px;transform:translateX(-50%);color:#9aa8a2}.cloud svg{width:40px;height:40px}
+
 .feat{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.f{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);padding:20px}
+.f{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);padding:20px;transition:transform .2s,box-shadow .2s}
+.f:hover{transform:translateY(-3px);box-shadow:0 16px 30px -22px rgba(0,0,0,.35)}
 .f b{display:block;margin:12px 0 4px}.f p{margin:0;color:var(--mut);font-size:.95rem}
 .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;counter-reset:s}
-.step{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);padding:20px;position:relative}
+.step{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);padding:20px}
 .step::before{counter-increment:s;content:counter(s);display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--ac);color:#fff;font-weight:700;margin-bottom:10px}
 .step b{display:block;margin-bottom:4px}.step p{margin:0;color:var(--mut);font-size:.95rem}
-.price{display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:820px}
-.plan{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);padding:24px}
-.plan.hl{border:2px solid var(--ac)}
-.plan .amt{font-size:2rem;font-weight:750;margin:6px 0}.plan ul{padding:0;margin:14px 0 0;list-style:none}.plan li{padding:5px 0 5px 26px;position:relative;color:var(--mut)}
-.plan li::before{content:"";position:absolute;left:2px;top:11px;width:12px;height:7px;border-left:2.5px solid var(--ac);border-bottom:2.5px solid var(--ac);transform:rotate(-45deg)}
-.two{display:grid;grid-template-columns:1.25fr .75fr;gap:18px;align-items:start}
-.card{background:var(--card);border:1px solid var(--bd);border-radius:20px;padding:26px}
-.card h3{margin:0 0 4px;font-size:1.3rem}.card .sub{margin-bottom:18px}
-form{display:grid;gap:14px}
-.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-label{display:grid;gap:6px;font-weight:600;font-size:.92rem}
-label small{font-weight:400;color:var(--mut)}
-input,select{width:100%;padding:12px 13px;border:1px solid var(--bd);border-radius:11px;font:inherit;background:#fff;color:var(--tx)}
-input:focus,select:focus{outline:2px solid color-mix(in srgb,var(--ac) 40%,transparent);border-color:var(--ac)}
-input.bad{border-color:var(--bad)}
-.linkin{display:flex;align-items:center;border:1px solid var(--bd);border-radius:11px;background:#fff;overflow:hidden}
-.linkin span{padding:0 4px 0 13px;color:var(--mut);white-space:nowrap;font-weight:400}
-.linkin input{border:0;padding-left:2px}.linkin:focus-within{outline:2px solid color-mix(in srgb,var(--ac) 40%,transparent);border-color:var(--ac)}
-.hint{font-weight:400;font-size:.85rem;color:var(--mut);min-height:1.2em}.hint.ok{color:var(--ac)}.hint.no{color:var(--bad)}
-.pw{position:relative}.pw button{position:absolute;right:8px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--mut);cursor:pointer;font:inherit;font-size:.85rem}
-.seg{display:flex;gap:8px}.seg label{flex:1;display:flex;align-items:center;gap:8px;border:1px solid var(--bd);border-radius:11px;padding:11px 12px;font-weight:500;cursor:pointer}
-.seg input{width:auto}.seg label:has(input:checked){border-color:var(--ac);background:color-mix(in srgb,var(--ac) 7%,#fff)}
-.msg{min-height:1.3em;margin:0;font-size:.95rem}.msg.no{color:var(--bad)}.msg.ok{color:var(--ac)}
-.found{display:grid;gap:8px;margin-top:12px}
-.found a{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--bd);border-radius:12px;text-decoration:none;color:var(--tx);background:#fff}
-.found a:hover{border-color:var(--ac)}.found a small{color:var(--mut);margin-left:auto}
-.nf{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:14px;padding:12px 16px;margin-top:18px}
-footer{border-top:1px solid var(--bd);padding:26px 0 40px;color:var(--mut);font-size:.9rem}
-footer .wrap{display:flex;gap:12px;flex-wrap:wrap;justify-content:space-between}
-.spin{width:18px;height:18px;border-radius:50%;border:2.5px solid rgba(255,255,255,.4);border-top-color:#fff;animation:sp .8s linear infinite}
-@keyframes sp{to{transform:rotate(360deg)}}
-@media (max-width:900px){.hero,.two{grid-template-columns:1fr}.feat,.steps{grid-template-columns:1fr 1fr}.hero{padding-top:40px}.mock{order:2}}
-@media (max-width:600px){.feat,.steps,.price,.row2{grid-template-columns:1fr}header nav .ghost{display:none}.card{padding:20px}section{padding:40px 0}}
+.band{background:linear-gradient(150deg,#0f6e56,#0b4f3e);color:#fff;border-radius:24px;padding:40px;display:flex;gap:20px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.band h2{margin:0}.band p{margin:6px 0 0;opacity:.85}.band .btn{border-color:#fff}
+.reveal{opacity:0;transform:translateY(18px);transition:opacity .6s,transform .6s}.reveal.in{opacity:1;transform:none}
+@media (max-width:980px){.vids{grid-template-columns:1fr 1fr}}
+@media (max-width:900px){.hero{grid-template-columns:1fr;padding-top:36px}.feat,.steps{grid-template-columns:1fr 1fr}}
+@media (max-width:640px){.vids,.feat,.steps{grid-template-columns:1fr}.band{padding:28px}section{padding:40px 0}}
+@media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none}}
 </style>
 </head>
 <body>
 <header><div class="wrap">
- <a class="logo" href="/"><i><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 5 4h14l2 5.5"/><path d="M3 9.5a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12.5V20h14v-7.5"/><path d="M10 20v-5h4v5"/></svg></i><span id="pname">Tessa POS</span></a>
- <nav><a class="btn ghost" href="#features">Features</a><a class="btn" href="#find">Log in</a><a class="btn pri" href="#start">Start free</a></nav>
+ <a class="logo" href="/"><i><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 5 4h14l2 5.5"/><path d="M3 9.5a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12.5V20h14v-7.5"/><path d="M10 20v-5h4v5"/></svg></i><span class="pname">Tessa POS</span></a>
+ <nav><a class="btn ghost" href="#motion">See it work</a><a class="btn ghost" href="#features">Features</a><a class="btn" href="/login">Log in</a><a class="btn pri" href="/register">Start free</a></nav>
 </div></header>
 
 <main>
 <div class="wrap">
- <div id="nf"></div>
  <div class="hero">
   <div>
-   <span class="pill" id="trialpill">Free trial · no card needed</span>
+   <span class="pill"><i></i><span id="trialpill">30-day free trial · no card needed</span></span>
    <h1>Run your shop from <em>any phone or computer</em></h1>
    <p class="lead">Sell, print receipts, track stock in your shop and warehouse, manage staff and branches, and get reports by email. Everything is saved online, so every device sees the same shop.</p>
-   <div class="cta"><a class="btn pri" href="#start">Create your shop</a><a class="btn" href="#find">Find my shop</a></div>
-   <p class="small">Set up in two minutes. Your shop gets its own link for your staff.</p>
+   <div class="cta"><a class="btn pri" href="/register">Create your shop</a><a class="btn" href="/login">Log in to my shop</a></div>
+   <p class="small" style="margin-top:14px">Set up in two minutes. Your shop gets its own link for your staff.</p>
   </div>
-  <div class="mock" aria-hidden="true">
-   <div class="mock-top"><span></span><span></span><span></span></div>
-   <div class="mock-stats"><div><small>Sales today</small><b>GH₵ 2,480</b></div><div><small>Receipts</small><b>37</b></div><div><small>Low stock</small><b>4</b></div></div>
-   <div class="mock-row"><span class="qi" style="--qc:#16a34a" data-i="sell"></span>Sale #1042 · Cash<b>GH₵ 86.00</b></div>
-   <div class="mock-row"><span class="qi" style="--qc:#ea580c" data-i="del"></span>Delivery to Adum<b>GH₵ 240.00</b></div>
-   <div class="mock-row"><span class="qi" style="--qc:#7c3aed" data-i="wh"></span>Warehouse → Main branch<b>48 pcs</b></div>
-   <div class="mock-row"><span class="qi" style="--qc:#dc2626" data-i="exp"></span>Expense · Transport<b>GH₵ 35.00</b></div>
+  <div class="vid" data-scene="sell" aria-label="Animation: a cashier sells three items and prints a receipt">
+   <div class="vid-in"><div class="stage" data-w="600" data-h="380">
+    <div class="pos">
+     <div class="pos-top">Kofi Mart · Sell<small>📍 Main branch · Ama (Cashier)</small></div>
+     <div class="pos-body">
+      <div class="tiles">
+       <div class="tile"><span class="qi" style="--qc:#d97706" data-i="inv"></span><b>Rice 5kg</b><span>GH₵ 120</span><i class="rip"></i></div>
+       <div class="tile"><span class="qi" style="--qc:#ea580c" data-i="drop"></span><b>Cooking oil 1L</b><span>GH₵ 45</span><i class="rip"></i></div>
+       <div class="tile"><span class="qi" style="--qc:#2563eb" data-i="milk"></span><b>Milk tin</b><span>GH₵ 22</span><i class="rip"></i></div>
+       <div class="tile"><span class="qi" style="--qc:#7c3aed" data-i="soap"></span><b>Bath soap</b><span>GH₵ 8</span><i class="rip"></i></div>
+       <div class="tile"><span class="qi" style="--qc:#16a34a" data-i="leaf"></span><b>Sugar 1kg</b><span>GH₵ 18</span><i class="rip"></i></div>
+       <div class="tile"><span class="qi" style="--qc:#0891b2" data-i="drop"></span><b>Water pack</b><span>GH₵ 15</span><i class="rip"></i></div>
+      </div>
+      <div class="cart"><h4>Cart</h4>
+       <div class="cl"><span>1 × Rice 5kg</span><b>120.00</b></div>
+       <div class="cl"><span>1 × Cooking oil 1L</span><b>45.00</b></div>
+       <div class="cl"><span>2 × Water pack</span><b>30.00</b></div>
+       <div class="ctot"><span>Total</span><b>GH₵ <span class="tot">0.00</span></b></div>
+       <div class="pay">Pay · Cash</div>
+      </div>
+     </div>
+     <div class="paid"><div class="paid-in"><div class="ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></div>
+      <div class="rcpt"><b>KOFI MART</b><div><span>Rice 5kg</span><span>120.00</span></div><div><span>Oil 1L</span><span>45.00</span></div><div><span>2 Water</span><span>30.00</span></div><hr><div><b style="margin:0">TOTAL</b><b style="margin:0">195.00</b></div><div><span>Cash</span><span>200.00</span></div><div><span>Change</span><span>5.00</span></div><hr><div style="justify-content:center">Thank you!</div></div></div></div>
+    </div>
+    <svg class="cursor" viewBox="0 0 24 24"><path d="M4 2.5 19 12l-6.6 1.4L9 20z" fill="#fff" stroke="#14201b" stroke-width="1.6" stroke-linejoin="round"/></svg>
+   </div></div>
+   <div class="vbar"><button class="vbtn" aria-label="Pause"></button><span class="live"><i></i>LIVE DEMO</span><div class="vprog"><b></b></div></div>
   </div>
  </div>
 </div>
 
+<section id="motion"><div class="wrap">
+ <h2 class="reveal">See Tessa POS in motion</h2>
+ <p class="sub reveal">What happens in your shop every day, shown in a few seconds.</p>
+ <div class="vids">
+  <div class="reveal"><div class="vid" data-scene="stock" aria-label="Animation: stock moves from the warehouse to a branch">
+   <div class="vid-in"><div class="stage" data-w="360" data-h="240"><div class="sc">
+    <div class="chip">✓ Received at Main branch</div>
+    <div class="track"></div>
+    <div class="place" style="left:10px"><span class="qi" style="--qc:#7c3aed" data-i="wh"></span><b>Warehouse</b><span class="n wn">120</span><small>cartons</small></div>
+    <div class="place" style="right:10px"><span class="qi" style="--qc:#16a34a" data-i="shop"></span><b>Main branch</b><span class="n bn">4</span><small>in the shop</small></div>
+    <i class="box"></i><i class="box"></i><i class="box"></i><i class="box"></i>
+   </div></div></div>
+   <div class="vbar"><button class="vbtn" aria-label="Pause"></button><div class="vprog"><b></b></div></div>
+  </div><p class="vcap"><b>Warehouse to branch</b><span>Send stock to a branch. It arrives in the shop's stock the moment it's received.</span></p></div>
+  <div class="reveal"><div class="vid" data-scene="rep" aria-label="Animation: a weekly sales report builds and is emailed">
+   <div class="vid-in"><div class="stage" data-w="360" data-h="240"><div class="sc">
+    <div class="chip">✓ PDF report emailed to the owner</div>
+    <div class="rp-h"><small>Sales this week</small><b>GH₵ <span class="rt">0</span></b></div>
+    <div class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <svg class="rp-line" viewBox="0 0 324 120" preserveAspectRatio="none"><path d="M10 96 L57 80 L104 88 L151 60 L198 70 L245 40 L292 30"/></svg>
+    <div class="days"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
+   </div></div></div>
+   <div class="vbar"><button class="vbtn" aria-label="Pause"></button><div class="vprog"><b></b></div></div>
+  </div><p class="vcap"><b>Reports that send themselves</b><span>Sales, profit and expenses add up as you sell, and the PDF arrives by email.</span></p></div>
+  <div class="reveal"><div class="vid" data-scene="sync" aria-label="Animation: a sale on a phone appears on the laptop">
+   <div class="vid-in"><div class="stage" data-w="360" data-h="240"><div class="sc">
+    <div class="chip" style="top:200px">✓ Every device up to date</div>
+    <span class="cloud"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18.5h10a4 4 0 0 0 .6-8 5.5 5.5 0 0 0-10.7 1.4A3.3 3.3 0 0 0 7 18.5z"/></svg></span>
+    <div class="phone"><div class="scr"><h5>Cashier · phone</h5><div class="srow new sp"><span>#1043</span><b>86.00</b></div><div class="srow"><span>#1042</span><b>40.00</b></div><div class="srow"><span>#1041</span><b>12.50</b></div></div></div>
+    <div class="lap"><div class="scr"><h5>Owner · laptop · today's sales</h5><div class="srow new sl"><span>#1043 · Ama</span><b>86.00</b></div><div class="srow"><span>#1042 · Ama</span><b>40.00</b></div><div class="srow"><span>#1041 · Yaw</span><b>12.50</b></div></div></div>
+    <i class="dot"></i>
+   </div></div></div>
+   <div class="vbar"><button class="vbtn" aria-label="Pause"></button><div class="vprog"><b></b></div></div>
+  </div><p class="vcap"><b>Every phone and computer in sync</b><span>A sale on the counter phone shows on the owner's laptop a second later.</span></p></div>
+ </div>
+</div></section>
+
 <section id="features"><div class="wrap">
- <h2>Everything a shop needs</h2>
- <p class="sub">Built and tested in a real shop with two branches and a warehouse.</p>
+ <h2 class="reveal">Everything a shop needs</h2>
+ <p class="sub reveal">Built and tested in a real shop with two branches and a warehouse.</p>
  <div class="feat">
-  <div class="f"><span class="qi" style="--qc:#16a34a" data-i="sell"></span><b>Fast selling</b><p>Cash, MoMo, card or credit. Split payments, discounts and receipts for 58 mm, 80 mm or A4 printers.</p></div>
-  <div class="f"><span class="qi" style="--qc:#d97706" data-i="inv"></span><b>Stock &amp; warehouse</b><p>Low-stock alerts, purchases from suppliers, and transfers from the warehouse to each branch.</p></div>
-  <div class="f"><span class="qi" style="--qc:#2563eb" data-i="staff"></span><b>Staff &amp; permissions</b><p>Owner, managers, cashiers and more. Each person logs in with their own name and password.</p></div>
-  <div class="f"><span class="qi" style="--qc:#0d9488" data-i="branch"></span><b>One or two branches</b><p>Each branch has its own sales and stock. Staff are linked to their branch automatically.</p></div>
-  <div class="f"><span class="qi" style="--qc:#4f46e5" data-i="rep"></span><b>Reports by email</b><p>Daily and monthly reports as PDF, sent automatically. See profit, expenses and who sold what.</p></div>
-  <div class="f"><span class="qi" style="--qc:#64748b" data-i="shield"></span><b>Safe online</b><p>Automatic backups every 10 minutes and a full activity trail. Nothing is lost when a phone is.</p></div>
+  <div class="f reveal"><span class="qi" style="--qc:#16a34a" data-i="sell"></span><b>Fast selling</b><p>Cash, MoMo, card or credit. Split payments, discounts and receipts for 58 mm, 80 mm or A4 printers.</p></div>
+  <div class="f reveal"><span class="qi" style="--qc:#d97706" data-i="inv"></span><b>Stock &amp; warehouse</b><p>Low-stock alerts, purchases from suppliers, and transfers from the warehouse to each branch.</p></div>
+  <div class="f reveal"><span class="qi" style="--qc:#2563eb" data-i="staff"></span><b>Staff &amp; permissions</b><p>Owner, managers, cashiers and more. Each person logs in with their own name and password.</p></div>
+  <div class="f reveal"><span class="qi" style="--qc:#0d9488" data-i="branch"></span><b>One or two branches</b><p>Start with one. Add a second branch in Settings whenever you're ready.</p></div>
+  <div class="f reveal"><span class="qi" style="--qc:#4f46e5" data-i="rep"></span><b>Reports by email</b><p>Daily and monthly reports as PDF, sent automatically. See profit, expenses and who sold what.</p></div>
+  <div class="f reveal"><span class="qi" style="--qc:#64748b" data-i="shield"></span><b>Safe online</b><p>Automatic backups every 10 minutes and a full activity trail. Nothing is lost when a phone is.</p></div>
  </div>
 </div></section>
 
 <section><div class="wrap">
- <h2>How it works</h2>
- <p class="sub">No installing. Open the link on any device.</p>
+ <h2 class="reveal">How it works</h2>
+ <p class="sub reveal">No installing. Open the link on any device.</p>
  <div class="steps">
-  <div class="step"><b>Create your shop</b><p>Type your shop name, your name and a password. You get your own shop link.</p></div>
-  <div class="step"><b>Add products and staff</b><p>Add what you sell, then give each staff member a name and starting password.</p></div>
-  <div class="step"><b>Start selling</b><p>Staff open your shop link, log in, and sell. You see everything live.</p></div>
+  <div class="step reveal"><b>Create your shop</b><p>Type your shop name, your name and a password. You get your own shop link.</p></div>
+  <div class="step reveal"><b>Add products and staff</b><p>Add what you sell, then give each staff member a name and starting password.</p></div>
+  <div class="step reveal"><b>Start selling</b><p>Staff open your shop link, log in, and sell. You see everything live.</p></div>
  </div>
 </div></section>
 
-
-
-<section id="start"><div class="wrap two">
- <div class="card">
-  <h3>Create your shop</h3>
-  <p class="sub">You'll be the owner. You can change these details later in Settings.</p>
-  <form id="su" novalidate>
-   <label>Shop name<input id="shopName" maxlength="60" autocomplete="organization" placeholder="e.g. Kofi Mart" required></label>
-   <label>Your shop link
-    <div class="linkin"><span id="hostp">site/</span><input id="slug" maxlength="40" autocapitalize="off" spellcheck="false" placeholder="kofi-mart"></div>
-    <span class="hint" id="slugh">Your staff open this link to log in.</span></label>
-   <div class="row2">
-    <label>Your full name<input id="ownerName" maxlength="60" autocomplete="name" placeholder="e.g. Kofi Mensah"></label>
-    <label>Phone <small>(optional)</small><input id="phone" maxlength="30" type="tel" autocomplete="tel" placeholder="e.g. 024 000 0000"></label>
-   </div>
-   <label>Email <small>for password reset codes and reports</small><input id="email" type="email" maxlength="120" autocomplete="email" placeholder="you@example.com"></label>
-   <label>Password <small>6+ characters with letters and numbers</small><div class="pw"><input id="password" type="password" autocomplete="new-password" maxlength="200"><button type="button" onclick="const i=$('#password');i.type=i.type=='password'?'text':'password';this.textContent=i.type=='password'?'Show':'Hide'">Show</button></div></label>
-   <div class="row2">
-    <label>Currency<select id="cur"><option>GH₵</option><option>₦</option><option>KSh</option><option>R</option><option>CFA</option><option>$</option><option>£</option><option>€</option></select></label>
-    <label>Branches<div class="seg"><label><input type="radio" name="nb" value="1" checked> One</label><label><input type="radio" name="nb" value="2"> Two</label></div></label>
-   </div>
-   <div class="row2"><label>Branch name<input id="br1" maxlength="40" placeholder="e.g. Main branch"></label><label id="br2w" hidden>Second branch<input id="br2" maxlength="40" placeholder="e.g. Accra branch"></label></div>
-   <p class="msg" id="sum" role="status" aria-live="polite"></p>
-   <button class="btn pri" id="sub" type="submit">Create my shop</button>
-   <p class="small" style="margin:0">Free for <span class="td">30</span> days. No card needed.</p>
-  </form>
- </div>
- <div class="card" id="find">
-  <h3>Already have a shop?</h3>
-  <p class="sub">Type your shop name to find your login link.</p>
-  <form id="fd" novalidate>
-   <label>Shop name<input id="fq" maxlength="60" placeholder="e.g. Kofi Mart"></label>
-   <p class="msg" id="fm" role="status" aria-live="polite"></p>
-   <button class="btn" type="submit">Find my shop</button>
-  </form>
-  <div class="found" id="fl"></div>
- </div>
-</div></section>
+<section style="padding-top:10px"><div class="wrap"><div class="band reveal"><div><h2>Ready to open your shop?</h2><p><span class="td">30</span> days free. No card needed.</p></div><div class="cta"><a class="btn" href="/register">Create your shop</a><a class="btn ghost" style="color:#fff" href="/login">I already have a shop</a></div></div></div></section>
 </main>
 
-<footer><div class="wrap"><span>© 2026 by Zoe &amp; Tessa</span><span id="fname"></span></div></footer>
+<footer><div class="wrap"><span>© 2026 by Zoe &amp; Tessa</span><span class="pname">Tessa POS</span></div></footer>
 
 <script>
-const $=s=>document.querySelector(s), P=window.PLAT||{name:'Tessa POS',trialDays:30};
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)],P=window.PLAT||{name:'Tessa POS',trialDays:30};
 const I={sell:'<circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2.5 3.5h2.6l2.3 11.2a1.6 1.6 0 0 0 1.6 1.3h8.4a1.6 1.6 0 0 0 1.6-1.2L21 7H6"/>',
  inv:'<path d="M12 2.8 20.5 7.4v9.2L12 21.2 3.5 16.6V7.4z"/><path d="m3.5 7.4 8.5 4.6 8.5-4.6M12 12v9.2M7.8 5.1l8.5 4.6"/>',
  staff:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.4c1.9.8 3 2.8 3 5.6"/>',
  branch:'<path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
  rep:'<path d="M3.5 20.5h17"/><path d="M6.5 16.5v-5M11 16.5V7M15.5 16.5v-7M20 16.5V4.5"/>',
  shield:'<path d="M12 2.8 19.5 5.6v6c0 4.6-3.2 8.3-7.5 9.6-4.3-1.3-7.5-5-7.5-9.6v-6z"/><path d="m8.8 12 2.3 2.3 4.3-4.5"/>',
- del:'<path d="M2.5 6.5h11v9.5h-11z"/><path d="M13.5 9.5h4l3 3.2V16h-7z"/><circle cx="6.5" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
  wh:'<path d="M2.5 9 12 3.5 21.5 9v11.5h-19z"/><path d="M6.5 20.5V12h11v8.5M6.5 15h11M6.5 18h11"/>',
- exp:'<rect x="2.5" y="6" width="19" height="13" rx="2.5"/><path d="M2.5 10h19"/><path d="M16 14.5h2.5"/><path d="M5 6l9.5-3 1.4 3"/>'};
-document.querySelectorAll('[data-i]').forEach(e=>e.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+(I[e.dataset.i]||'')+'</svg>');
-document.title=P.name+' · Point of sale for your shop';$('#pname').textContent=P.name;$('#fname').textContent=P.name;
-document.querySelectorAll('.td').forEach(e=>e.textContent=P.trialDays);$('#trialpill').textContent=P.trialDays+'-day free trial · no card needed';
-$('#hostp').textContent=location.host+'/';
-if(P.notFound){$('#nf').innerHTML='<div class="nf"><b>There is no shop at /'+P.notFound.replace(/[<&>"]/g,'')+'.</b> Check the link with your shop owner, or find your shop by name below.</div>';$('#fq').value=P.notFound.replace(/-/g,' ')}
-const slugify=v=>String(v||'').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40).replace(/-+$/,'');
-let slugTouched=false,slugT=null,slugOk=false;
-function hint(t,c){const h=$('#slugh');h.textContent=t;h.className='hint '+(c||'')}
-async function checkSlug(){const v=$('#slug').value;if(!v){slugOk=false;return hint('Your staff open this link to log in.')}
- try{const r=await fetch('/api/platform/slug?s='+encodeURIComponent(v));const j=await r.json();if(j.slug&&j.slug!==v&&!slugTouched)$('#slug').value=j.slug;slugOk=j.ok;hint(j.ok?'✓ '+location.host+'/'+j.slug+' is free':'✗ '+(j.why||'Not available'),j.ok?'ok':'no')}catch(e){hint('Could not check the link right now.')}}
-const later=()=>{clearTimeout(slugT);slugT=setTimeout(checkSlug,350)};
-$('#shopName').addEventListener('input',()=>{if(!slugTouched){$('#slug').value=slugify($('#shopName').value);later()}});
-$('#slug').addEventListener('input',e=>{slugTouched=true;const c=e.target.selectionStart;e.target.value=e.target.value.toLowerCase().replace(/[^a-z0-9-]/g,'');later()});
-document.querySelectorAll('input[name=nb]').forEach(r=>r.addEventListener('change',()=>{const two=$('input[name=nb]:checked').value=='2';$('#br2w').hidden=!two;$('#br1').closest('label').firstChild.textContent=two?'First branch':'Branch name'}));
-function msg(id,t,c){const m=$(id);m.textContent=t;m.className='msg '+(c||'')}
-$('#su').addEventListener('submit',async e=>{e.preventDefault();document.querySelectorAll('#su input').forEach(i=>i.classList.remove('bad'));
- const two=$('input[name=nb]:checked').value=='2',b=$('#sub');
- const body={shopName:$('#shopName').value,slug:$('#slug').value,ownerName:$('#ownerName').value,phone:$('#phone').value,email:$('#email').value,password:$('#password').value,cur:$('#cur').value,branches:two?2:1,br1:$('#br1').value,br2:$('#br2').value};
- b.disabled=true;b.innerHTML='<span class="spin"></span> Creating your shop…';msg('#sum','');
- try{const r=await fetch('/api/platform/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));
-  if(!r.ok){if(j.f&&$('#'+j.f)){$('#'+j.f).classList.add('bad');$('#'+j.f).focus()}throw new Error(j.error||'Could not create the shop ('+r.status+').')}
-  const K='shop-pos-v1:'+j.slug;try{sessionStorage.setItem(K+'-sess',JSON.stringify({t:j.token,sid:j.sid,exp:j.exp}));sessionStorage.setItem(K+'-auto',JSON.stringify({sid:j.sid,ts:Date.now()}))}catch(e){}
-  msg('#sum','✓ '+body.shopName+' is ready. Opening your shop…','ok');b.innerHTML='<span class="spin"></span> Opening your shop…';setTimeout(()=>location.href='/'+j.slug,500)}
- catch(err){b.disabled=false;b.textContent='Create my shop';msg('#sum','✗ '+(err.message==='Failed to fetch'?'Can’t reach the website. Check the internet connection.':err.message),'no')}});
-$('#fd').addEventListener('submit',async e=>{e.preventDefault();const q=$('#fq').value.trim();$('#fl').innerHTML='';if(q.length<2)return msg('#fm','Type at least 2 letters of the shop name.','no');msg('#fm','Searching…');
- try{const r=await fetch('/api/platform/find',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Could not search.');
-  if(!j.shops.length)return msg('#fm','No shop found with that name. Check the spelling, or ask your shop owner for the link.','no');
-  msg('#fm',j.shops.length==1?'Found your shop:':'Found '+j.shops.length+' shops:','ok');
-  $('#fl').innerHTML=j.shops.map(s=>'<a href="/'+s.slug+'"><span class="qi" style="--qc:#0f6e56"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 5 4h14l2 5.5"/><path d="M5 12.5V20h14v-7.5"/></svg></span><b>'+s.name.replace(/[<&>]/g,'')+'</b><small>'+location.host+'/'+s.slug+' →</small></a>').join('')}
- catch(err){msg('#fm','✗ '+err.message,'no')}});
+ shop:'<path d="M3 9.5 5 4h14l2 5.5"/><path d="M3 9.5a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12.5V20h14v-7.5"/><path d="M10 20v-5h4v5"/>',
+ drop:'<path d="M12 3s6 6.6 6 11a6 6 0 0 1-12 0c0-4.4 6-11 6-11z"/>',
+ milk:'<rect x="6" y="4" width="12" height="17" rx="2.5"/><path d="M6 9h12M6 16h12"/>',
+ soap:'<rect x="3.5" y="9" width="17" height="10" rx="4"/><circle cx="9" cy="5.5" r="1.8"/><circle cx="14.5" cy="4.5" r="1.2"/>',
+ leaf:'<path d="M5 19c0-8 5-14 15-15-1 10-7 15-15 15z"/><path d="M5 19 13 11"/>'};
+$$('[data-i]').forEach(e=>e.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+(I[e.dataset.i]||'')+'</svg>');
+$$('.pname').forEach(e=>e.textContent=P.name);$('#trialpill').textContent=P.trialDays+'-day free trial · no card needed';$$('.td').forEach(e=>e.textContent=P.trialDays);
+
+/* ---------- motion scenes: each frame is drawn from the time in the loop ---------- */
+const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const cl=(v,a=0,b=1)=>Math.min(b,Math.max(a,v)),seg=(p,a,b)=>cl((p-a)/(b-a)),ease=t=>1-Math.pow(1-t,3),inout=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2,lerp=(a,b,t)=>a+(b-a)*t;
+const PLAY='<svg viewBox="0 0 12 12"><path d="M3 1.5v9l7.5-4.5z" fill="currentColor"/></svg>',PAUSE='<svg viewBox="0 0 12 12"><path d="M2.5 1.5h2.5v9H2.5zM7 1.5h2.5v9H7z" fill="currentColor"/></svg>';
+const SCENES={
+ sell:{D:10000,init(r){r.tiles=[...r.root.querySelectorAll('.tile')];r.lines=[...r.root.querySelectorAll('.cl')];r.tot=r.root.querySelector('.tot');r.pay=r.root.querySelector('.pay');r.paid=r.root.querySelector('.paid');r.cur=r.root.querySelector('.cursor');r.last=-1},
+  draw(r,t){const taps=[[900,0,120],[2300,1,165],[3700,5,195]],payAt=5000,stage=r.stage.getBoundingClientRect(),sc=r.scale;
+   const pos=el=>{const b=el.getBoundingClientRect();return [(b.left-stage.left)/sc+b.width/sc*.55,(b.top-stage.top)/sc+b.height/sc*.6]};
+   const pts=[[470,330],...taps.map(x=>pos(r.tiles[x[1]])),pos(r.pay),[470,330]],times=[0,...taps.map(x=>x[0]),payAt,8600];
+   let k=0;while(k<times.length-2&&t>times[k+1])k++;const a=pts[k],b=pts[k+1],u=inout(seg(t,times[k]+150,times[k+1]));
+   r.cur.style.transform=`translate(${lerp(a[0],b[0],u)}px,${lerp(a[1],b[1],u)}px)`;r.cur.style.opacity=t>9400?1-seg(t,9400,9800):1;
+   let total=0;taps.forEach(([at,ti,tt],i)=>{const on=t>=at;r.tiles[ti].classList.toggle('tap',t>=at&&t<at+260);r.lines[i].classList.toggle('on',t>=at+200);if(t>=at+200)total=tt});
+   const prev=[0,120,165][taps.filter(x=>t>=x[0]+200).length-1]||0,lastAt=(taps.filter(x=>t>=x[0]+200).slice(-1)[0]||[0])[0]+200;
+   r.tot.textContent=(lerp(prev,total,ease(seg(t,lastAt,lastAt+500)))).toFixed(2);
+   r.pay.classList.toggle('tap',t>=payAt&&t<payAt+260);r.paid.classList.toggle('on',t>=payAt+250&&t<9300)}},
+ stock:{D:7000,init(r){r.boxes=[...r.root.querySelectorAll('.box')];r.wn=r.root.querySelector('.wn');r.bn=r.root.querySelector('.bn');r.chip=r.root.querySelector('.chip')},
+  draw(r,p){let arrived=0;r.boxes.forEach((b,i)=>{const s=.08+i*.14,u=seg(p,s,s+.32);if(u>=1)arrived++;const x=lerp(78,262,inout(u)),y=96-Math.sin(Math.PI*u)*34;b.style.transform=`translate(${x}px,${y}px) rotate(${u*90}deg)`;b.style.opacity=u>0&&u<1?1:0});
+   r.wn.textContent=120-arrived*6;r.bn.textContent=4+arrived*6;r.chip.classList.toggle('on',p>.8&&p<.98)}},
+ rep:{D:7000,init(r){r.bars=[...r.root.querySelectorAll('.bars i')];r.rt=r.root.querySelector('.rt');r.line=r.root.querySelector('.rp-line path');r.chip=r.root.querySelector('.chip')},
+  draw(r,p){const H=[38,58,46,72,60,86,96];r.bars.forEach((b,i)=>{const s=.04+i*.06;b.style.height=H[i]*ease(seg(p,s,s+.25))+'%';b.style.opacity=p>.96?1-seg(p,.96,1):1});
+   r.rt.textContent=Math.round(18450*ease(seg(p,.04,.6))).toLocaleString('en-US');r.line.style.strokeDashoffset=400*(1-inout(seg(p,.35,.75)));r.chip.classList.toggle('on',p>.78&&p<.97)}},
+ sync:{D:6500,init(r){r.sp=r.root.querySelector('.sp');r.sl=r.root.querySelector('.sl');r.dot=r.root.querySelector('.dot');r.chip=r.root.querySelector('.chip')},
+  draw(r,p){r.sp.classList.toggle('on',p>.08);r.sp.classList.toggle('hl',p>.08&&p<.3);const u=seg(p,.22,.56),x=lerp(80,255,inout(u)),y=60-Math.sin(Math.PI*u)*40;
+   r.dot.style.transform=`translate(${x}px,${y}px)`;r.dot.style.opacity=u>0&&u<1?1:0;r.sl.classList.toggle('on',p>.56);r.sl.classList.toggle('hl',p>.56&&p<.85);r.chip.classList.toggle('on',p>.6&&p<.95);if(p<.02){r.sp.classList.remove('on');r.sl.classList.remove('on')}}}};
+const runs=$$('.vid').map(v=>{const S=SCENES[v.dataset.scene],stage=v.querySelector('.stage'),inn=v.querySelector('.vid-in'),btn=v.querySelector('.vbtn'),bar=v.querySelector('.vprog b');
+ const r={root:v,stage,S,t:0,playing:!RM,visible:false,scale:1};S.init(r);
+ const fit=()=>{const w=+stage.dataset.w,h=+stage.dataset.h;r.scale=inn.clientWidth/w;stage.style.transform=`scale(${r.scale})`;inn.style.height=h*r.scale+'px';stage.style.width=w+'px';stage.style.height=h+'px'};
+ fit();addEventListener('resize',fit);
+ const setBtn=()=>{btn.innerHTML=r.playing?PAUSE:PLAY;btn.setAttribute('aria-label',r.playing?'Pause':'Play')};setBtn();
+ btn.onclick=()=>{r.playing=!r.playing;setBtn()};
+ new IntersectionObserver(e=>{r.visible=e[0].isIntersecting},{threshold:.2}).observe(v);
+ r.frame=dt=>{if(r.playing&&r.visible)r.t=(r.t+dt)%S.D;const p=r.t/S.D;S.draw(r,v.dataset.scene=='sell'?r.t:p);bar.style.width=p*100+'%'};
+ if(RM){r.t=S.D*.9}return r});
+let last=performance.now();(function loop(now){const dt=Math.min(64,now-last);last=now;runs.forEach(r=>r.frame(dt));requestAnimationFrame(loop)})(last);
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.12});$$('.reveal').forEach(e=>io.observe(e));
 </script>
 </body>
 </html>

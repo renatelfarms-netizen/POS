@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Create your shop · Tessa POS</title>
+<meta name="theme-color" content="#0f6e56">
+<link rel="icon" href="/icon-192.png">
+<link rel="stylesheet" href="/assets/site.css">
+<!--PLAT-->
+</head>
+<body>
+<header><div class="wrap">
+ <a class="logo" href="/"><i><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 5 4h14l2 5.5"/><path d="M3 9.5a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12.5V20h14v-7.5"/><path d="M10 20v-5h4v5"/></svg></i><span class="pname">Tessa POS</span></a>
+ <nav><a class="btn ghost" href="/">Home</a><a class="btn" href="/login">Log in</a></nav>
+</div></header>
+<main class="auth">
+ <div class="auth-side">
+  <i class="orb" style="width:260px;height:260px;right:-80px;top:-60px"></i><i class="orb" style="width:160px;height:160px;left:-50px;bottom:40px;animation-delay:-4s"></i>
+  <h2>Open your shop in two minutes</h2>
+  <p><span class="td">30</span> days free with every feature. No card needed.</p>
+  <ul><li><span>✓</span>Your own shop link for your staff</li><li><span>✓</span>Selling, receipts, stock and warehouse</li><li><span>✓</span>Staff, branches and reports, set up inside your shop</li><li><span>✓</span>Saved online, backed up every 10 minutes</li></ul>
+ </div>
+ <div class="auth-main"><div class="card">
+  <h1>Create your shop</h1>
+  <p class="sub">You'll be the owner. You can change these details later in Settings.</p>
+  <form id="su" novalidate>
+   <label>Shop name<input id="shopName" maxlength="60" autocomplete="organization" placeholder="e.g. Kofi Mart" autofocus></label>
+   <label>Your shop link
+    <div class="linkin"><span id="hostp">site/</span><input id="slug" maxlength="40" autocapitalize="off" spellcheck="false" placeholder="kofi-mart"></div>
+    <span class="hint" id="slugh">Your staff open this link to log in.</span></label>
+   <div class="row2">
+    <label>Your full name<input id="ownerName" maxlength="60" autocomplete="name" placeholder="e.g. Kofi Mensah"></label>
+    <label>Phone <small>(optional)</small><input id="phone" maxlength="30" type="tel" autocomplete="tel" placeholder="e.g. 024 000 0000"></label>
+   </div>
+   <label>Email <small>for password reset codes and reports</small><input id="email" type="email" maxlength="120" autocomplete="email" placeholder="you@example.com"></label>
+   <label>Password <small>6+ characters with letters and numbers</small><div class="pw"><input id="password" type="password" autocomplete="new-password" maxlength="200"><button type="button" id="pwb">Show</button></div></label>
+   <label>Currency<select id="cur"><option>GH₵</option><option>₦</option><option>KSh</option><option>R</option><option>CFA</option><option>$</option><option>£</option><option>€</option></select></label>
+   <p class="msg" id="sum" role="status" aria-live="polite"></p>
+   <button class="btn pri" id="sub" type="submit">Create my shop</button>
+   <p class="small" style="margin:0;text-align:center">Free for <span class="td">30</span> days. Add branches, staff and products inside your shop.</p>
+  </form>
+  <p class="alt">Already have a shop? <a href="/login">Log in</a></p>
+ </div></div>
+</main>
+<footer><div class="wrap"><span>© 2026 by Zoe &amp; Tessa</span><span class="pname">Tessa POS</span></div></footer>
+<script>
+const $=s=>document.querySelector(s),P=window.PLAT||{name:'Tessa POS',trialDays:30};
+document.querySelectorAll('.pname').forEach(e=>e.textContent=P.name);document.querySelectorAll('.td').forEach(e=>e.textContent=P.trialDays);document.title='Create your shop · '+P.name;
+$('#hostp').textContent=location.host+'/';
+$('#pwb').onclick=()=>{const i=$('#password');i.type=i.type=='password'?'text':'password';$('#pwb').textContent=i.type=='password'?'Show':'Hide'};
+const slugify=v=>String(v||'').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40).replace(/-+$/,'');
+let touched=false,T=null;
+function hint(t,c){const h=$('#slugh');h.textContent=t;h.className='hint '+(c||'')}
+async function check(){const v=$('#slug').value;if(!v)return hint('Your staff open this link to log in.');
+ try{const r=await fetch('/api/platform/slug?s='+encodeURIComponent(v));const j=await r.json();if(j.slug&&j.slug!==v&&!touched)$('#slug').value=j.slug;hint(j.ok?'✓ '+location.host+'/'+j.slug+' is free':'✗ '+(j.why||'Not available'),j.ok?'ok':'no')}catch(e){hint('Could not check the link right now.')}}
+const later=()=>{clearTimeout(T);T=setTimeout(check,350)};
+$('#shopName').addEventListener('input',()=>{if(!touched){$('#slug').value=slugify($('#shopName').value);later()}});
+$('#slug').addEventListener('input',e=>{touched=true;e.target.value=e.target.value.toLowerCase().replace(/[^a-z0-9-]/g,'');later()});
+function msg(t,c){const m=$('#sum');m.textContent=t;m.className='msg '+(c||'')}
+$('#su').addEventListener('submit',async e=>{e.preventDefault();document.querySelectorAll('#su input').forEach(i=>i.classList.remove('bad'));const b=$('#sub');
+ const body={shopName:$('#shopName').value,slug:$('#slug').value,ownerName:$('#ownerName').value,phone:$('#phone').value,email:$('#email').value,password:$('#password').value,cur:$('#cur').value};
+ b.disabled=true;b.innerHTML='<span class="spin"></span> Creating your shop…';msg('');
+ try{const r=await fetch('/api/platform/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));
+  if(!r.ok){if(j.f&&$('#'+j.f)){$('#'+j.f).classList.add('bad');$('#'+j.f).focus()}throw new Error(j.error||'Could not create the shop ('+r.status+').')}
+  const K='shop-pos-v1:'+j.slug;try{sessionStorage.setItem(K+'-sess',JSON.stringify({t:j.token,sid:j.sid,exp:j.exp}));sessionStorage.setItem(K+'-auto',JSON.stringify({sid:j.sid,ts:Date.now()}))}catch(e){}
+  msg('✓ '+body.shopName+' is ready. Opening your shop…','ok');b.innerHTML='<span class="spin"></span> Opening your shop…';setTimeout(()=>location.href='/'+j.slug,500)}
+ catch(err){b.disabled=false;b.textContent='Create my shop';msg('✗ '+(err.message==='Failed to fetch'?'Can’t reach the website. Check the internet connection.':err.message),'no')}});
+</script>
+</body>
+</html>

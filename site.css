@@ -1,0 +1,59 @@
+/* Shared look for the Tessa POS main, login and register pages */
+:root{--ac:#0f6e56;--ac2:#14a37f;--tx:#14201b;--mut:#5d6b65;--bd:#e3e7e4;--bg:#f6f5f1;--card:#fff;--bad:#c2410c;--r:16px}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--tx);background:var(--bg)}
+a{color:var(--ac)}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--bd)}
+header .wrap{display:flex;align-items:center;gap:14px;height:64px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:750;font-size:1.1rem;color:var(--tx);text-decoration:none}
+.logo i{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--ac);color:#fff;font-style:normal}
+header nav{margin-left:auto;display:flex;gap:6px;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 18px;border-radius:12px;border:1px solid var(--bd);background:var(--card);color:var(--tx);font:inherit;font-weight:600;cursor:pointer;text-decoration:none;transition:transform .15s,box-shadow .15s,background .15s}
+.btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px -10px rgba(0,0,0,.35)}
+.btn.pri{background:var(--ac);border-color:var(--ac);color:#fff}.btn.pri:hover{background:#0c5a46}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn:disabled{opacity:.6;cursor:wait;transform:none}
+.qi{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;color:var(--qc);background:color-mix(in srgb,var(--qc) 13%,transparent);flex:0 0 auto}
+.qi svg{width:22px;height:22px}
+.small{font-size:.88rem;color:var(--mut)}
+footer{border-top:1px solid var(--bd);padding:26px 0 40px;color:var(--mut);font-size:.9rem}
+footer .wrap{display:flex;gap:12px;flex-wrap:wrap;justify-content:space-between}
+.spin{width:18px;height:18px;border-radius:50%;border:2.5px solid rgba(255,255,255,.4);border-top-color:#fff;animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+/* forms (login and register) */
+.auth{min-height:calc(100vh - 64px);display:grid;grid-template-columns:1fr 1fr;}
+.auth-side{background:linear-gradient(150deg,#0f6e56,#0b4f3e);color:#fff;padding:56px 48px;display:flex;flex-direction:column;justify-content:center;position:relative;overflow:hidden}
+.auth-side h2{font-size:clamp(1.6rem,3vw,2.3rem);line-height:1.15;margin:0 0 12px}.auth-side p{opacity:.85;margin:0 0 22px;max-width:440px}
+.auth-side ul{list-style:none;padding:0;margin:0;display:grid;gap:12px}.auth-side li{display:flex;gap:10px;align-items:center}
+.auth-side li span{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.16);font-size:.8rem}
+.auth-side .orb{position:absolute;border-radius:50%;background:rgba(255,255,255,.07);animation:float 9s ease-in-out infinite}
+@keyframes float{50%{transform:translateY(-24px) scale(1.05)}}
+.auth-main{display:flex;align-items:center;justify-content:center;padding:40px 20px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:20px;padding:30px;width:100%;max-width:480px;box-shadow:0 24px 50px -32px rgba(15,110,86,.4)}
+.card h1{margin:0 0 4px;font-size:1.6rem}.card .sub{color:var(--mut);margin:0 0 20px}
+form{display:grid;gap:14px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+label{display:grid;gap:6px;font-weight:600;font-size:.92rem}
+label small{font-weight:400;color:var(--mut)}
+input,select{width:100%;padding:12px 13px;border:1px solid var(--bd);border-radius:11px;font:inherit;background:#fff;color:var(--tx)}
+input:focus,select:focus{outline:2px solid color-mix(in srgb,var(--ac) 40%,transparent);border-color:var(--ac)}
+input.bad{border-color:var(--bad)}
+.linkin{display:flex;align-items:center;border:1px solid var(--bd);border-radius:11px;background:#fff;overflow:hidden}
+.linkin span{padding:0 4px 0 13px;color:var(--mut);white-space:nowrap;font-weight:400;max-width:55%;overflow:hidden;text-overflow:ellipsis}
+.linkin input{border:0;padding-left:2px}.linkin:focus-within{outline:2px solid color-mix(in srgb,var(--ac) 40%,transparent);border-color:var(--ac)}
+.hint{font-weight:400;font-size:.85rem;color:var(--mut);min-height:1.2em}.hint.ok{color:var(--ac)}.hint.no{color:var(--bad)}
+.pw{position:relative}.pw button{position:absolute;right:8px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--mut);cursor:pointer;font:inherit;font-size:.85rem}
+.msg{min-height:1.3em;margin:0;font-size:.95rem}.msg.no{color:var(--bad)}.msg.ok{color:var(--ac)}
+.alt{text-align:center;margin:18px 0 0;color:var(--mut);font-size:.95rem}
+.found{display:grid;gap:8px;margin-top:14px}
+.found a{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--bd);border-radius:12px;text-decoration:none;color:var(--tx);background:#fff;transition:border-color .15s,transform .15s}
+.found a:hover{border-color:var(--ac);transform:translateY(-1px)}.found a small{color:var(--mut);margin-left:auto}
+.nf{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:14px;padding:12px 16px;margin-bottom:16px;font-size:.95rem}
+.recent{margin-top:14px}
+@media (max-width:900px){.auth{grid-template-columns:1fr}.auth-side{padding:36px 24px}.auth-side ul{display:none}}
+@media (max-width:600px){.row2{grid-template-columns:1fr}header nav .ghost{display:none}.card{padding:22px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.logo span,.btn{white-space:nowrap}
+@media (max-width:600px){header .wrap{gap:8px}header nav{gap:4px}header .btn{padding:8px 12px;font-size:.9rem;border-radius:10px}.logo i{width:30px;height:30px}}
+@media (max-width:360px){.logo span{display:none}}

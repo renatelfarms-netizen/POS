@@ -25,7 +25,7 @@ const PLATFORM = process.env.PLATFORM_NAME || 'Tessa POS';
 const SITE = process.env.PLATFORM_HOST || 'the website';
 const TRIAL_DAYS = +process.env.TRIAL_DAYS || 30;
 
-const PAGE = path.join(__dirname, 'index.html'), LANDING = path.join(__dirname, 'landing.html'), ADMIN = path.join(__dirname, 'admin.html');
+const PAGE = path.join(__dirname, 'index.html'), LANDING = path.join(__dirname, 'landing.html'), ADMIN = path.join(__dirname, 'admin.html'), LOGIN = path.join(__dirname, 'login.html'), REGISTER = path.join(__dirname, 'register.html'), CSS = path.join(__dirname, 'site.css');
 const PORT = process.env.PORT || 3000;
 const BACKUP_DIR = process.env.BACKUP_DIR || path.join(os.homedir(), 'shop-backups');
 const MAX_BODY = 25 * 1024 * 1024;
@@ -672,7 +672,8 @@ function html(res, req, body, code) {
   res.end(req.method === 'HEAD' ? undefined : body);
 }
 const platInfo = (extra) => '<script>window.PLAT=' + jsonScript(Object.assign({ name: PLATFORM, trialDays: TRIAL_DAYS, price: process.env.PRICE || '' }, extra || {})) + '</script>';
-function landing(req, res, extra, code) { return html(res, req, file(LANDING).replace('<!--PLAT-->', platInfo(extra)), code); }
+function landing(req, res, extra, code, f) { return html(res, req, file(f || LANDING).replace('<!--PLAT-->', platInfo(extra)), code); }
+const notFound = (req, res, slug) => landing(req, res, { notFound: String(slug).slice(0, 40) }, 404, LOGIN);
 function shopPage(req, res, rec) {
   const info = { slug: rec.slug, name: rec.name, plan: planState(rec), trialEnds: rec.trial_ends, paidUntil: rec.paid_until, platform: PLATFORM };
   const b = file(PAGE).replace('<head>', '<head><script>window.SHOP=' + jsonScript(info) + '</script>')
@@ -697,11 +698,14 @@ http.createServer(async (req, res) => {
     const parts = url.split('/').filter(Boolean);
     if (!parts.length) return (req.method === 'GET' || req.method === 'HEAD') ? landing(req, res) : send(res, 405, { error: 'Not allowed.' });
     if (parts[0] === 'admin' && parts.length === 1) return html(res, req, file(ADMIN).replace('<!--PLAT-->', platInfo()));
+    if (parts.length === 1 && parts[0] === 'login') return landing(req, res, null, 200, LOGIN);
+    if (parts.length === 1 && (parts[0] === 'register' || parts[0] === 'signup')) return landing(req, res, null, 200, REGISTER);
+    if (url === '/assets/site.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=300' }); return res.end(file(CSS)); }
     const slug = parts[0].toLowerCase();
-    if (!slugOK(slug)) return parts[0] === 'api' ? send(res, 404, { error: 'Open your shop link first, e.g. /your-shop.' }) : landing(req, res, { notFound: parts[0].slice(0, 40) }, 404);
+    if (!slugOK(slug)) return parts[0] === 'api' ? send(res, 404, { error: 'Open your shop link first, e.g. /your-shop.' }) : notFound(req, res, parts[0]);
     if (!sbOn()) return send(res, 503, { error: 'The database is not set up on the server yet.' });
     let rec; try { rec = await shopBySlug(slug); } catch (e) { console.error('shop lookup', e.message); return send(res, 502, { error: 'Could not reach the database. Try again in a moment.' }); }
-    if (!rec) return parts[1] === 'api' ? send(res, 404, { error: 'This shop does not exist.' }) : landing(req, res, { notFound: slug }, 404);
+    if (!rec) return parts[1] === 'api' ? send(res, 404, { error: 'This shop does not exist.' }) : notFound(req, res, slug);
     if (parts[0] !== slug) { res.writeHead(301, { Location: '/' + slug + url.slice(slug.length + 1) }); return res.end(); }
     const rest = '/' + parts.slice(1).join('/');
     if (rest.startsWith('/api/')) return await ctx.run({ shop: rec }, () => api(req, res, rest));

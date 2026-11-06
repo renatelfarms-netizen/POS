@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Log in · Tessa POS</title>
+<meta name="theme-color" content="#0f6e56">
+<link rel="icon" href="/icon-192.png">
+<link rel="stylesheet" href="/assets/site.css">
+<!--PLAT-->
+</head>
+<body>
+<header><div class="wrap">
+ <a class="logo" href="/"><i><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 5 4h14l2 5.5"/><path d="M3 9.5a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12.5V20h14v-7.5"/><path d="M10 20v-5h4v5"/></svg></i><span class="pname">Tessa POS</span></a>
+ <nav><a class="btn ghost" href="/">Home</a><a class="btn pri" href="/register">Create a shop</a></nav>
+</div></header>
+<main class="auth">
+ <div class="auth-side">
+  <i class="orb" style="width:260px;height:260px;right:-80px;top:-60px"></i><i class="orb" style="width:160px;height:160px;left:-50px;bottom:40px;animation-delay:-4s"></i>
+  <h2>Welcome back</h2>
+  <p>Find your shop, then log in with your name and password, the same as at the counter.</p>
+  <ul><li><span>1</span>Type your shop name</li><li><span>2</span>Open your shop</li><li><span>3</span>Log in with your name and password</li></ul>
+ </div>
+ <div class="auth-main"><div class="card">
+  <div id="nf"></div>
+  <h1>Log in to your shop</h1>
+  <p class="sub">Every shop has its own login page. Find yours here.</p>
+  <div id="recent" class="recent" hidden><b style="font-size:.92rem">Shops opened on this device</b><div class="found" id="rl"></div><p class="small" style="margin:14px 0 0">Or find another shop:</p></div>
+  <form id="fd" novalidate style="margin-top:10px">
+   <label>Shop name or link<input id="fq" maxlength="60" placeholder="e.g. Kofi Mart" autocomplete="organization" autofocus></label>
+   <p class="msg" id="fm" role="status" aria-live="polite"></p>
+   <button class="btn pri" id="fb" type="submit">Find my shop</button>
+  </form>
+  <div class="found" id="fl"></div>
+  <p class="alt">New to <span class="pname">Tessa POS</span>? <a href="/register">Create your shop</a></p>
+ </div></div>
+</main>
+<footer><div class="wrap"><span>© 2026 by Zoe &amp; Tessa</span><span class="pname">Tessa POS</span></div></footer>
+<script>
+const $=s=>document.querySelector(s),P=window.PLAT||{name:'Tessa POS'},esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+document.querySelectorAll('.pname').forEach(e=>e.textContent=P.name);document.title='Log in · '+P.name;
+const ICON='<span class="qi" style="--qc:#0f6e56"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 5 4h14l2 5.5"/><path d="M3 9.5a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12.5V20h14v-7.5"/><path d="M10 20v-5h4v5"/></svg></span>';
+const link=s=>'<a href="/'+esc(s.slug)+'">'+ICON+'<b>'+esc(s.name)+'</b><small>'+esc(location.host)+'/'+esc(s.slug)+' →</small></a>';
+let rec=[];try{rec=JSON.parse(localStorage.getItem('tessa-recent')||'[]').filter(x=>x&&x.slug)}catch(e){}
+if(rec.length){$('#recent').hidden=false;$('#rl').innerHTML=rec.slice(0,5).map(link).join('')}
+if(P.notFound){$('#nf').innerHTML='<div class="nf"><b>There is no shop at /'+esc(P.notFound)+'.</b> Check the link with your shop owner, or find your shop by name below.</div>';$('#fq').value=P.notFound.replace(/-/g,' ')}
+function msg(t,c){const m=$('#fm');m.textContent=t;m.className='msg '+(c||'')}
+$('#fd').addEventListener('submit',async e=>{e.preventDefault();let q=$('#fq').value.trim();q=q.replace(/^https?:\/\/[^/]+\//,'').replace(/^\/+|\/+$/g,'');$('#fl').innerHTML='';
+ if(q.length<2)return msg('Type at least 2 letters of the shop name.','no');const b=$('#fb');b.disabled=true;b.innerHTML='<span class="spin"></span> Searching…';msg('');
+ try{const r=await fetch('/api/platform/find',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Could not search.');
+  if(!j.shops.length)msg('No shop found with that name. Check the spelling, or ask your shop owner for the link.','no');
+  else{msg(j.shops.length==1?'Found your shop. Tap it to log in:':'Found '+j.shops.length+' shops. Tap yours to log in:','ok');$('#fl').innerHTML=j.shops.map(link).join('')}}
+ catch(err){msg('✗ '+(err.message==='Failed to fetch'?'Can’t reach the website. Check the internet connection.':err.message),'no')}
+ b.disabled=false;b.textContent='Find my shop'});
+</script>
+</body>
+</html>
