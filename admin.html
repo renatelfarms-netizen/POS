@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Admin</title>
+<link rel="icon" href="/icon-192.png">
+<!--PLAT-->
+<style>
+:root{--ac:#0f6e56;--tx:#14201b;--mut:#5d6b65;--bd:#e3e7e4;--bg:#f6f5f1;--card:#fff;--bad:#c2410c}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--tx);background:var(--bg)}
+.wrap{max-width:1180px;margin:0 auto;padding:24px 18px 60px}
+h1{font-size:1.5rem;margin:0}.top{display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap}.top .sp{margin-left:auto}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 13px;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--tx);font:inherit;font-weight:600;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--ac)}.btn.pri{background:var(--ac);color:#fff;border-color:var(--ac)}.btn.bad{color:var(--bad)}.btn.sm{padding:5px 9px;font-size:.85rem}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:18px}
+.login{max-width:380px;margin:12vh auto}.login input{width:100%;padding:12px;border:1px solid var(--bd);border-radius:10px;font:inherit;margin:12px 0}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}.stats .card{padding:14px}.stats small{color:var(--mut);display:block}.stats b{font-size:1.5rem}
+.tools{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap}.tools input,.tools select{padding:9px 12px;border:1px solid var(--bd);border-radius:10px;font:inherit;background:#fff}.tools input{flex:1;min-width:200px}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px 10px;border-bottom:1px solid var(--bd);vertical-align:top}th{font-size:.8rem;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+td small{display:block;color:var(--mut)}td a{color:var(--ac);font-weight:600;text-decoration:none}
+.pill{display:inline-block;padding:3px 9px;border-radius:99px;font-size:.8rem;font-weight:650}
+.p-trial{background:#e0f2fe;color:#075985}.p-paid{background:#dcfce7;color:#166534}.p-expired{background:#fef3c7;color:#92400e}.p-suspended{background:#fee2e2;color:#991b1b}
+.acts{display:flex;gap:6px;flex-wrap:wrap}
+.msg{min-height:1.3em;color:var(--bad);margin:0}.empty{color:var(--mut);text-align:center;padding:30px}
+@media (max-width:800px){.stats{grid-template-columns:repeat(2,1fr)}table,tbody,tr,td{display:block}thead{display:none}tr{border:1px solid var(--bd);border-radius:12px;margin-bottom:10px;padding:6px}td{border:0;padding:6px 8px}}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<script>
+const $=s=>document.querySelector(s),P=window.PLAT||{name:'Platform'},esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let tok=sessionStorage.getItem('mt-admin')||'',shops=[],q='',f='all';
+const fd=t=>t?new Date(t).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'—';
+const left=t=>{const d=Math.ceil((Date.parse(t)-Date.now())/864e5);return d>0?d+' day'+(d==1?'':'s')+' left':'ended '+(-d)+' day'+(d==-1?'':'s')+' ago'};
+const LBL={trial:'Free trial',paid:'Paid',expired:'Trial ended',suspended:'Paused'};
+async function api(p,body){const r=await fetch('/api/platform/admin/'+p,{method:body?'POST':'GET',headers:Object.assign({Authorization:'Bearer '+tok},body?{'Content-Type':'application/json'}:{}),body:body?JSON.stringify(body):undefined});const j=await r.json().catch(()=>({}));if(r.status==401){tok='';sessionStorage.removeItem('mt-admin');login();throw new Error(j.error)}if(!r.ok)throw new Error(j.error||'Error '+r.status);return j}
+function login(m){document.title=P.name+' · Admin';$('#app').innerHTML=`<div class="card login"><h1>${esc(P.name)} admin</h1><p style="color:var(--mut);margin:4px 0 0">Every shop on the platform: trials, payments and pauses.</p><form onsubmit="event.preventDefault();doLogin()"><input id="pw" type="password" placeholder="Admin password" autocomplete="current-password" autofocus><p class="msg" id="lm">${esc(m||'')}</p><button class="btn pri" style="width:100%;justify-content:center">Log in</button></form></div>`}
+async function doLogin(){try{const r=await fetch('/api/platform/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('#pw').value})});const j=await r.json();if(!r.ok)throw new Error(j.error);tok=j.token;sessionStorage.setItem('mt-admin',tok);load()}catch(e){$('#lm').textContent=e.message}}
+async function load(){try{const j=await api('shops');shops=j.shops;draw()}catch(e){if(tok)$('#app').innerHTML='<p class="msg">'+esc(e.message)+'</p>'}}
+function draw(){const n=k=>shops.filter(s=>s.plan==k).length,v=q.toLowerCase();
+ const L=shops.filter(s=>(f=='all'||s.plan==f)&&(!v||[s.name,s.slug,s.owner,s.email,s.phone].join(' ').toLowerCase().includes(v)));
+ $('#app').innerHTML=`<div class="top"><h1>${esc(P.name)} · Shops</h1><span class="sp"></span><button class="btn" onclick="load()">Refresh</button><button class="btn" onclick="tok='';sessionStorage.removeItem('mt-admin');login()">Log out</button></div>
+ <div class="stats"><div class="card"><small>All shops</small><b>${shops.length}</b></div><div class="card"><small>On free trial</small><b>${n('trial')}</b></div><div class="card"><small>Paid</small><b>${n('paid')}</b></div><div class="card"><small>Trial ended</small><b>${n('expired')}</b></div><div class="card"><small>Paused</small><b>${n('suspended')}</b></div></div>
+ <div class="tools"><input placeholder="Search shop, owner, email or phone" value="${esc(q)}" oninput="q=this.value;draw();const i=document.querySelector('.tools input');i.focus();i.setSelectionRange(q.length,q.length)"><select onchange="f=this.value;draw()">${[['all','All'],['trial','Free trial'],['paid','Paid'],['expired','Trial ended'],['suspended','Paused']].map(([k,l])=>`<option value="${k}" ${f==k?'selected':''}>${l}</option>`).join('')}</select></div>
+ <div class="card" style="padding:4px 8px"><table><thead><tr><th>Shop</th><th>Owner</th><th>Status</th><th>Started</th><th>Actions</th></tr></thead><tbody>${L.map(row).join('')||'<tr><td colspan="5" class="empty">No shops yet.</td></tr>'}</tbody></table></div>`}
+function row(s){const until=s.plan=='paid'?'Paid until '+fd(s.paidUntil):s.plan=='suspended'?'':'Trial '+left(s.trialEnds);
+ return `<tr><td><a href="/${esc(s.slug)}" target="_blank">${esc(s.name)}</a><small>/${esc(s.slug)}</small>${s.note?`<small>📝 ${esc(s.note)}</small>`:''}</td>
+ <td>${esc(s.owner)}<small>${esc(s.email)}</small><small>${esc(s.phone||'')}</small></td>
+ <td><span class="pill p-${s.plan}">${LBL[s.plan]}</span><small>${until}</small></td><td>${fd(s.created)}</td>
+ <td><div class="acts"><button class="btn sm" onclick="act('${s.id}','paid',1)">+1 month paid</button><button class="btn sm" onclick="act('${s.id}','trial',7)">+7 days trial</button>${s.plan=='suspended'?`<button class="btn sm" onclick="act('${s.id}','activate')">Open again</button>`:`<button class="btn sm bad" onclick="if(confirm('Pause ${esc(s.name).replace(/'/g,'')}? Nobody can log in until you open it again. Data is kept.'))act('${s.id}','suspend')">Pause</button>`}<button class="btn sm" onclick="note('${s.id}')">Note</button></div></td></tr>`}
+async function act(id,a,n){try{const j=await api('shop',{id,act:a,n});shops=shops.map(s=>s.id==id?j.shop:s);draw()}catch(e){alert(e.message)}}
+async function note(id){const s=shops.find(x=>x.id==id),v=prompt('Note for '+s.name+' (only you see it):',s.note||'');if(v!==null){const j=await api('shop',{id,act:'note',note:v});shops=shops.map(x=>x.id==id?j.shop:x);draw()}}
+tok?load():login();
+</script>
+</body>
+</html>
