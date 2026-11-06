@@ -155,7 +155,7 @@ function sbSave(dev, name, raw, digest, cnt) {
 }
 
 // Collections the shop page stores (same list as COLS in index.html).
-const DB_COLS = new Set(['shop', 'devices', 'products', 'customers', 'sales', 'expenses', 'deliveries', 'pos', 'moves', 'log', 'whMoves', 'transfers', 'trReq', 'whItems', 'whPos',
+const DB_COLS = new Set(['shop', 'devices', 'mailed', 'products', 'customers', 'sales', 'expenses', 'deliveries', 'pos', 'moves', 'log', 'whMoves', 'transfers', 'trReq', 'whItems', 'whPos',
   'accra_products', 'accra_customers', 'accra_sales', 'accra_expenses', 'accra_deliveries', 'accra_pos', 'accra_moves']);
 
 // ---- online backups of the shared shop, made by the server ----
@@ -302,10 +302,79 @@ async function resetPw(req, res) {
   if (!shop.set || !shop.set.rc) return send(res, 400, { error: 'This shop has no recovery code yet. Ask the owner.' });
   if (!code || !(await pwOK('rc:' + code, shop.set.rc))) { console.log('reset failed: wrong recovery code for ' + s.name); failed(ip, 5); return send(res, 401, { error: 'That recovery code is not right.' }); }
   const rule = pwRule(pw, shop.set); if (rule) return send(res, 400, { error: rule });
-  const main = JSON.parse(JSON.stringify(shop)), t = main.staff.find((x) => x.id === s.id);
-  t.pin = await mkHash(pw); t.fails = 0; t.nextTry = 0; t.locked = false; t.mustChange = false;
-  await sbCall('shop_db_put', { p_col: 'shop', p_id: 'main', p_data: main }); shopCache.at = 0;
+  await setPin(shop, s.id, pw);
   console.log('password reset with the recovery code: ' + s.name);
+  return send(res, 200, { ok: true, token: makeToken(s.id, cleanDev(msg.dev)), sid: s.id, name: s.name, exp: Date.now() + SESSION_DAYS * 864e5 });
+}
+// ---- email from the shop's own mailbox (shop@renatel.shop) through the Hostinger Mail API ----
+// The API key and mailbox id are kept privately in Supabase (site_secrets), read with the server token.
+let mailCache = { at: 0, cfg: null };
+async function mailCfg() {
+  if (mailCache.cfg && Date.now() - mailCache.at < 300000) return mailCache.cfg;
+  const get = (n) => sbCall('site_secret_get', { p_name: n });
+  const [token, box, from] = await Promise.all([get('mail_api_token'), get('mail_mailbox_id'), get('mail_from')]);
+  mailCache = { at: Date.now(), cfg: token && box ? { token, box, from: from || '' } : null };
+  return mailCache.cfg;
+}
+const emailOK = (e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(e || ''));
+const maskEmail = (e) => { const [u, d] = String(e).split('@'); return (u || '').slice(0, 2) + '•••@' + (d || ''); };
+async function sendEmail({ to, subject, text, html, attachments }) {
+  const cfg = await mailCfg();
+  if (!cfg) throw new Error('The shop email is not set up.');
+  let shopName = 'Renatel Shop'; try { const sh = await shopMain(false); if (sh && sh.set && sh.set.name) shopName = sh.set.name; } catch (e) {}
+  const body = { to, subject: String(subject || '').slice(0, 200), displayName: shopName };
+  if (text) body.text = text; if (html) body.html = html;
+  if (attachments && attachments.length) body.attachments = attachments.map((a) => ({ filename: String(a.filename || 'file').slice(0, 120), content: a.content, contentType: a.contentType || a.mimeType || 'application/octet-stream' }));
+  const r = await fetch((process.env.MAIL_API_BASE || 'https://api.mail.hostinger.com') + '/api/v1/mailboxes/' + encodeURIComponent(cfg.box) + '/send', {
+    method: 'POST', headers: { Authorization: 'Bearer ' + cfg.token, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(60000)
+  });
+  const t = await r.text();
+  if (!r.ok) { console.error('mail send ' + r.status + ': ' + t.slice(0, 300)); throw new Error('The email could not be sent (' + r.status + ').'); }
+  console.log('email sent: "' + body.subject + '" to ' + to.map(maskEmail).join(', '));
+  return true;
+}
+const mailCount = new Map(); // staff id -> {n, since}
+function mailAllowed(key) { const m = mailCount.get(key) || { n: 0, since: Date.now() }; if (Date.now() - m.since > 3600e3) { m.n = 0; m.since = Date.now(); } m.n++; mailCount.set(key, m); return m.n <= 40; }
+async function setPin(shop, sid, pw) {
+  const main = JSON.parse(JSON.stringify(shop)), t = main.staff.find((x) => x.id === sid);
+  t.pin = await mkHash(pw); t.fails = 0; t.nextTry = 0; t.locked = false; t.mustChange = false; delete t.rst;
+  await sbCall('shop_db_put', { p_col: 'shop', p_id: 'main', p_data: main }); shopCache.at = 0;
+}
+// Forgot password by email: a 6-digit code is emailed to the address saved on the staff record.
+const resetCodes = new Map(); // staff id -> {h, exp, tries}
+async function resetCode(req, res) {
+  if (!sbOn()) return send(res, 503, { error: 'The shop database is not set up on the server yet.' });
+  const ip = 'em:' + clientIp(req), wait = tooMany(ip);
+  if (wait) return send(res, 429, { error: 'Too many tries. Wait ' + wait + ' minutes, then try again.' });
+  let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+  let shop; try { shop = await shopMain(true); } catch (e) { return send(res, 502, { error: 'Could not reach the shop database. Try again in a moment.' }); }
+  const s = shop && findStaff(shop.staff || [], String(msg.name || '').slice(0, 80));
+  if (!s) { failed(ip, 10); return send(res, 400, { error: 'No staff member with that name. Type your name as the owner added it.' }); }
+  if (!emailOK(s.email)) return send(res, 400, { error: 'No email is saved for ' + s.name + '. Use the recovery code, or ask the owner or a manager.' });
+  if (s.locked && s.role !== 'owner') { /* still allowed: the reset unlocks the account */ }
+  const prev = resetCodes.get(s.id);
+  if (prev && prev.sent && Date.now() - prev.sent < 60000) return send(res, 429, { error: 'A code was sent less than a minute ago. Check your email (and spam).' });
+  const code = String(100000 + crypto.randomInt(900000));
+  resetCodes.set(s.id, { h: sha('rst:' + code), exp: Date.now() + 15 * 60000, tries: 0, sent: Date.now() });
+  failed(ip, 10);
+  try {
+    await sendEmail({ to: [s.email], subject: (shop.set && shop.set.name || 'Renatel Shop') + ' - password reset code: ' + code,
+      text: 'Hello ' + s.name + ',\n\nSomeone asked to reset your password for ' + (shop.set && shop.set.name || 'Renatel Shop') + '. Your reset code is:\n\n    ' + code + '\n\nIt expires in 15 minutes. If this wasn’t you, ignore this email and tell the shop owner.\n\n-- \nshop@renatel.shop' });
+  } catch (e) { resetCodes.delete(s.id); return send(res, 502, { error: 'The code email could not be sent. Try again, or use the recovery code.' }); }
+  return send(res, 200, { ok: true, to: maskEmail(s.email) });
+}
+async function resetByEmail(req, res) {
+  let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+  let shop; try { shop = await shopMain(true); } catch (e) { return send(res, 502, { error: 'Could not reach the shop database. Try again in a moment.' }); }
+  const s = shop && findStaff(shop.staff || [], String(msg.name || '').slice(0, 80));
+  const rc = s && resetCodes.get(s.id);
+  if (!s || !rc || rc.exp < Date.now()) return send(res, 400, { error: 'That code has expired or was never sent. Send a new code.' });
+  if (rc.tries >= 5) { resetCodes.delete(s.id); return send(res, 429, { error: 'Too many wrong codes. Send a new code.' }); }
+  if (sha('rst:' + String(msg.code || '').replace(/\D/g, '')) !== rc.h) { rc.tries++; return send(res, 401, { error: 'That code is not right. ' + (5 - rc.tries) + ' tries left.' }); }
+  const pw = String(msg.password || '').slice(0, 200), rule = pwRule(pw, shop.set);
+  if (rule) return send(res, 400, { error: rule });
+  await setPin(shop, s.id, pw); resetCodes.delete(s.id);
+  console.log('password reset by email code: ' + s.name);
   return send(res, 200, { ok: true, token: makeToken(s.id, cleanDev(msg.dev)), sid: s.id, name: s.name, exp: Date.now() + SESSION_DAYS * 864e5 });
 }
 // Who is calling: a logged-in staff member (session token) or a device with the shop code.
@@ -332,6 +401,8 @@ async function caller(req) {
 async function api(req, res, url) {
   if (req.method === 'POST' && url === '/api/login') return login(req, res);
   if (req.method === 'POST' && url === '/api/reset') return resetPw(req, res);
+  if (req.method === 'POST' && url === '/api/reset/code') return resetCode(req, res);
+  if (req.method === 'POST' && url === '/api/reset/email') return resetByEmail(req, res);
   const who = await caller(req);
   if (who.err) return send(res, who.err[0], { error: who.err[1] });
   // Restoring or listing backups: shop code, or the owner / a manager logged in.
@@ -344,6 +415,18 @@ async function api(req, res, url) {
     return send(res, 200, { ok: true, hosting: true, supabase: sbOn(), shared: sbOn() });
   }
 
+  if (req.method === 'POST' && url === '/api/mail/send') {
+    let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, e.code === 413 ? 413 : 400, { error: e.code === 413 ? 'The attachment is too big to email.' : 'Not valid data.' }); }
+    const to = (Array.isArray(msg.to) ? msg.to : [msg.to]).map((x) => String(x || '').trim()).filter(Boolean);
+    if (!to.length || to.length > 10 || !to.every(emailOK)) return send(res, 400, { error: 'Check the email address.' });
+    if (!mailAllowed(who.staff ? 's' + who.staff.id : 'code')) return send(res, 429, { error: 'Too many emails this hour. Try again later.' });
+    const atts = (Array.isArray(msg.attachments) ? msg.attachments : []).slice(0, 5);
+    try { await sendEmail({ to, subject: msg.subject, text: String(msg.body || msg.text || '').slice(0, 50000), html: msg.html ? String(msg.html).slice(0, 500000) : undefined, attachments: atts }); return send(res, 200, { ok: true }); }
+    catch (e) { return send(res, 502, { error: e.message }); }
+  }
+  if (req.method === 'GET' && url === '/api/mail/status') {
+    try { const c = await mailCfg(); return send(res, 200, { ok: !!c, from: c ? c.from : '' }); } catch (e) { return send(res, 200, { ok: false }); }
+  }
   if (req.method === 'GET' && url === '/api/ids') {
     try { return send(res, 200, { ids: await sbCall('shop_ids', { p_n: 50 }) }); }
     catch (e) { console.error('ids', e.message); return send(res, 502, { error: 'Could not reach the shop database.' }); }
