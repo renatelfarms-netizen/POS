@@ -587,7 +587,7 @@ async function signup(req, res) {
   try { rec = await sbCall('mt_shop_create', { p_slug: slug, p_name: name, p_owner: owner, p_email: email, p_phone: phone, p_trial_days: 365 }); }
   catch (e) { console.error('signup', e.message); return send(res, 502, { error: 'Could not create the shop. Try again in a moment.' }); }
   if (!rec || rec.error === 'taken') return send(res, 409, { error: 'That shop link is already used. Try another, e.g. ' + slug + '-' + (2 + crypto.randomInt(98)) + '.', f: 'slug' });
-  slugCache.delete(slug);
+  slugCache.delete(slug); listCache.at = 0;
   return ctx.run({ shop: rec }, async () => {
     const ownerRec = { id: 1, name: owner, role: 'owner', branch: 'both', pin: await mkHash(pw), email, emailOK: true, phone, mustChange: false, setupDone: true };
     const main = { set: { name, phone, email, addr: '', cur, branches: nb, brNames: { kum: br1, acc: br2 }, created: Date.now() }, staff: [ownerRec], suppliers: [], seq: 10 };
@@ -598,6 +598,99 @@ async function signup(req, res) {
     sendEmail({ to: [email], subject: 'Welcome to ' + PLATFORM + ' - your shop ' + name + ' is ready',
       text: 'Hello ' + owner + ',\n\nYour shop "' + name + '" is ready.\n\nYour shop link: ' + (process.env.PLATFORM_HOST ? 'https://' + process.env.PLATFORM_HOST : '') + '/' + slug + '\nLog in with your name (' + owner + ') and the password you chose.\n\n'+PLATFORM+' is free to use.\nAdd your staff in Staff, and your products in Stock.\n\n-- \n' + PLATFORM }).catch((e) => console.error('welcome mail', e.message));
     return send(res, 200, { ok: true, slug, token: makeToken(1, cleanDev(m.dev)), sid: 1, name: owner, exp: Date.now() + SESSION_DAYS * 864e5 });
+  });
+}
+
+// ---- one login for every shop: email + password take you straight into your own shop ----
+let listCache = { at: 0, L: [] };
+async function allShops(fresh) {
+  if (!fresh && Date.now() - listCache.at < 20000) return listCache.L;
+  listCache = { at: Date.now(), L: (await sbCall('mt_shop_list', {})) || [] };
+  return listCache.L;
+}
+const emNorm = (e) => String(e || '').trim().toLowerCase();
+// Every staff record (in any shop) saved with this email.
+async function byEmail(email, fresh) {
+  const e = emNorm(email), out = [];
+  for (const sh of await allShops(fresh)) {
+    const main = await ctx.run({ shop: sh }, () => shopMain(fresh)).catch(() => null);
+    for (const st of (main && main.staff) || []) if (emNorm(st.email) === e) out.push({ shop: sh, staff: st });
+  }
+  return out;
+}
+const sess = (sh, st, dev) => ctx.run({ shop: sh }, () => ({ slug: sh.slug, name: sh.name, staff: st.name, role: st.role, token: makeToken(st.id, cleanDev(dev)), sid: st.id, exp: Date.now() + SESSION_DAYS * 864e5 }));
+async function emailLogin(req, res) {
+  let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+  const email = emNorm(m.email).slice(0, 120), pw = String(m.password || '').slice(0, 200);
+  if (!emailOK(email)) return send(res, 400, { error: 'Type your email address.', f: 'em' });
+  if (!pw) return send(res, 400, { error: 'Type your password.', f: 'pw' });
+  const ik = 'eli:' + clientIp(req), ek = 'ele:' + email, w = tooMany(ik) || tooMany(ek);
+  if (w) return send(res, 429, { error: 'Too many wrong tries. Wait ' + w + ' minute' + (w > 1 ? 's' : '') + ', then try again.' });
+  let M; try { M = await byEmail(email, true); } catch (e) { console.error('email login', e.message); return send(res, 502, { error: 'Could not reach the database. Try again in a moment.' }); }
+  const ok = [];
+  for (const x of M) if (await pwOK(pw, x.staff.pin)) ok.push(x);
+  if (!ok.length) { failed(ik, 20); failed(ek, 6); return send(res, 401, { error: 'That email and password don’t match. Check them and try again.' }); }
+  const open = ok.filter((x) => planState(x.shop) !== 'suspended' && !x.staff.locked);
+  if (!open.length) { const x = ok[0]; return send(res, 403, { error: x.staff.locked ? 'Your account in ' + x.shop.name + ' is locked after too many wrong tries. Ask the owner or a manager to unlock it.' : x.shop.name + ' has been paused. Contact ' + PLATFORM + ' to open it again. All your data is kept safe.' }); }
+  loginFails.delete(ek);
+  for (const x of open) ctx.run({ shop: x.shop }, () => serverLog('Logged in with email', 'on ' + SITE + ' login page', x.staff));
+  return send(res, 200, { ok: true, shops: open.map((x) => sess(x.shop, x.staff, m.dev)) });
+}
+// Forgot password: a 6-digit code goes to the email; the new password is set on every account with that email.
+const emailCodes = new Map();
+async function emailResetCode(req, res) {
+  let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+  const email = emNorm(m.email).slice(0, 120); if (!emailOK(email)) return send(res, 400, { error: 'Type your email address.' });
+  const ik = 'erc:' + clientIp(req); if (tooMany(ik)) return send(res, 429, { error: 'Too many tries. Wait a few minutes.' }); failed(ik, 10);
+  const prev = emailCodes.get(email); if (prev && Date.now() - prev.sent < 60000) return send(res, 429, { error: 'A code was sent less than a minute ago. Check your email (and spam).' });
+  let M; try { M = await byEmail(email, true); } catch (e) { return send(res, 502, { error: 'Could not reach the database. Try again in a moment.' }); }
+  if (M.length) {
+    const code = String(100000 + crypto.randomInt(900000));
+    emailCodes.set(email, { h: sha('erst:' + code), exp: Date.now() + 15 * 60000, tries: 0, sent: Date.now() });
+    const shops = [...new Set(M.map((x) => x.shop.name))].join(', ');
+    try { await sendEmail({ to: [email], subject: PLATFORM + ' - password reset code: ' + code, text: 'Hello,\n\nSomeone asked to reset the password for ' + email + ' (' + shops + '). Your reset code is:\n\n    ' + code + '\n\nIt expires in 15 minutes. If this wasn’t you, ignore this email.\n\n-- \n' + PLATFORM }); }
+    catch (e) { emailCodes.delete(email); return send(res, 502, { error: 'The code email could not be sent. Try again in a moment.' }); }
+    for (const x of M) ctx.run({ shop: x.shop }, () => serverLog('Reset code emailed', 'to ' + maskEmail(email) + ' from the login page', x.staff));
+  }
+  // Same answer either way, so the page never tells strangers which emails have accounts.
+  return send(res, 200, { ok: true, to: maskEmail(email) });
+}
+async function emailReset(req, res) {
+  let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+  const email = emNorm(m.email).slice(0, 120), rc = emailCodes.get(email), pw = String(m.password || '').slice(0, 200);
+  if (!rc || rc.exp < Date.now()) return send(res, 400, { error: 'That code has expired or was never sent. Send a new code.' });
+  if (rc.tries >= 5) { emailCodes.delete(email); return send(res, 429, { error: 'Too many wrong codes. Send a new code.' }); }
+  if (sha('erst:' + String(m.code || '').replace(/\D/g, '')) !== rc.h) { rc.tries++; return send(res, 401, { error: 'That code is not right. ' + (5 - rc.tries) + ' tries left.' }); }
+  const rule = pwRule(pw, {}); if (rule) return send(res, 400, { error: rule });
+  const M = await byEmail(email, true);
+  for (const x of M) await ctx.run({ shop: x.shop }, async () => { const main = await shopMain(true); await setPin(main, x.staff.id, pw); serverLog('Password reset', 'with a code emailed to ' + maskEmail(email) + ' · login page', x.staff); });
+  emailCodes.delete(email);
+  const open = M.filter((x) => planState(x.shop) !== 'suspended');
+  return send(res, 200, { ok: true, shops: open.map((x) => sess(x.shop, Object.assign({}, x.staff, { locked: false }), m.dev)) });
+}
+
+// ---- admin: read-only view of a shop ----
+async function shopView(rec) {
+  return ctx.run({ shop: rec }, async () => {
+    const docs = await allDocs(), main = docs['shop/main'] || {}, set = main.set || {}, two = set.branches !== 1;
+    const BRN = { '': (set.brNames || {}).kum || 'Main branch', accra_: (set.brNames || {}).acc || 'Second branch' };
+    const pf = two ? ['', 'accra_'] : [''];
+    const list = (c) => Object.entries(docs).filter(([k]) => k.startsWith(c + '/')).map(([, d]) => d);
+    const recs = (c) => list(c).flatMap((d) => (d && d.recs) || []);
+    const day0 = new Date(new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Accra' }) + 'T00:00:00Z').getTime(), mon0 = new Date(new Date(day0).toISOString().slice(0, 7) + '-01T00:00:00Z').getTime();
+    const sum = (a, f) => a.reduce((t, x) => t + (+f(x) || 0), 0);
+    const branches = pf.map((p) => {
+      const prods = list(p + 'products'), sales = recs(p + 'sales'), exps = recs(p + 'expenses');
+      return { name: BRN[p], products: prods.length, units: sum(prods, (x) => x.stock), low: prods.filter((x) => x.stock <= (x.min || set.low || 0)).length, customers: list(p + 'customers').length,
+        today: { n: sales.filter((x) => x.ts >= day0).length, total: sum(sales.filter((x) => x.ts >= day0), (x) => x.total) },
+        month: { n: sales.filter((x) => x.ts >= mon0).length, total: sum(sales.filter((x) => x.ts >= mon0), (x) => x.total), expenses: sum(exps.filter((x) => x.ts >= mon0), (x) => x.amt) },
+        all: { n: sales.length, total: sum(sales, (x) => x.total) } };
+    });
+    const products = pf.flatMap((p) => list(p + 'products').map((x) => ({ b: BRN[p], name: x.name, cat: x.cat || '', price: x.price, stock: x.stock }))).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 300);
+    const sales = pf.flatMap((p) => recs(p + 'sales').map((x) => ({ b: BRN[p], id: x.id, ts: x.ts, total: x.total, method: x.method, by: x.byName || '', items: (x.items || []).reduce((t, i) => t + (i.qty || 0), 0) }))).sort((a, b) => b.ts - a.ts).slice(0, 50);
+    const log = recs('log').sort((a, b) => b.ts - a.ts).slice(0, 60).map((x) => ({ ts: x.ts, who: x.who, a: x.a, d: x.d }));
+    const staff = (main.staff || []).map((x) => ({ name: x.name, role: x.role, branch: x.role === 'owner' || x.branch === 'both' ? 'All branches' : BRN[x.branch === 'acc' ? 'accra_' : ''], email: x.email || '', phone: x.phone || '', locked: !!x.locked }));
+    return { shop: pubShop(rec), cur: set.cur || 'GH₵', details: { name: set.name, phone: set.phone || '', addr: set.addr || '', email: set.email || '' }, branches, staff, products, sales, log, warehouse: list('whItems').length };
   });
 }
 
@@ -634,14 +727,9 @@ async function platformApi(req, res, url) {
     catch (e) { return send(res, 502, { error: 'Could not check the link.' }); }
   }
   if (req.method === 'POST' && url === '/api/platform/signup') return signup(req, res);
-  if (req.method === 'POST' && url === '/api/platform/find') {
-    let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
-    const k = 'find:' + clientIp(req); if (tooMany(k)) return send(res, 429, { error: 'Too many searches. Wait a few minutes.' }); failed(k, 30);
-    const v = nmz(String(m.q || '').slice(0, 60)); if (v.length < 2) return send(res, 400, { error: 'Type at least 2 letters of the shop name.' });
-    let L; try { L = (await sbCall('mt_shop_list', {})) || []; } catch (e) { return send(res, 502, { error: 'Could not search right now.' }); }
-    const hit = L.filter((r) => r.slug === v.replace(/ /g, '-') || nmz(r.name).includes(v)).slice(0, 8).map((r) => ({ name: r.name, slug: r.slug }));
-    return send(res, 200, { ok: true, shops: hit });
-  }
+  if (req.method === 'POST' && url === '/api/platform/login') return emailLogin(req, res);
+  if (req.method === 'POST' && url === '/api/platform/reset/code') return emailResetCode(req, res);
+  if (req.method === 'POST' && url === '/api/platform/reset') return emailReset(req, res);
   if (req.method === 'POST' && url === '/api/platform/admin/login') {
     const k = 'adm:' + clientIp(req), w = tooMany(k); if (w) return send(res, 429, { error: 'Too many wrong tries. Wait ' + w + ' minutes.' });
     let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
@@ -662,6 +750,10 @@ async function platformApi(req, res, url) {
       await adminHash(true); console.log('admin password changed');
       return send(res, 200, { ok: true, token: adminToken() });
     }
+    if (req.method === 'GET' && url === '/api/platform/admin/view') {
+      const r = ((await sbCall('mt_shop_list', {})) || []).find((x) => x.id === q.get('id')); if (!r) return send(res, 404, { error: 'Shop not found.' });
+      try { return send(res, 200, Object.assign({ ok: true }, await shopView(r))); } catch (e) { console.error('view', e.message); return send(res, 502, { error: 'Could not load the shop.' }); }
+    }
     if (req.method === 'GET' && url === '/api/platform/admin/shops') {
       try { const L = (await sbCall('mt_shop_list', {})) || []; return send(res, 200, { ok: true, shops: L.map(pubShop) }); }
       catch (e) { return send(res, 502, { error: 'Could not load the shops.' }); }
@@ -670,11 +762,18 @@ async function platformApi(req, res, url) {
       let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
       const L = (await sbCall('mt_shop_list', {})) || [], r = L.find((x) => x.id === m.id); if (!r) return send(res, 404, { error: 'Shop not found.' });
       const now = Date.now(), base = (d) => Math.max(now, d ? Date.parse(d) : 0), n = Math.max(1, Math.min(36, +m.n || 1)), patch = {};
+      if (m.act === 'delete') {
+        if (String(m.confirm || '').trim().toLowerCase() !== r.slug) return send(res, 400, { error: 'Type the shop link (' + r.slug + ') to confirm.' });
+        try { await sbCall('mt_shop_delete', { p_id: r.id }); } catch (e) { console.error('delete shop', e.message); return send(res, 502, { error: 'Could not delete the shop.' }); }
+        await ctx.run({ shop: r }, () => fsp.rm(bdir(), { recursive: true, force: true })).catch(() => {});
+        slugCache.delete(r.slug); shopCache.delete(r.id); listCache.at = 0; console.log('shop deleted: ' + r.slug);
+        return send(res, 200, { ok: true, deleted: r.id });
+      }
       if (m.act === 'suspend') patch.status = 'suspended';
       else if (m.act === 'activate') patch.status = 'active';
       else if (m.act === 'note') patch.note = String(m.note || '').slice(0, 300);
       else return send(res, 400, { error: 'Unknown action.' });
-      try { const out = await sbCall('mt_shop_set', { p_id: r.id, p_patch: patch }); slugCache.delete(r.slug); return send(res, 200, { ok: true, shop: pubShop(out) }); }
+      try { const out = await sbCall('mt_shop_set', { p_id: r.id, p_patch: patch }); slugCache.delete(r.slug); listCache.at = 0; return send(res, 200, { ok: true, shop: pubShop(out) }); }
       catch (e) { return send(res, 502, { error: 'Could not save.' }); }
     }
   }

@@ -179,3 +179,13 @@ begin perform _mt_check(p_token); if p_k not in ('admin_pw') then raise exceptio
   return jsonb_build_object('ok', true); end $$;
 revoke all on function mt_kv_get, mt_kv_set from public, anon, authenticated;
 grant execute on function mt_kv_get, mt_kv_set to anon;
+
+-- Delete a shop for good (admin only, through the server). Its documents, backups and counters go with it.
+create or replace function mt_shop_delete(p_token text, p_id uuid) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform _mt_check(p_token);
+  delete from mt_shops where id = p_id;
+  return jsonb_build_object('ok', true);
+end $$;
+revoke all on function mt_shop_delete from public, anon, authenticated;
+grant execute on function mt_shop_delete to anon;

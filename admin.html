@@ -25,6 +25,12 @@ td small{display:block;color:var(--mut)}td a{color:var(--ac);font-weight:600;tex
 .acts{display:flex;gap:6px;flex-wrap:wrap}
 .msg{min-height:1.3em;color:var(--bad);margin:0}.pwg{display:grid;gap:10px}.pwg label{display:grid;gap:5px;font-weight:600;font-size:.9rem}.pwg input{padding:10px 12px;border:1px solid var(--bd);border-radius:10px;font:inherit}.empty{color:var(--mut);text-align:center;padding:30px}
 @media (max-width:800px){.stats{grid-template-columns:repeat(2,1fr)}table,tbody,tr,td{display:block}thead{display:none}tr{border:1px solid var(--bd);border-radius:12px;margin-bottom:10px;padding:6px}td{border:0;padding:6px 8px}}
+.ov{position:fixed;inset:0;background:rgba(10,20,16,.45);display:flex;justify-content:flex-end;z-index:20}
+.pane{background:var(--bg);width:min(980px,100%);height:100%;overflow:auto;padding:22px;box-shadow:-20px 0 40px -20px rgba(0,0,0,.4)}
+.ro{display:inline-flex;gap:6px;align-items:center;background:#fef3c7;color:#92400e;border-radius:99px;padding:4px 11px;font-size:.8rem;font-weight:700}
+.vt{display:flex;gap:6px;margin:14px 0;flex-wrap:wrap}.vt button{border:1px solid var(--bd);background:#fff;border-radius:99px;padding:7px 14px;font:inherit;cursor:pointer}.vt button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:12px}.kv .card{padding:12px}.kv small{color:var(--mut);display:block}.kv b{font-size:1.15rem}
+.pane table{font-size:.9rem}.pane h3{margin:16px 0 8px}
 </style>
 </head>
 <body>
@@ -36,7 +42,7 @@ const fd=t=>t?new Date(t).toLocaleDateString('en-GB',{day:'numeric',month:'short
 const left=t=>{const d=Math.ceil((Date.parse(t)-Date.now())/864e5);return d>0?d+' day'+(d==1?'':'s')+' left':'ended '+(-d)+' day'+(d==-1?'':'s')+' ago'};
 const LBL={active:'Open',suspended:'Paused'};
 async function api(p,body){const r=await fetch('/api/platform/admin/'+p,{method:body?'POST':'GET',headers:Object.assign({Authorization:'Bearer '+tok},body?{'Content-Type':'application/json'}:{}),body:body?JSON.stringify(body):undefined});const j=await r.json().catch(()=>({}));if(r.status==401){tok='';sessionStorage.removeItem('mt-admin');login();throw new Error(j.error)}if(!r.ok)throw new Error(j.error||'Error '+r.status);return j}
-function login(m){document.title=P.name+' · Admin';$('#app').innerHTML=`<div class="card login"><h1>${esc(P.name)} admin</h1><p style="color:var(--mut);margin:4px 0 0">Every shop on the platform. Free to use; you can pause a shop.</p><form onsubmit="event.preventDefault();doLogin()"><input id="pw" type="password" placeholder="Admin password" autocomplete="current-password" autofocus><p class="msg" id="lm">${esc(m||'')}</p><button class="btn pri" style="width:100%;justify-content:center">Log in</button></form></div>`}
+function login(m){document.title=P.name+' · Admin';$('#app').innerHTML=`<div class="card login"><h1>${esc(P.name)} admin</h1><p style="color:var(--mut);margin:4px 0 0">Every shop on the platform. View any shop; pause or delete an account.</p><form onsubmit="event.preventDefault();doLogin()"><input id="pw" type="password" placeholder="Admin password" autocomplete="current-password" autofocus><p class="msg" id="lm">${esc(m||'')}</p><button class="btn pri" style="width:100%;justify-content:center">Log in</button></form></div>`}
 async function doLogin(){try{const r=await fetch('/api/platform/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('#pw').value})});const j=await r.json();if(!r.ok)throw new Error(j.error);tok=j.token;sessionStorage.setItem('mt-admin',tok);load()}catch(e){$('#lm').textContent=e.message}}
 async function load(){try{const j=await api('shops');shops=j.shops;draw()}catch(e){if(tok)$('#app').innerHTML='<p class="msg">'+esc(e.message)+'</p>'}}
 function draw(){const n=k=>shops.filter(s=>s.plan==k).length,v=q.toLowerCase();
@@ -49,7 +55,7 @@ function row(s){const until='';
  return `<tr><td><a href="/${esc(s.slug)}" target="_blank">${esc(s.name)}</a><small>/${esc(s.slug)}</small>${s.note?`<small>📝 ${esc(s.note)}</small>`:''}</td>
  <td>${esc(s.owner)}<small>${esc(s.email)}</small><small>${esc(s.phone||'')}</small></td>
  <td><span class="pill p-${s.plan}">${LBL[s.plan]}</span><small>${until}</small></td><td>${fd(s.created)}</td>
- <td><div class="acts">${s.plan=='suspended'?`<button class="btn sm" onclick="act('${s.id}','activate')">Open again</button>`:`<button class="btn sm bad" onclick="if(confirm('Pause ${esc(s.name).replace(/'/g,'')}? Nobody can log in until you open it again. Data is kept.'))act('${s.id}','suspend')">Pause</button>`}<button class="btn sm" onclick="note('${s.id}')">Note</button></div></td></tr>`}
+ <td><div class="acts"><button class="btn sm pri" onclick="view('${s.id}')">View</button>${s.plan=='suspended'?`<button class="btn sm" onclick="act('${s.id}','activate')">Open again</button>`:`<button class="btn sm bad" onclick="if(confirm('Pause ${esc(s.name).replace(/'/g,'')}? Nobody can log in until you open it again. Data is kept.'))act('${s.id}','suspend')">Pause</button>`}<button class="btn sm" onclick="note('${s.id}')">Note</button><button class="btn sm bad" onclick="del('${s.id}')">Delete</button></div></td></tr>`}
 async function act(id,a,n){try{const j=await api('shop',{id,act:a,n});shops=shops.map(s=>s.id==id?j.shop:s);draw()}catch(e){alert(e.message)}}
 async function note(id){const s=shops.find(x=>x.id==id),v=prompt('Note for '+s.name+' (only you see it):',s.note||'');if(v!==null){const j=await api('shop',{id,act:'note',note:v});shops=shops.map(x=>x.id==id?j.shop:x);draw()}}
 function pwForm(){if($('#pwf'))return $('#pwf').remove();const d=document.createElement('div');d.id='pwf';d.className='card';d.style.cssText='max-width:440px;margin:0 0 16px';
@@ -63,6 +69,26 @@ async function pwSave(){const c=$('#pw_c').value,n=$('#pw_n').value,r=$('#pw_r')
  const b=$('#pw_b');b.disabled=true;b.textContent='Saving…';
  try{const j=await api('password',{current:c,password:n});tok=j.token;sessionStorage.setItem('mt-admin',tok);m.style.color='var(--ac)';m.textContent='✓ Password changed. Use the new password next time you log in.';b.textContent='Saved';setTimeout(()=>{const f=$('#pwf');if(f)f.remove()},2500)}
  catch(e){m.textContent=e.message;b.disabled=false;b.textContent='Save new password'}}
+let V=null,vt='sum';
+const money=n=>(V?V.cur:'')+' '+(+n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}),dt=t=>t?new Date(t).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'—';
+const ROLE={owner:'Owner',manager:'Manager',cashier:'Cashier',accountant:'Accountant',stock:'Stock keeper',warehouse:'Warehouse',delivery:'Delivery'};
+async function view(id){const old=$('#ov');if(old)old.remove();const o=document.createElement('div');o.className='ov';o.id='ov';o.onclick=e=>{if(e.target===o)o.remove()};o.innerHTML='<div class="pane"><p>Loading the shop…</p></div>';document.body.appendChild(o);
+ try{V=await api('view?id='+encodeURIComponent(id));vt='sum';pane()}catch(e){o.querySelector('.pane').innerHTML='<p class="msg">'+esc(e.message)+'</p>'}}
+function pane(){const v=V,s=v.shop,T=(h,rows)=>`<div class="card" style="padding:4px 8px"><table><thead><tr>${h.map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.join('')||`<tr><td colspan="${h.length}" class="empty">Nothing yet.</td></tr>`}</tbody></table></div>`;
+ const tabs=[['sum','Summary'],['staff','Staff ('+v.staff.length+')'],['prod','Products ('+v.products.length+')'],['sales','Recent sales'],['log','Activity']];
+ let body='';
+ if(vt=='sum')body=`<div class="kv"><div class="card"><small>Owner</small><b>${esc(s.owner)}</b><small>${esc(s.email)}${s.phone?' · '+esc(s.phone):''}</small></div><div class="card"><small>Shop link</small><b>/${esc(s.slug)}</b><small>Started ${fd(s.created)}</small></div><div class="card"><small>Status</small><b>${LBL[s.plan]}</b><small>${v.branches.length} branch${v.branches.length>1?'es':''} · ${v.warehouse} warehouse items</small></div></div>`+
+  v.branches.map(b=>`<h3>📍 ${esc(b.name)}</h3><div class="kv"><div class="card"><small>Sales today</small><b>${money(b.today.total)}</b><small>${b.today.n} sales</small></div><div class="card"><small>Sales this month</small><b>${money(b.month.total)}</b><small>${b.month.n} sales · expenses ${money(b.month.expenses)}</small></div><div class="card"><small>All sales</small><b>${money(b.all.total)}</b><small>${b.all.n} sales</small></div><div class="card"><small>Products</small><b>${b.products}</b><small>${b.units} units · ${b.low} low</small></div><div class="card"><small>Customers</small><b>${b.customers}</b></div></div>`).join('');
+ if(vt=='staff')body=T(['Name','Position','Branch','Email','Phone'],v.staff.map(x=>`<tr><td>${esc(x.name)}${x.locked?' <span class="pill p-suspended">Locked</span>':''}</td><td>${esc(ROLE[x.role]||x.role)}</td><td>${esc(x.branch)}</td><td>${esc(x.email||'—')}</td><td>${esc(x.phone||'—')}</td></tr>`));
+ if(vt=='prod')body=T(['Product','Category','Branch','Price','Stock'],v.products.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.cat||'—')}</td><td>${esc(x.b)}</td><td>${money(x.price)}</td><td>${x.stock??0}</td></tr>`));
+ if(vt=='sales')body=T(['Time','Receipt','Branch','Items','Paid by','Sold by','Total'],v.sales.map(x=>`<tr><td>${dt(x.ts)}</td><td>#${esc(x.id)}</td><td>${esc(x.b)}</td><td>${x.items}</td><td>${esc(x.method||'')}</td><td>${esc(x.by)}</td><td><b>${money(x.total)}</b></td></tr>`));
+ if(vt=='log')body=T(['Time','Who','What','Details'],v.log.map(x=>`<tr><td>${dt(x.ts)}</td><td>${esc(x.who)}</td><td>${esc(x.a)}</td><td>${esc(x.d)}</td></tr>`));
+ $('#ov .pane').innerHTML=`<div class="top" style="margin:0"><h1>${esc(s.name)}</h1><span class="ro">👁 View only</span><span class="sp"></span><button class="btn" onclick="$('#ov').remove()">Close</button></div>
+ <p style="color:var(--mut);margin:6px 0 0">You can see this shop's data but not change it. You can only pause or delete the account.</p>
+ <div class="vt">${tabs.map(([k,l])=>`<button class="${vt==k?'on':''}" onclick="vt='${k}';pane()">${l}</button>`).join('')}</div>${body}
+ <div style="display:flex;gap:8px;margin-top:18px">${s.plan=='suspended'?`<button class="btn" onclick="act('${s.id}','activate').then(()=>view('${s.id}'))">Open again</button>`:`<button class="btn bad" onclick="if(confirm('Pause ${esc(s.name).replace(/'/g,'')}? Nobody can log in until you open it again. Data is kept.'))act('${s.id}','suspend').then(()=>{$('#ov').remove();view('${s.id}')})">Pause (hold) account</button>`}<button class="btn bad" onclick="del('${s.id}')">Delete account</button></div>`}
+async function del(id){const s=shops.find(x=>x.id==id);const v=prompt('Delete '+s.name+' for good?\n\nThis removes the shop, its staff, products, sales and backups. It cannot be undone.\n\nType the shop link to confirm: '+s.slug);if(v===null)return;
+ try{await api('shop',{id,act:'delete',confirm:v});shops=shops.filter(x=>x.id!=id);const o=$('#ov');if(o)o.remove();draw();alert(s.name+' was deleted.')}catch(e){alert(e.message)}}
 tok?load():login();
 </script>
 </body>

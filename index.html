@@ -576,7 +576,7 @@ function loginShell(o){document.body.classList.add('lgmode');const h=new Date().
    <p id="${o.msg}" class="msg" role="status" aria-live="polite"></p>
    <button class="lg2-btn" id="${o.btn}" type="submit">Log in</button>
    <button type="button" class="lg2-link" onclick="${o.forgot}()">Forgot password?</button>
-  </form>${SHOP?`<p class="lg2-shop">${esc(location.host)}/${esc(SHOP.slug)} · <a href="/login">Not your shop? Find yours</a></p>`:''}</div>
+  </form>${SHOP?`<p class="lg2-shop">${esc(location.host)}/${esc(SHOP.slug)} · <a href="/login">Log in with your email instead</a></p>`:''}</div>
   <p class="lg2-foot">${LGI.shield}${esc(o.foot)}</p><p class="lg2-copy">© 2026 by Zoe &amp; Tessa</p></div>`}
 function loginView(){const pre=lsel&&db.staff.find(x=>x.id==lsel);
  let where='Saved on this device';try{if(WEB0)where='Secure login · everything runs online';else if(cloud)where='Saved in the shop database'}catch(e){}

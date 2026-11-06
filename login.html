@@ -8,6 +8,12 @@
 <link rel="icon" href="/icon-192.png">
 <link rel="stylesheet" href="/assets/site.css">
 <!--PLAT-->
+<style>
+.lnk{background:none;border:0;padding:0;color:var(--ac);font:inherit;cursor:pointer;text-decoration:underline}
+.choose{display:grid;gap:8px}.choose button{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--bd);border-radius:12px;background:#fff;cursor:pointer;font:inherit;text-align:left;transition:border-color .15s,transform .15s}
+.choose button:hover{border-color:var(--ac);transform:translateY(-1px)}.choose small{display:block;color:var(--mut)}.choose .go{margin-left:auto;color:var(--mut)}
+.note{font-size:.85rem;color:var(--mut);margin:16px 0 0;padding-top:14px;border-top:1px solid var(--bd)}
+</style>
 </head>
 <body>
 <header><div class="wrap">
@@ -18,40 +24,69 @@
  <div class="auth-side">
   <i class="orb" style="width:260px;height:260px;right:-80px;top:-60px"></i><i class="orb" style="width:160px;height:160px;left:-50px;bottom:40px;animation-delay:-4s"></i>
   <h2>Welcome back</h2>
-  <p>Find your shop, then log in with your name and password, the same as at the counter.</p>
-  <ul><li><span>1</span>Type your shop name</li><li><span>2</span>Open your shop</li><li><span>3</span>Log in with your name and password</li></ul>
+  <p>Log in with your email and password. We take you straight into your shop.</p>
+  <ul><li><span>✓</span>No shop name or link to remember</li><li><span>✓</span>Owners and staff use the same page</li><li><span>✓</span>Forgot your password? Get a code by email</li></ul>
  </div>
  <div class="auth-main"><div class="card">
   <div id="nf"></div>
-  <h1>Log in to your shop</h1>
-  <p class="sub">Every shop has its own login page. Find yours here.</p>
-  <div id="recent" class="recent" hidden><b style="font-size:.92rem">Shops opened on this device</b><div class="found" id="rl"></div><p class="small" style="margin:14px 0 0">Or find another shop:</p></div>
-  <form id="fd" novalidate style="margin-top:10px">
-   <label>Shop name or link<input id="fq" maxlength="60" placeholder="e.g. Kofi Mart" autocomplete="organization" autofocus></label>
-   <p class="msg" id="fm" role="status" aria-live="polite"></p>
-   <button class="btn pri" id="fb" type="submit">Find my shop</button>
-  </form>
-  <div class="found" id="fl"></div>
-  <p class="alt">New to <span class="pname">Tessa POS</span>? <a href="/register">Create your shop</a></p>
+  <div id="v_login">
+   <h1>Log in</h1>
+   <p class="sub">Use the email and password of your account.</p>
+   <form id="lf" novalidate>
+    <label>Email<input id="em" type="email" maxlength="120" autocomplete="email" placeholder="you@example.com" autofocus></label>
+    <label>Password<div class="pw"><input id="pw" type="password" autocomplete="current-password" maxlength="200"><button type="button" class="eye">Show</button></div></label>
+    <p class="msg" id="lm" role="status" aria-live="polite"></p>
+    <button class="btn pri" id="lb" type="submit">Log in</button>
+   </form>
+   <p class="alt"><button class="lnk" type="button" onclick="show('forgot')">Forgot password?</button></p>
+   <p class="alt" style="margin-top:6px">New to <span class="pname">Tessa POS</span>? <a href="/register">Create your shop</a></p>
+   <p class="note">Staff without an email on their account: ask your shop owner for the shop link, and log in there with your name and password.</p>
+  </div>
+  <div id="v_choose" hidden>
+   <h1>Choose a shop</h1>
+   <p class="sub">Your email is on more than one shop. Which one do you want to open?</p>
+   <div class="choose" id="cl"></div>
+   <p class="alt"><button class="lnk" type="button" onclick="show('login')">Back</button></p>
+  </div>
+  <div id="v_forgot" hidden>
+   <h1>Reset your password</h1>
+   <p class="sub">We'll email you a 6-digit code.</p>
+   <form id="ff" novalidate>
+    <label>Email<input id="fe" type="email" maxlength="120" autocomplete="email" placeholder="you@example.com"></label>
+    <button class="btn" id="fs" type="button">Send code</button>
+    <label>Code from the email<input id="fc" inputmode="numeric" maxlength="8" autocomplete="one-time-code" placeholder="6 digits"></label>
+    <label>New password <small>6+ characters with letters and numbers</small><div class="pw"><input id="fp" type="password" autocomplete="new-password" maxlength="200"><button type="button" class="eye">Show</button></div></label>
+    <p class="msg" id="fm" role="status" aria-live="polite"></p>
+    <button class="btn pri" id="fb" type="submit">Reset and log in</button>
+   </form>
+   <p class="alt"><button class="lnk" type="button" onclick="show('login')">Back to log in</button></p>
+  </div>
  </div></div>
 </main>
 <footer><div class="wrap"><span>© 2026 by Zoe &amp; Tessa</span><span class="pname">Tessa POS</span></div></footer>
 <script>
 const $=s=>document.querySelector(s),P=window.PLAT||{name:'Tessa POS'},esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 document.querySelectorAll('.pname').forEach(e=>e.textContent=P.name);document.title='Log in · '+P.name;
-const ICON='<span class="qi" style="--qc:#0f6e56"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 5 4h14l2 5.5"/><path d="M3 9.5a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12.5V20h14v-7.5"/><path d="M10 20v-5h4v5"/></svg></span>';
-const link=s=>'<a href="/'+esc(s.slug)+'">'+ICON+'<b>'+esc(s.name)+'</b><small>'+esc(location.host)+'/'+esc(s.slug)+' →</small></a>';
-let rec=[];try{rec=JSON.parse(localStorage.getItem('tessa-recent')||'[]').filter(x=>x&&x.slug)}catch(e){}
-if(rec.length){$('#recent').hidden=false;$('#rl').innerHTML=rec.slice(0,5).map(link).join('')}
-if(P.notFound){$('#nf').innerHTML='<div class="nf"><b>There is no shop at /'+esc(P.notFound)+'.</b> Check the link with your shop owner, or find your shop by name below.</div>';$('#fq').value=P.notFound.replace(/-/g,' ')}
-function msg(t,c){const m=$('#fm');m.textContent=t;m.className='msg '+(c||'')}
-$('#fd').addEventListener('submit',async e=>{e.preventDefault();let q=$('#fq').value.trim();q=q.replace(/^https?:\/\/[^/]+\//,'').replace(/^\/+|\/+$/g,'');$('#fl').innerHTML='';
- if(q.length<2)return msg('Type at least 2 letters of the shop name.','no');const b=$('#fb');b.disabled=true;b.innerHTML='<span class="spin"></span> Searching…';msg('');
- try{const r=await fetch('/api/platform/find',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Could not search.');
-  if(!j.shops.length)msg('No shop found with that name. Check the spelling, or ask your shop owner for the link.','no');
-  else{msg(j.shops.length==1?'Found your shop. Tap it to log in:':'Found '+j.shops.length+' shops. Tap yours to log in:','ok');$('#fl').innerHTML=j.shops.map(link).join('')}}
- catch(err){msg('✗ '+(err.message==='Failed to fetch'?'Can’t reach the website. Check the internet connection.':err.message),'no')}
- b.disabled=false;b.textContent='Find my shop'});
+if(P.notFound)$('#nf').innerHTML='<div class="nf"><b>There is no shop at /'+esc(P.notFound)+'.</b> Log in with your email and password to open your shop.</div>';
+document.querySelectorAll('.eye').forEach(b=>b.onclick=()=>{const i=b.previousElementSibling;i.type=i.type=='password'?'text':'password';b.textContent=i.type=='password'?'Show':'Hide'});
+function show(v){['login','choose','forgot'].forEach(x=>$('#v_'+x).hidden=x!=v);if(v=='forgot'&&!$('#fe').value)$('#fe').value=$('#em').value;const f=$('#v_'+v+' input');if(f)f.focus()}
+function msg(id,t,c){const m=$(id);m.textContent=t;m.className='msg '+(c||'')}
+const ROLE={owner:'Owner',manager:'Manager',cashier:'Cashier',accountant:'Accountant',stock:'Stock keeper',warehouse:'Warehouse',delivery:'Delivery'};
+function open1(s){const K='shop-pos-v1:'+s.slug;try{sessionStorage.setItem(K+'-sess',JSON.stringify({t:s.token,sid:s.sid,exp:s.exp}));sessionStorage.setItem(K+'-auto',JSON.stringify({sid:s.sid,ts:Date.now()}))}catch(e){}location.href='/'+s.slug}
+let CH=[];
+function done(j,mid){if(j.shops.length==1){msg(mid,'✓ Welcome, '+j.shops[0].staff+'! Opening '+j.shops[0].name+'…','ok');return setTimeout(()=>open1(j.shops[0]),400)}
+ CH=j.shops;$('#cl').innerHTML=j.shops.map((s,i)=>'<button type="button" onclick="open1(CH['+i+'])"><span class="qi" style="--qc:#0f6e56"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 5 4h14l2 5.5"/><path d="M5 12.5V20h14v-7.5"/><path d="M10 20v-5h4v5"/></svg></span><span><b>'+esc(s.name)+'</b><small>'+esc(ROLE[s.role]||s.role)+' · '+esc(s.staff)+'</small></span><span class="go">→</span></button>').join('');show('choose')}
+async function post(p,b){let r;try{r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})}catch(e){throw new Error('Can’t reach the website. Check the internet connection.')}const j=await r.json().catch(()=>({}));if(!r.ok)throw Object.assign(new Error(j.error||'Error '+r.status),{f:j.f});return j}
+$('#lf').addEventListener('submit',async e=>{e.preventDefault();const b=$('#lb'),em=$('#em').value.trim(),pw=$('#pw').value;
+ if(!em){msg('#lm','Type your email.','no');return $('#em').focus()}if(!pw){msg('#lm','Type your password.','no');return $('#pw').focus()}
+ b.disabled=true;b.innerHTML='<span class="spin"></span> Checking…';msg('#lm','');
+ try{const j=await post('/api/platform/login',{email:em,password:pw});b.innerHTML='<span class="spin"></span> Opening your shop…';done(j,'#lm');if(j.shops.length>1){b.disabled=false;b.textContent='Log in'}}
+ catch(err){b.disabled=false;b.textContent='Log in';$('#pw').value='';msg('#lm','✗ '+err.message,'no');(err.f=='em'?$('#em'):$('#pw')).focus()}});
+$('#fs').onclick=async()=>{const em=$('#fe').value.trim(),b=$('#fs');if(!em)return msg('#fm','Type your email first.','no');b.disabled=true;b.innerHTML='<span class="spin" style="border-color:rgba(0,0,0,.15);border-top-color:#0f6e56"></span> Sending…';
+ try{const j=await post('/api/platform/reset/code',{email:em});msg('#fm','✓ If '+em+' is on an account, a code is on its way. Check spam too. It expires in 15 minutes.','ok');b.textContent='Send a new code';$('#fc').focus()}catch(err){msg('#fm','✗ '+err.message,'no');b.textContent='Send code'}b.disabled=false};
+$('#ff').addEventListener('submit',async e=>{e.preventDefault();const em=$('#fe').value.trim(),c=$('#fc').value.trim(),p=$('#fp').value,b=$('#fb');
+ if(!em||!c||!p)return msg('#fm','Fill in your email, the code and a new password.','no');b.disabled=true;b.innerHTML='<span class="spin"></span> Checking…';
+ try{const j=await post('/api/platform/reset',{email:em,code:c,password:p});if(!j.shops.length)throw new Error('Password changed, but your shop is paused.');msg('#fm','✓ Password changed.','ok');done(j,'#fm')}catch(err){b.disabled=false;b.textContent='Reset and log in';msg('#fm','✗ '+err.message,'no')}});
 </script>
 </body>
 </html>
