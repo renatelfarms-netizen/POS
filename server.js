@@ -158,9 +158,65 @@ function sbSave(dev, name, raw, digest, cnt) {
 const DB_COLS = new Set(['shop', 'devices', 'products', 'customers', 'sales', 'expenses', 'deliveries', 'pos', 'moves', 'log', 'whMoves', 'transfers', 'trReq', 'whItems', 'whPos',
   'accra_products', 'accra_customers', 'accra_sales', 'accra_expenses', 'accra_deliveries', 'accra_pos', 'accra_moves']);
 
+// ---- online backups of the shared shop, made by the server ----
+// Every SNAP_MIN minutes, if anything changed, the whole shop is saved on the hosting and in Supabase.
+const SNAP_DEV = 'shop', SNAP_FORMAT = 'renatel-shop-docs-1', SNAP_MIN = 10;
+async function allDocs() {
+  const docs = {}; let since = 0, more = true;
+  while (more) {
+    const j = await sbCall('shop_db_pull', { p_since: since });
+    for (const d of j.docs || []) { const k = d.c + '/' + d.id; if (d.x) delete docs[k]; else docs[k] = d.d; }
+    since = j.rev; more = !!j.more;
+  }
+  return Object.keys(docs).sort().reduce((o, k) => (o[k] = docs[k], o), {});
+}
+function docCounts(docs) {
+  const n = { products: 0, customers: 0, sales: 0, expenses: 0, staff: 0 };
+  for (const [k, d] of Object.entries(docs)) {
+    const c = k.split('/')[0].replace(/^accra_/, '');
+    if (c === 'products' || c === 'customers') n[c]++;
+    else if ((c === 'sales' || c === 'expenses') && d && Array.isArray(d.recs)) n[c] += d.recs.length;
+  }
+  n.staff = ((docs['shop/main'] || {}).staff || []).length;
+  return n;
+}
+let snapBusy = null;
+function snapshot(label, force) { if (!snapBusy) snapBusy = snapshotNow(label, force).finally(() => { snapBusy = null; }); return snapBusy; }
+async function snapshotNow(label, force) {
+  const docs = await allDocs();
+  if (!docs['shop/main']) return { skipped: true, reason: 'empty' };
+  const digest = sha(JSON.stringify(docs));
+  const raw = JSON.stringify({ format: SNAP_FORMAT, at: new Date().toISOString(), docs }), cnt = docCounts(docs);
+  const out = {};
+  // The same backup is never saved twice in a row (hostSave and site_backup_save skip an unchanged copy).
+  try { out.hosting = await hostSave(SNAP_DEV, label, raw, digest, cnt); } catch (e) { console.error('hosting backup', e.message); out.hosting = { error: 'Could not save on the hosting.' }; }
+  try { out.supabase = await sbSave(SNAP_DEV, label, raw, digest, cnt); } catch (e) { console.error('supabase backup', e.message); out.supabase = { error: 'Could not save in Supabase.' }; }
+  if (force && out.hosting.skipped && out.supabase.skipped) out.same = true;
+  return out;
+}
+async function restoreDocs(docs, by) {
+  const cur = await allDocs(); let n = 0;
+  docs = Object.assign({}, docs);
+  // Everyone is signed out so no device keeps working on the old data.
+  const main = JSON.parse(JSON.stringify(docs['shop/main']));
+  main.set = Object.assign({}, main.set, { sessEpoch: Date.now() }); docs['shop/main'] = main;
+  for (const [k, d] of Object.entries(docs)) {
+    if (JSON.stringify(cur[k]) === JSON.stringify(d)) continue;
+    const i = k.indexOf('/'); await sbCall('shop_db_put', { p_col: k.slice(0, i), p_id: k.slice(i + 1), p_data: d }); n++;
+  }
+  for (const k of Object.keys(cur)) if (!(k in docs)) { const i = k.indexOf('/'); await sbCall('shop_db_del', { p_col: k.slice(0, i), p_id: k.slice(i + 1) }); n++; }
+  shopCache.at = 0;
+  console.log('restore: ' + n + ' documents changed by ' + by);
+  return n;
+}
+if (sbOn()) {
+  setTimeout(() => snapshot('Automatic').catch((e) => console.error('auto backup', e.message)), 60000).unref();
+  setInterval(() => snapshot('Automatic').catch((e) => console.error('auto backup', e.message)), SNAP_MIN * 60000).unref();
+}
+
 // ---- staff login: name + password are checked here against the shared shop's staff list ----
 // A correct login returns a signed session token; devices use it for /api/db and backups.
-const SESSION_DAYS = 30;
+const SESSION_DAYS = 1; // a login lasts one day (or until the browser tab is closed)
 const secret = () => sha('renatel-session:' + (process.env.SUPABASE_BACKUP_TOKEN || ''));
 const b64u = (s) => Buffer.from(s).toString('base64url');
 const sign = (body) => crypto.createHmac('sha256', secret()).update(body).digest('base64url');
@@ -184,10 +240,15 @@ async function shopMain(fresh) {
 }
 // Same name matching and password checks as the shop page (index.html: nmz, findStaff, pwOK).
 const nmz = (v) => String(v || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+// A name matches if it is the full name, the same words in any order ("Emmanuel Buckson"),
+// or one word of exactly one person's name ("Emmanuel").
 function findStaff(staff, v) {
   const q = nmz(v); if (!q) return null;
-  const ex = staff.filter((x) => nmz(x.name) === q); if (ex.length) return ex.length === 1 ? ex[0] : null;
-  const fn = staff.filter((x) => nmz(x.name).split(' ')[0] === q); return fn.length === 1 ? fn[0] : null;
+  const words = (n) => nmz(n).split(' ').sort().join(' ');
+  let L = staff.filter((x) => nmz(x.name) === q);
+  if (!L.length) L = staff.filter((x) => words(x.name) === q.split(' ').sort().join(' '));
+  if (!L.length && !q.includes(' ')) L = staff.filter((x) => nmz(x.name).split(' ').includes(q));
+  return L.length === 1 ? L[0] : null;
 }
 const eq = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 function pwOK(p, stored) {
@@ -215,11 +276,36 @@ async function login(req, res) {
   let shop; try { shop = await shopMain(true); } catch (e) { console.error('login', e.message); return send(res, 502, { error: 'Could not reach the shop database. Try again in a moment.' }); }
   if (!shop) return send(res, 404, { error: 'The shop has not been set up yet.', setup: true });
   const s = findStaff(shop.staff || [], name);
-  if (!s || !(await pwOK(pw, s.pin))) { failed(ip, 20); failed(nk, 6); return send(res, 401, { error: 'That name and password don’t match. Check how your name is spelled and try again.' }); }
+  if (!s || !(await pwOK(pw, s.pin))) {
+    console.log('login failed: ' + (s ? 'wrong password for ' + s.name : 'no staff member called "' + nmz(name) + '"'));
+    failed(ip, 20); failed(nk, 6); return send(res, 401, { error: 'That name and password don’t match. Check how your name is spelled and try again.' }); }
   if (s.locked) return send(res, 423, { error: s.name + '’s account is locked after too many wrong tries. Ask the owner or a manager to unlock it.' });
   loginFails.delete(nk);
+  console.log('login ok: ' + s.name);
   const dev = cleanDev(msg.dev);
   return send(res, 200, { ok: true, token: makeToken(s.id, dev), sid: s.id, name: s.name, exp: Date.now() + SESSION_DAYS * 864e5 });
+}
+const rcNorm = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const pwRule = (p, set) => (set && set.strongPw === false) ? (p.length < 4 ? 'Use at least 4 characters.' : '') : (p.length < 6 || !/[A-Za-z]/.test(p) || !/\d/.test(p) ? 'Use at least 6 characters with both letters and numbers, e.g. kofi2024.' : '');
+const mkHash = (p) => new Promise((ok, no) => { const salt = crypto.randomBytes(16).toString('hex'); crypto.pbkdf2(String(p), salt, 150000, 32, 'sha256', (e, k) => e ? no(e) : ok('p2$' + salt + '$' + k.toString('hex'))); });
+async function resetPw(req, res) {
+  if (!sbOn()) return send(res, 503, { error: 'The shop database is not set up on the server yet.' });
+  const ip = 'rc:' + clientIp(req), wait = tooMany(ip);
+  if (wait) return send(res, 429, { error: 'Too many wrong codes. Wait ' + wait + ' minutes, then try again.' });
+  let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+  const name = String(msg.name || '').slice(0, 80), code = rcNorm(msg.code), pw = String(msg.password || '').slice(0, 200);
+  let shop; try { shop = await shopMain(true); } catch (e) { return send(res, 502, { error: 'Could not reach the shop database. Try again in a moment.' }); }
+  if (!shop) return send(res, 404, { error: 'The shop has not been set up yet.' });
+  const s = findStaff(shop.staff || [], name);
+  if (!s) return send(res, 400, { error: 'No staff member with that name. Type the name exactly as the owner added it.' });
+  if (!shop.set || !shop.set.rc) return send(res, 400, { error: 'This shop has no recovery code yet. Ask the owner.' });
+  if (!code || !(await pwOK('rc:' + code, shop.set.rc))) { console.log('reset failed: wrong recovery code for ' + s.name); failed(ip, 5); return send(res, 401, { error: 'That recovery code is not right.' }); }
+  const rule = pwRule(pw, shop.set); if (rule) return send(res, 400, { error: rule });
+  const main = JSON.parse(JSON.stringify(shop)), t = main.staff.find((x) => x.id === s.id);
+  t.pin = await mkHash(pw); t.fails = 0; t.nextTry = 0; t.locked = false; t.mustChange = false;
+  await sbCall('shop_db_put', { p_col: 'shop', p_id: 'main', p_data: main }); shopCache.at = 0;
+  console.log('password reset with the recovery code: ' + s.name);
+  return send(res, 200, { ok: true, token: makeToken(s.id, cleanDev(msg.dev)), sid: s.id, name: s.name, exp: Date.now() + SESSION_DAYS * 864e5 });
 }
 // Who is calling: a logged-in staff member (session token) or a device with the shop code.
 async function caller(req) {
@@ -244,6 +330,7 @@ async function caller(req) {
 // ---- API ----
 async function api(req, res, url) {
   if (req.method === 'POST' && url === '/api/login') return login(req, res);
+  if (req.method === 'POST' && url === '/api/reset') return resetPw(req, res);
   const who = await caller(req);
   if (who.err) return send(res, who.err[0], { error: who.err[1] });
   // Restoring or listing backups: shop code, or the owner / a manager logged in.
@@ -256,7 +343,11 @@ async function api(req, res, url) {
     return send(res, 200, { ok: true, hosting: true, supabase: sbOn(), shared: sbOn() });
   }
 
-  // ---- shared shop database (every device that joined with the shop code sees the same data) ----
+  if (req.method === 'GET' && url === '/api/ids') {
+    try { return send(res, 200, { ids: await sbCall('shop_ids', { p_n: 50 }) }); }
+    catch (e) { console.error('ids', e.message); return send(res, 502, { error: 'Could not reach the shop database.' }); }
+  }
+  // ---- shared shop database (every logged-in device sees the same data) ----
   if (url === '/api/db' || url.startsWith('/api/db/')) {
     if (!sbOn()) return send(res, 503, { error: 'The shared shop database is not set up on the server yet.' });
     try {
@@ -281,53 +372,43 @@ async function api(req, res, url) {
     return send(res, 404, { error: 'Not found.' });
   }
 
+  // Backups run on the server (see snapshot below). Devices no longer send their own copies.
   if (req.method === 'POST' && url === '/api/backup') {
-    let raw;
-    try { raw = await readBody(req); } catch (e) { return send(res, e.code === 413 ? 413 : 400, { error: e.code === 413 ? 'Backup is too big.' : 'Could not read the backup.' }); }
-    let msg;
-    try { msg = JSON.parse(raw); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
-    const dev = cleanDev(msg.device), name = String(msg.name || '').slice(0, 80), d = msg.data;
-    if (!dev || !d || typeof d !== 'object' || !Array.isArray(d.products) || !Array.isArray(d.sales)) {
-      return send(res, 400, { error: 'That is not shop data.' });
-    }
-    const data = JSON.stringify(d), digest = sha(data), cnt = counts(d);
-    const out = { at: new Date().toISOString() };
-    try { out.hosting = await hostSave(dev, name, data, digest, cnt); } catch (e) { console.error('hosting backup', e); out.hosting = { error: 'Could not save on the hosting.' }; }
-    if (sbOn()) {
-      try { out.supabase = await sbSave(dev, name, data, digest, cnt); } catch (e) { console.error('supabase backup', e.message); out.supabase = { error: 'Could not save in Supabase.' }; }
-    } else out.supabase = { error: 'Supabase is not connected on the server.' };
-    out.ok = !out.hosting.error || !out.supabase.error;
-    return send(res, out.ok ? 200 : 502, out);
+    return send(res, 410, { error: 'Backups now run online automatically. Nothing is backed up from devices.' });
   }
-
+  if (req.method === 'POST' && url === '/api/backup/now') {
+    if (!canRestore) return send(res, 403, { error: 'Only the owner or a manager can do this.' });
+    try { return send(res, 200, Object.assign({ ok: true }, await snapshot('Backed up by ' + (who.staff ? who.staff.name : 'shop code'), true))); }
+    catch (e) { console.error('backup now', e.message); return send(res, 502, { error: 'Could not make the backup.' }); }
+  }
   if (req.method === 'GET' && url === '/api/backups') {
     const list = [];
-    for (const x of await hostIndex()) list.push({ source: 'hosting', id: x.id, at: x.at, device: x.device, name: x.name, sha256: x.sha256, size: x.size, counts: x.counts });
+    for (const x of await hostIndex()) if (x.device === SNAP_DEV) list.push({ source: 'hosting', id: x.id, at: x.at, name: x.name, counts: x.counts, size: x.size, sha256: x.sha256 });
     let supabaseError = null;
     if (sbOn()) {
       try {
         for (const x of (await sbCall('site_backup_list', {})) || []) {
-          list.push({ source: 'supabase', id: String(x.id), at: new Date(x.created_at).toISOString(), device: x.device, name: x.device_name, sha256: x.sha256, size: x.size_bytes, counts: x.counts });
+          if (x.device === SNAP_DEV) list.push({ source: 'supabase', id: String(x.id), at: new Date(x.created_at).toISOString(), name: x.device_name, counts: x.counts, size: x.size_bytes, sha256: x.sha256 });
         }
       } catch (e) { console.error('supabase list', e.message); supabaseError = 'Could not reach Supabase.'; }
     }
     list.sort((a, b) => b.at.localeCompare(a.at));
-    return send(res, 200, { ok: true, backups: list, supabaseError });
+    return send(res, 200, { ok: true, backups: list, supabaseError, every: SNAP_MIN });
   }
-
-  const m = url.match(/^\/api\/backup\/(hosting|supabase)\/([A-Za-z0-9_.-]+)$/);
-  if (req.method === 'GET' && m) {
+  if (req.method === 'POST' && url === '/api/restore') {
+    if (!(who.code || (who.staff && who.staff.role === 'owner'))) return send(res, 403, { error: 'Only the owner can restore a backup.' });
+    let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
     try {
-      let raw = null;
-      if (m[1] === 'hosting') raw = await hostGet(m[2]);
-      else if (sbOn() && /^\d+$/.test(m[2])) { const v = await sbCall('site_backup_get', { p_id: +m[2] }); raw = v ? JSON.stringify(v) : null; }
+      let raw = null; const src = String(msg.source || ''), id = String(msg.id || '');
+      if (src === 'hosting') raw = await hostGet(id);
+      else if (src === 'supabase' && /^\d+$/.test(id)) { const v = await sbCall('site_backup_get', { p_id: +id }); raw = v ? JSON.stringify(v) : null; }
       if (!raw) return send(res, 404, { error: 'Backup not found.' });
-      res.writeHead(200, Object.assign({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }, HEADERS));
-      return res.end('{"ok":true,"data":' + raw + '}');
-    } catch (e) {
-      console.error('get backup', e.message);
-      return send(res, 502, { error: 'Could not load that backup.' });
-    }
+      const snap = JSON.parse(raw);
+      if (!snap || snap.format !== SNAP_FORMAT || !snap.docs || !snap.docs['shop/main']) return send(res, 400, { error: 'That backup is from an old device copy and can’t be restored here.' });
+      await snapshot('Before restore', true);
+      const n = await restoreDocs(snap.docs, who.staff ? who.staff.name : 'shop code');
+      return send(res, 200, { ok: true, changed: n });
+    } catch (e) { console.error('restore', e.message); return send(res, 502, { error: 'Could not restore that backup.' }); }
   }
 
   return send(res, 404, { error: 'Not found.' });

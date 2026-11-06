@@ -136,19 +136,21 @@ const money=n=>(db.set.cur+' ')+(+n||0).toFixed(2);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let BR={},curB='kum';const BRS=['kum','acc'],BPFX={kum:'',acc:'accra_'},BKEYS=['products','customers','sales','expenses','deliveries','pos','moves'],BLISTS={sales:'d',expenses:'m',deliveries:'m',pos:'m',moves:'m'},SLISTS={log:'d',whMoves:'m',transfers:'m',trReq:'m',whPos:'m'};
 let buyer={phone:'',name:''},me=null,db={products:[],customers:[],sales:[],staff:[],log:[],seq:1},tab='sell',cart=[],q='',range='today',pay='Cash',cust='',split=null,tend='',sdisc='';
-try{const s=localStorage.getItem(K);if(s){db=JSON.parse(s);if(db.__BR){BR=db.__BR;curB=db.__curB||'kum';delete db.__BR;delete db.__curB}}}catch(e){}
-if(!db.products.length&&!db.sales.length){db.products=[
+const WEB0=/^https?:$/.test(location.protocol)&&!/claude\.(ai|site)|claudeusercontent|anthropic/.test(location.hostname);
+if(WEB0)try{['','-before-cloud','-before-restore','-dev','-bk','-br','-sess','-auto','-lastu'].forEach(x=>localStorage.removeItem(K+x))}catch(e){}
+if(!WEB0)try{const s=localStorage.getItem(K);if(s){db=JSON.parse(s);if(db.__BR){BR=db.__BR;curB=db.__curB||'kum';delete db.__BR;delete db.__curB}}}catch(e){}
+if(!WEB0&&!db.products.length&&!db.sales.length){db.products=[
 {id:1,name:'Bottled water',price:3,stock:48,min:10},{id:2,name:'Biscuits',price:5,stock:30,min:8},{id:3,name:'Notebook',price:12,stock:20,min:5},{id:4,name:'Phone charger',price:45,stock:6,min:3}];db.seq=10}
 const DEF={name:'Renatel Shop',addr:'',phone:'',footer:'Thank you!',cur:'GH₵',tax:0,low:5,methods:['Cash','MoMo','Card','Credit'],cats:['Rent','Salaries','Transport','Utilities','Stock purchase','Airtime & data','Other'],theme:'auto',look:{pal:'emerald',font:'system',size:'md'},region:'',city:'',gps:'',maxDisc:20,pcats:['Drinks','Food & snacks','Provisions','Toiletries','Household','Stationery','Electronics','Phones & accessories','Clothing','Other'],skuPre:'',skuAuto:true,rcpts:[],scheds:[],rq:[],invDue:14,reqBuyer:true};
 function norm(){db.products=db.products||[];db.customers=db.customers||[];db.sales=db.sales||[];db.staff=db.staff||[];db.log=db.log||[];db.expenses=db.expenses||[];db.deliveries=db.deliveries||[];db.moves=db.moves||[];db.suppliers=db.suppliers||[];db.pos=db.pos||[];db.whMoves=db.whMoves||[];db.transfers=db.transfers||[];db.trReq=db.trReq||[];db.set=Object.assign({},DEF,db.set||{});['rcpts','scheds','rq'].forEach(k=>db.set[k]=db.set[k]||[]);db.seq=db.seq||1;db.whItems=db.whItems||[];db.whPos=db.whPos||[];syncCats();brNorm()}norm();
 function syncCats(){const s=db.set;s.pcats=[...(s.pcats||[])];db.products.forEach(p=>{if(p.cat&&!s.pcats.includes(p.cat))s.pcats.push(p.cat)})}
-const lsSave=()=>{if(window.__rst)return;try{syncBR();localStorage.setItem(K,JSON.stringify(Object.assign({},db,{__BR:BR,__curB:curB})))}catch(e){}};
+const lsSave=()=>{if(window.__rst||WEB0)return;try{syncBR();localStorage.setItem(K,JSON.stringify(Object.assign({},db,{__BR:BR,__curB:curB})))}catch(e){}};
 const save=()=>{lsSave();cloudSave();try{bkDirty()}catch(e){}};
 const logit=(a,d)=>{db.log.push({ts:Date.now(),sid:me?me.id:null,who:me?me.name:'—',a,d:d||'',b:curB});if(db.log.length>2000)db.log.shift();try{ackLog(a,d)}catch(e){}};
 const hash=async p=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('renatel:'+p)))].map(b=>b.toString(16).padStart(2,'0')).join('');
-const id=()=>{if(!DEV.dn)return db.seq++;const n=++DEV.seq;try{localStorage.setItem(K+'-dev',JSON.stringify(DEV))}catch(e){}return (DEV.dn>1?DEV.dn*1e6:0)+n};
+const id=()=>{if(WEB0)return takeId();if(!DEV.dn)return db.seq++;const n=++DEV.seq;try{localStorage.setItem(K+'-dev',JSON.stringify(DEV))}catch(e){}return (DEV.dn>1?DEV.dn*1e6:0)+n};
 /* ---------- shop database (cloud) ---------- */
-let DEV={};try{DEV=JSON.parse(localStorage.getItem(K+'-dev')||'{}')}catch(e){}
+let DEV={};try{if(!WEB0)DEV=JSON.parse(localStorage.getItem(K+'-dev')||'{}')}catch(e){}
 if(!DEV.id){DEV={id:Math.random().toString(36).slice(2,8),dn:0,seq:0}}
 let cloud=null,cstate='connecting',last={},remote={},ready=false,syncing=false,dirty=false,stT=null,pendR=false,qAlert=false;
 const COLS=['shop','devices','products','customers','sales','expenses','deliveries','pos','moves','log','whMoves','transfers','trReq','whItems','whPos','accra_products','accra_customers','accra_sales','accra_expenses','accra_deliveries','accra_pos','accra_moves'],LISTS={sales:'d',log:'d',expenses:'m',deliveries:'m',pos:'m',moves:'m',whMoves:'m',transfers:'m',trReq:'m'};
@@ -163,7 +165,7 @@ function chunks(){const out={'shop/main':{set:db.set,staff:db.staff,suppliers:db
 function assemble(m){const g=p=>m[p]?JSON.parse(m[p]):undefined,sh=g('shop/main')||{},list=c=>Object.keys(m).filter(p=>p.startsWith(c+'/')).map(g);
  db={set:sh.set,staff:sh.staff||[],suppliers:sh.suppliers||[],seq:sh.seq||1,products:list('products').sort((a,b)=>a.id-b.id),customers:list('customers').sort((a,b)=>a.id-b.id)};
  Object.keys(LISTS).forEach(k=>db[k]=list(k).flatMap(x=>x.recs||[]).sort((a,b)=>(a.ts||0)-(b.ts||0)));norm()}
-function syncUI(){const e=$('#sync');if(!e)return;e.textContent={connecting:'⏳ Connecting…',off:'💾 On this device',offline:'⚠️ Offline',saving:'☁️ Saving…',saved:'☁️ Saved',error:'⚠️ Not saved yet'}[cstate]||'';e.title={connecting:'Connecting to the shop database',off:'The database isn’t available here, so data is saved only in this browser',offline:'Can’t reach the database. Changes are kept on this device and saved when the connection is back',saving:'Saving to the shop database',saved:'Everything is saved to the shop database',error:'Some changes aren’t in the database yet. Retrying.'}[cstate]||''}
+function syncUI(){const e=$('#sync');if(!e)return;if(WEB0&&(cstate=='off'||!cloud)){e.textContent='';e.title='';return}e.textContent={connecting:'⏳ Connecting…',off:'💾 On this device',offline:'⚠️ Offline',saving:'☁️ Saving…',saved:'☁️ Saved',error:'⚠️ Not saved yet'}[cstate]||'';e.title={connecting:'Connecting to the shop database',off:'The database isn’t available here, so data is saved only in this browser',offline:'Can’t reach the database. Changes are kept on this device and saved when the connection is back',saving:'Saving to the shop database',saved:'Everything is saved to the shop database',error:'Some changes aren’t in the database yet. Retrying.'}[cstate]||''}
 function cloudSave(){dirty=true;clearTimeout(stT);stT=setTimeout(flush,500)}
 async function flush(){if(!cloud||!ready||syncing)return;syncing=true;dirty=false;const cur=chunks(),ops=[];
  for(const p in cur){const j=cj(cur[p]);if(last[p]!==j)ops.push([p,j,cur[p]])}for(const p in last)if(!(p in cur)&&!p.startsWith('devices/'))ops.push([p,null]);
@@ -173,14 +175,14 @@ async function flush(){if(!cloud||!ready||syncing)return;syncing=true;dirty=fals
  syncing=false;cstate=fail?'error':'saved';syncUI();if(fail)setTimeout(flush,15000);else if(dirty)cloudSave()}
 function maxIdFor(dn){const lo=dn>1?dn*1e6:0,hi=dn>1?lo+1e6:1e6;let m=0;const chk=x=>{if(typeof x=='number'&&x>=lo&&x<hi)m=Math.max(m,x-lo)};
  ['products','customers','sales','expenses','deliveries','pos','suppliers','staff'].forEach(k=>db[k].forEach(r=>{chk(r.id);(r.refunds||[]).forEach(f=>chk(f.id))}));return m}
-function register(){const mine=remote['devices/'+DEV.id];if(mine&&DEV.dn){}else if(mine){DEV.dn=JSON.parse(mine).dn}
+function register(){if(WEB0)return;const mine=remote['devices/'+DEV.id];if(mine&&DEV.dn){}else if(mine){DEV.dn=JSON.parse(mine).dn}
  else{const dns=Object.keys(remote).filter(p=>p.startsWith('devices/')).map(p=>JSON.parse(remote[p]).dn||0);DEV.dn=dns.length?Math.max(...dns)+1:1;DEV.seq=0}
  DEV.seq=Math.max(DEV.seq||0,maxIdFor(DEV.dn),DEV.dn==1?db.seq:0);try{localStorage.setItem(K+'-dev',JSON.stringify(DEV))}catch(e){}}
 function busy(){const a=document.activeElement;if(a&&a.closest&&a.closest('#app,#dlg')&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))return true;return [...document.querySelectorAll('#app input:not([readonly]):not([type=checkbox]):not(#q):not(#iq),#app textarea:not([readonly])')].some(x=>x.value&&x.value!=x.defaultValue)||$('#dlg').classList.contains('on')}
 function afterRemote(){setTimeout(sessCheck,0);if(me)me=db.staff.find(s=>s.id==me.id)||null;cart=cart.filter(l=>prod(l.id));lsSave();if(busy()){pendR=true;return}render()}
 document.addEventListener('focusout',()=>setTimeout(()=>{if(pendR&&!busy()){pendR=false;render()}},400));
 function firstLoad(){ready=true;const has=!!remote['shop/main'];
- if(has){const loc=chunks(),same=Object.keys(remote).every(p=>p.startsWith('devices/')||cj(JSON.parse(remote[p]))===cj(loc[p]));if(!same&&db.staff.length&&(db.sales.length||db.staff.length)){try{localStorage.setItem(K+'-before-cloud',JSON.stringify(db))}catch(e){}}
+ if(has){const loc=chunks(),same=Object.keys(remote).every(p=>p.startsWith('devices/')||cj(JSON.parse(remote[p]))===cj(loc[p]));if(!WEB0&&!same&&db.staff.length&&(db.sales.length||db.staff.length)){try{localStorage.setItem(K+'-before-cloud',JSON.stringify(db))}catch(e){}}
   last={...remote};assemble(remote);register();cstate='saved'}
  else{last={...remote};register();cstate='saving'}
  syncUI();autoIn();afterRemote();flush();checkSched()}
@@ -188,7 +190,10 @@ function applyRemote(changed){const loc={},cur=chunks();for(const p in cur)loc[p
  changed.forEach(p=>{const r=remote[p];if(r===last[p])return;if(loc[p]===last[p]||(loc[p]===undefined&&last[p]===undefined)){if(r===undefined){delete loc[p];delete last[p]}else{loc[p]=r;last[p]=r}any=true}});
  if(any){assemble(loc);afterRemote()}}
 /* renatel.shop: the same database API, served by the website (Supabase behind it). Devices join with the shop code. */
-function webDb(){const subs={},errs=[];let since=0,first=true,stop=false,timer=null,busyP=false;
+let IDS=[],idBusy=false;
+async function idFill(){if(idBusy||IDS.length>=20||!SESS())return;idBusy=true;try{const r=await fetch('/api/ids',{cache:'no-store',headers:authH()});const j=await r.json();if(r.ok&&Array.isArray(j.ids))IDS.push(...j.ids.map(Number))}catch(e){}idBusy=false}
+function takeId(){const v=IDS.length?IDS.shift():Date.now()*100+Math.floor(Math.random()*100);if(IDS.length<20)idFill();return v}
+function webDb(){idFill();const subs={},errs=[];let since=0,first=true,stop=false,timer=null,busyP=false;
  async function call(p,o){let r;try{r=await fetch(p,Object.assign({cache:'no-store'},o||{},{headers:Object.assign(authH(),{'Content-Type':'application/json'})}))}catch(e){const x=new Error('offline');x.code='unavailable';throw x}
   let j={};try{j=await r.json()}catch(e){}
   if(!r.ok){const x=new Error(j.error||('The server answered '+r.status+'.'));x.code=r.status==401?'revoked':r.status==413?'quota_exceeded':r.status==400?'invalid_argument':'unavailable';throw x}return j}
@@ -365,16 +370,28 @@ function webLoginView(){const h=new Date().getHours(),hi=h<12?'Good morning':h<1
   <label for="wp" class="mut" style="font-size:.9rem">Password or PIN</label>
   <input id="wp" class="lgin" type="password" autocomplete="current-password" onkeydown="if(event.key=='Enter'){event.preventDefault();doWebLogin()}">
   <p id="wmsg" class="ln" style="margin:8px 0 0;min-height:1.2em"></p>
-  <button id="wbtn" class="btn pri" style="width:100%;margin-top:6px" onclick="doWebLogin()">Log in</button></div></div>`}
+  <button id="wbtn" class="btn pri" style="width:100%;margin-top:6px" onclick="doWebLogin()">Log in</button>
+  <button class="btn" style="width:100%;margin-top:8px" onclick="webForgot()">Forgot password?</button></div></div>`}
+function webForgot(){$('#dlgc').innerHTML=`<b>🔑 Reset a password</b><p class="mut ln" style="margin:4px 0 10px">Use the shop recovery code (the owner created it in Settings → Security). If you don’t have it, ask the owner or a manager to reset your password for you.</p>
+ <label class="fl"><span class="mut">Your name</span><input id="wf_n" value="${esc(($('#wu')||{}).value||'')}" autocapitalize="words" spellcheck="false"></label>
+ <label class="fl" style="margin-top:8px"><span class="mut">Recovery code</span><input id="wf_c" placeholder="XXXX-XXXX-XXXX" autocapitalize="characters" autocomplete="off" spellcheck="false"></label>
+ <label class="fl" style="margin-top:8px"><span class="mut">New password</span><input id="wf_p" type="password" autocomplete="new-password" placeholder="6+ letters and numbers"></label>
+ <p id="wf_m" class="ln" style="margin:8px 0 0;min-height:1.2em"></p>
+ <div class="form" style="margin-top:8px"><button class="btn pri" id="wf_b" onclick="doWebReset()">Reset and log in</button><button class="btn" onclick="$('#dlg').classList.remove('on')">Cancel</button></div>`;$('#dlg').classList.add('on')}
+async function doWebReset(){const n=$('#wf_n').value.trim(),c=$('#wf_c').value.trim(),p=$('#wf_p').value,m=$('#wf_m'),b=$('#wf_b');if(!n||!c||!p){m.textContent='Fill in your name, the recovery code and a new password.';return}
+ b.disabled=true;m.textContent='Checking…';
+ try{const r=await fetch('/api/reset',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,code:c,password:p})});let j={};try{j=await r.json()}catch(e){}if(!r.ok)throw new Error(j.error||('The server answered '+r.status+'.'));
+  try{sessionStorage.setItem(K+'-sess',JSON.stringify({t:j.token,sid:j.sid,exp:j.exp}));sessionStorage.setItem(K+'-auto',JSON.stringify({sid:j.sid,ts:Date.now()}))}catch(e){}m.textContent='✔ Password changed. Opening your shop…';setTimeout(()=>location.reload(),600)}
+ catch(e){b.disabled=false;m.textContent='✖ '+(e.message==='Failed to fetch'?'Can’t reach renatel.shop. Check the internet connection.':e.message)}}
 async function webLoginCall(name,password){const r=await fetch('/api/login',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,password,dev:DEV.id})});let j={};try{j=await r.json()}catch(e){}if(!r.ok)throw new Error(j.error||('The server answered '+r.status+'.'));
- try{localStorage.setItem(K+'-sess',JSON.stringify({t:j.token,sid:j.sid,exp:j.exp}))}catch(e){}return j}
+ try{sessionStorage.setItem(K+'-sess',JSON.stringify({t:j.token,sid:j.sid,exp:j.exp}))}catch(e){}return j}
 async function doWebLogin(){const n=($('#wu').value||'').trim(),p=$('#wp').value||'',m=$('#wmsg'),b=$('#wbtn');
  if(!n){m.textContent='Type your name first.';return $('#wu').focus()}if(!p){m.textContent='Type your password / PIN too.';return $('#wp').focus()}
  b.disabled=true;b.textContent='Checking…';m.textContent='';
- try{const j=await webLoginCall(n,p);try{localStorage.setItem(K+'-auto',JSON.stringify({sid:j.sid,ts:Date.now()}))}catch(e){}b.textContent='Opening your shop…';m.textContent='✔ Password correct. Welcome, '+j.name+'!';setTimeout(()=>location.reload(),300)}
+ try{const j=await webLoginCall(n,p);try{sessionStorage.setItem(K+'-auto',JSON.stringify({sid:j.sid,ts:Date.now()}))}catch(e){}b.textContent='Opening your shop…';m.textContent='✔ Password correct. Welcome, '+j.name+'!';setTimeout(()=>location.reload(),300)}
  catch(e){b.disabled=false;b.textContent='Log in';$('#wp').value='';m.textContent='✖ '+(e.message==='Failed to fetch'?'Can’t reach renatel.shop. Check the internet connection.':e.message);$('#wp').focus()}}
 function webRelogin(n,p){if(!n||!p)return;webLoginCall(n,p).catch(()=>{})}
-function autoIn(){let a=null;try{a=JSON.parse(localStorage.getItem(K+'-auto')||'null')}catch(e){}if(!a)return;try{localStorage.removeItem(K+'-auto')}catch(e){}
+function autoIn(){let a=null;try{a=JSON.parse(sessionStorage.getItem(K+'-auto')||'null')}catch(e){}if(!a)return;try{sessionStorage.removeItem(K+'-auto')}catch(e){}
  if(Date.now()-a.ts>120000)return;const s=db.staff.find(x=>x.id==a.sid);if(!s||s.locked)return;me=s;loginAt=Date.now();lastAct=Date.now();tab='home';cart=[];logit('Logged in','on renatel.shop');save()}
 function joinView(){return box('Join your shop','<span class="mut ln">Type the shop code once on this phone or computer. It then shows the same products, sales and staff as every other device.</span><input id="jc" placeholder="Shop code (RNTL-XXXX-XXXX-XXXX-XXXX)" autocapitalize="characters" autocomplete="off" spellcheck="false" onkeydown="if(event.key==\'Enter\')joinShop()"><input id="jn" placeholder="Name of this device, e.g. Counter PC" value="'+esc(BK.name||'')+'"><button class="btn pri" onclick="joinShop()">Join shop</button><p class="mut ln" style="margin:8px 0 0;font-size:.85rem">The owner finds the shop code in Hostinger (BACKUP_CODE).</p>')}
 async function joinShop(){const c=($('#jc').value||'').trim().toUpperCase(),n=($('#jn').value||'').trim().slice(0,40);if(!c)return uiAlert('Type the shop code first.');
@@ -386,7 +403,7 @@ let lsel='';
 const RCOL={owner:'#b7791f',manager:'#2b6cb0',accountant:'#6b46c1',cashier:'#0f6e56',stock:'#c05621',warehouse:'#7b5e3b',delivery:'#2c7a7b'},inits=n=>String(n||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
 try{localStorage.removeItem(K+'-lastu')}catch(e){}
 const nmz=v=>String(v||'').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
-function findStaff(v){const q=nmz(v);if(!q)return null;const ex=db.staff.filter(x=>nmz(x.name)==q);if(ex.length)return ex.length==1?ex[0]:null;const fn=db.staff.filter(x=>nmz(x.name).split(' ')[0]==q);return fn.length==1?fn[0]:null}
+function findStaff(v){const q=nmz(v);if(!q)return null;const w=n=>nmz(n).split(' ').sort().join(' ');let L=db.staff.filter(x=>nmz(x.name)==q);if(!L.length)L=db.staff.filter(x=>w(x.name)==q.split(' ').sort().join(' '));if(!L.length&&!q.includes(' '))L=db.staff.filter(x=>nmz(x.name).split(' ').includes(q));return L.length==1?L[0]:null}
 function loginView(){const pre=lsel&&db.staff.find(x=>x.id==lsel),h=new Date().getHours(),hi=h<12?'Good morning':h<17?'Good afternoon':'Good evening',lg=db.set.rx&&db.set.rx.logo;
  let where='Saved on this device';try{if(cloud)where='Saved in the shop database';else if(ONWEB&&BK.code)where='Saved on this device · backed up online'}catch(e){}
  return `<div class="lgw"><div class="lgh"><div class="lgl">${lg?`<img src="${lg}" alt="">`:'🛍️'}</div><h1>${esc(db.set.name)}</h1><p class="mut">${hi} · ${new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'})}</p></div>
@@ -511,7 +528,7 @@ function settingsView(){
  <div class="card"><b>Product codes (SKU)</b><p class="mut ln" style="margin:4px 0 8px">Shop SKUs look like <b>${esc(skuPre())}-DRI-0001</b>: your prefix, the first 3 letters of the category, then a number. You can still scan or type a maker’s barcode instead.</p><div class="form" style="flex-direction:column"><label class="fl"><span class="mut">SKU prefix (blank = shop initials)</span><input id="s_skp" value="${esc(s.skuPre||'')}" maxlength="6" placeholder="${esc(skuPre())}" style="width:120px"></label><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="s_ska" ${s.skuAuto?'checked':''}> Create a SKU automatically when a new product’s SKU is left blank</label><button class="btn" onclick="db.set.skuPre=$('#s_skp').value.replace(/[^A-Za-z0-9]/g,'').toUpperCase();db.set.skuAuto=$('#s_ska').checked;logit('Settings changed','SKU options');save();render()">Save SKU options</button><button class="btn" onclick="skuFill()">Create SKUs for products that have none</button></div></div>`,security:` <div class="card"><b>Staff</b><p class="mut">Add cashiers, reset PINs and view the activity trail.</p><button class="btn" onclick="go('staff')">Open Staff &amp; activity</button></div>
  ${secCard()}
  <div class="card"><b>Password recovery</b><p class="mut ln" style="margin:4px 0 8px">Staff who forget their password can reset it from the login screen, approved by an owner or manager, or with the shop recovery code. Accounts lock after ${MAXF} wrong tries in a row. ${me&&me.emailOK||ONWEB?'':'<br>📧 <a href="#" onclick="myDetails();return false">Add your own email</a> so you can also reset your password by email.'} ${s.rc?"✅ A recovery code is set up.":"<span class=\"bad\">⚠️ No recovery code yet. Create one so an owner can never be locked out for good.</span>"}</p><button class="btn" onclick="(async()=>{if(!db.set.rc||await uiConfirm('Create a new recovery code? The old one will stop working.','Create new code',false))newRc()})()">${s.rc?"Create a new recovery code":"Create recovery code"}</button></div>`,reports:` ${gmCard()}${schedCard()}`,data:` ${bkCard()}<div class="card"><b>Shop database</b><p class="mut ln" style="margin:4px 0 8px">${cloud?(cstate=="offline"?"⚠️ Can’t reach the database right now. Changes are kept on this device and saved when the connection is back.":(cloud.web?"☁️ Everything (products, sales, customers, staff, expenses, deliveries, purchases, settings and the activity trail) is saved in the shop’s online database and appears on every phone or computer that joined with the shop code.":"☁️ Everything (products, sales, customers, staff, expenses, deliveries, purchases, settings and the activity trail) is saved in this page’s own database and appears on every device where you open this page signed in to Claude.")):(ONWEB?"💾 On the website, each phone or computer keeps its own copy of the shop data. Online backup (above) copies it to your hosting and Supabase.":"💾 The database isn’t available here, so data is saved only in this browser. Open this page inside Claude while signed in to use the shop database.")}</p>${cloud?`<button class="btn" onclick="cloudSave()">Save to database now</button> <span class="mut ln">This device: #${DEV.dn||"?"}</span>`:""}</div>
- <div class="card"><b>Data &amp; backup</b><p class="mut">${db.products.length} products · ${db.customers.length} customers · ${db.sales.length} sales · ${db.expenses.length} expenses · ${db.suppliers.length} suppliers · ${db.pos.length} purchase orders · ${db.staff.length} staff</p><div class="form"><button class="btn" onclick="showBackup()">Create &amp; copy backup</button></div><textarea id="bk" rows="3" readonly placeholder="Your backup appears here"></textarea><p class="mut" style="margin-bottom:4px">Restore from a backup (replaces everything):</p><textarea id="rs" rows="3" placeholder="Paste backup here"></textarea><div class="form" style="margin-top:6px"><button class="btn" onclick="restoreData()">Restore</button></div></div>
+ <div class="card"><b>Data &amp; backup</b><p class="mut">${db.products.length} products · ${db.customers.length} customers · ${db.sales.length} sales · ${db.expenses.length} expenses · ${db.suppliers.length} suppliers · ${db.pos.length} purchase orders · ${db.staff.length} staff</p>${ONWEB?'<p class="mut ln" style="margin:0">Everything runs online from the host. Nothing is stored on this phone or computer.</p>':`<div class="form"><button class="btn" onclick="showBackup()">Create &amp; copy backup</button></div><textarea id="bk" rows="3" readonly placeholder="Your backup appears here"></textarea><p class="mut" style="margin-bottom:4px">Restore from a backup (replaces everything):</p><textarea id="rs" rows="3" placeholder="Paste backup here"></textarea><div class="form" style="margin-top:6px"><button class="btn" onclick="restoreData()">Restore</button></div>`}</div>
  <div class="card"><b>Danger zone</b><div class="form" style="margin-top:8px"><button class="btn del" onclick="clearLog()">Clear activity trail</button><button class="btn del" onclick="resetShop('sales')">Reset sales &amp; expenses</button><button class="btn del" onclick="resetShop('all')">Erase everything</button></div></div>`,look:lookSettings()},LB={shop:'🏪 Shop',lists:'🗂️ Lists & products',reports:'📤 Reports & email',security:'🔐 Security',data:'💾 Data & backup',look:'🎨 Themes'};
  if(!SEC[sset])sset='shop';return `<div class="stack"><div class="chips">${Object.keys(LB).map(k=>`<button class="${k==sset?'on':''}" onclick="sset='${k}';render()">${LB[k]}</button>`).join('')}</div>${SEC[sset]}</div>`}
 async function skuFill(){const l=db.products.filter(p=>!p.sku);if(!l.length)return uiAlert('Every product already has a SKU.');if(!await uiConfirm('Create SKUs for '+l.length+' product(s)?'))return;l.forEach(p=>p.sku=nextSku(p.cat));logit('Created SKUs',l.length+' products');save();render();uiAlert('Done.')}
@@ -1334,7 +1351,7 @@ async function reqDecline(i){const r=db.trReq.find(x=>x.id==i);if(!await uiConfi
 /* ================= branches (Kumasi / Accra) + shared warehouse ================= */
 function brNorm(){BRS.forEach(b=>{BR[b]=BR[b]||{}});const cur=BR[curB];BKEYS.forEach(k=>{if(!cur[k])cur[k]=db[k]||[];else db[k]=cur[k]});BRS.forEach(b=>BKEYS.forEach(k=>{BR[b][k]=BR[b][k]||[]}));BKEYS.forEach(k=>db[k]=BR[curB][k]);db.whItems=db.whItems||[];db.whPos=db.whPos||[];migrateWh()}
 function syncBR(){if(!BR[curB])BR[curB]={};BKEYS.forEach(k=>{if(db[k])BR[curB][k]=db[k]})}
-function useBranch(b){if(!BRS.includes(b)||b==curB)return;syncBR();curB=b;brNorm();cart=[];buyer={phone:'',name:''};cust='';try{localStorage.setItem(K+'-br',b)}catch(e){}}
+function useBranch(b){if(!BRS.includes(b)||b==curB)return;syncBR();curB=b;brNorm();cart=[];buyer={phone:'',name:''};cust='';try{if(!WEB0)localStorage.setItem(K+'-br',b)}catch(e){}}
 function migrateWh(){const Kb=BR.kum;if(!Kb||!Kb.products)return;const W=Kb.products.filter(p=>p.wh!=null||p.inShop===false||p.whMin!=null),wp=(Kb.pos||[]).filter(o=>o.loc=='wh');if(!W.length&&!wp.length)return;
  W.forEach(p=>{if(!db.whItems.find(w=>w.id==p.id))db.whItems.push({id:p.id,name:p.name,sku:p.sku,cat:p.cat,unit:p.unit,cost:p.cost,price:p.price,supplier:p.supplier,exp:p.exp,wh:p.wh||0,whMin:p.whMin||0});delete p.wh;delete p.whMin});
  Kb.products=Kb.products.filter(p=>!(p.inShop===false&&!(p.stock>0)));Kb.products.forEach(p=>{if(p.inShop===false)p.inShop=true});wp.forEach(o=>{if(!db.whPos.find(x=>x.id==o.id))db.whPos.push(o)});Kb.pos=(Kb.pos||[]).filter(o=>o.loc!='wh');
@@ -1344,7 +1361,7 @@ const SN=()=>db.set.name+' · '+BRN();
 const staffBranches=s=>!s?[]:s.role=='owner'||s.branch=='both'?BRS.slice():[BRS.includes(s.branch)?s.branch:'kum'];
 const whi=i=>db.whItems.find(w=>w.id==i),whQ=i=>(whi(i)||{}).wh||0,allPos=()=>[...(BR.kum&&BR.kum.pos||[]),...(BR.acc&&BR.acc.pos||[]),...db.whPos];
 let brPref=null;
-function brCheck(){if(!me)return;const ok=staffBranches(me);if(brPref!==me.id){brPref=me.id;let p=null;try{p=localStorage.getItem(K+'-br')}catch(e){}if(p&&ok.includes(p)&&p!=curB)useBranch(p)}if(!ok.includes(curB))useBranch(ok[0])}
+function brCheck(){if(!me)return;const ok=staffBranches(me);if(brPref!==me.id){brPref=me.id;let p=null;try{if(!WEB0)p=localStorage.getItem(K+'-br')}catch(e){}if(p&&ok.includes(p)&&p!=curB)useBranch(p)}if(!ok.includes(curB))useBranch(ok[0])}
 function brDlg(){const ok=staffBranches(me);if(ok.length<2)return;$('#dlgc').innerHTML=`<b>📍 Choose a branch</b><p class="mut ln" style="margin:4px 0 10px">Sales, stock, customers and expenses are kept separately for each branch. The warehouse serves both.</p>
  <div class="tiles">${ok.map(b=>`<button class="tile ${b==curB?'on':''}" onclick="switchBranch('${b}')"><span>${b=='kum'?'🏙️':'🌊'}</span>${esc(BRN(b))}${b==curB?'<small class="mut">You are here</small>':''}</button>`).join('')}</div><div class="form" style="margin-top:12px"><button class="btn" onclick="$('#dlg').classList.remove('on')">Close</button></div>`;$('#dlg').classList.add('on')}
 function switchBranch(b){$('#dlg').classList.remove('on');if(b==curB)return;useBranch(b);tab='home';render();scrollTo(0,0);toast('Switched to '+BRN(b),'Showing '+BRN(b)+' sales, stock and customers')}
@@ -1514,18 +1531,18 @@ function prnCard(){const s=db.set;if(!ONWEB)return `<div class="card"><b>🖨️
  <div class="form"><button class="btn" onclick="prnTest()">Print a test receipt</button></div></div></div>`}
 function prnTest(){const s=db.sales[db.sales.length-1];if(s)showReceipt(s);else{const r=$('#receipt');r.className='';r.innerHTML=`<div style="text-align:center"><b>${esc(SN().toUpperCase())}</b><br>Test receipt<br>${new Date().toLocaleString()}</div><hr><div class="r"><span>Printer test</span><span>0.00</span></div><hr><div style="text-align:center">If you can read this, printing works ✓</div>`;$('#rbtns').innerHTML=`<button class="btn" onclick="$('#modal').classList.remove('on')">Close</button>`;$('#modal').classList.add('on')}setTimeout(printRcpt,250)}
 /* ---------- website session: set by a staff login checked on the server ---------- */
-function SESS(){try{const x=JSON.parse(localStorage.getItem(K+'-sess')||'null');return x&&x.t&&x.exp>Date.now()?x:null}catch(e){return null}}
-function sessClear(){try{localStorage.removeItem(K+'-sess')}catch(e){}}
+function SESS(){try{const x=JSON.parse(sessionStorage.getItem(K+'-sess')||'null');return x&&x.t&&x.exp>Date.now()?x:null}catch(e){return null}}
+function sessClear(){try{sessionStorage.removeItem(K+'-sess')}catch(e){}}
 function bkCode(){try{return BK.code||''}catch(e){return ''}}
 function webAuth(){return !!(SESS()||bkCode())}
 function authH(){const h={},s=SESS();if(s)h.Authorization='Bearer '+s.t;const c=bkCode();if(c)h['X-Backup-Code']=c;return h}
 /* ---------- online backup (renatel.shop hosting + Supabase) ---------- */
 const BKK=K+'-bk',ONWEB=/^https?:$/.test(location.protocol)&&!/claude\.(ai|site)|claudeusercontent|anthropic/.test(location.hostname);
-let BK={};try{BK=JSON.parse(localStorage.getItem(BKK)||'{}')}catch(e){}
+let BK={};try{if(!ONWEB)BK=JSON.parse(localStorage.getItem(BKK)||'{}')}catch(e){}
 if(!BK.dev){BK={dev:Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-4),name:/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)?'Phone':'Computer',auto:true}}
-const bkPut=()=>{try{localStorage.setItem(BKK,JSON.stringify(BK))}catch(e){}};bkPut();
+const bkPut=()=>{if(ONWEB)return;try{localStorage.setItem(BKK,JSON.stringify(BK))}catch(e){}};bkPut();
 let bkT=null,bkBusy=false,bkPend=false,bkList=null;
-const bkOn=()=>ONWEB&&webAuth()&&BK.auto!==false;
+const bkOn=()=>false; // backups are made by the server, never from a device
 function bkDirty(){if(!bkOn())return;bkPend=true;clearTimeout(bkT);bkT=setTimeout(()=>bkRun(false),60000)}
 async function bkFetch(p,o,code){const r=await fetch(p,Object.assign({cache:'no-store'},o||{},{headers:Object.assign(code?{'X-Backup-Code':code}:authH(),(o&&o.headers)||{})}));let j={};try{j=await r.json()}catch(e){}if(!r.ok)throw new Error(j.error||('The server answered '+r.status+'.'));return j}
 async function bkRun(manual){if(!ONWEB||!webAuth()||window.__rst)return;if(bkBusy){bkPend=true;return}bkBusy=true;bkPend=false;clearTimeout(bkT);bkRefresh('⏳ Backing up…');
@@ -1540,7 +1557,23 @@ function bkStatus(){if(!webAuth())return '⚪ Not connected on this device. Ente
  if(!L.ok)return `⚠️ Last try ${fdt(L.at)} failed: ${esc(L.err)}${off}`;
  return `${L.h&&L.s?'✅':'⚠️'} Last backup ${fdt(L.at)}: hosting ${L.h?'✓':'✗'} · Supabase ${L.s?'✓':'✗'}${L.err?' · '+esc(L.err):''}${off}`}
 function bkRefresh(t){const e=$('#bkst');if(e)e.innerHTML=t||bkStatus()}
-function bkCard(){if(!ONWEB)return `<div class="card"><b>🌐 Online backup</b><p class="mut ln" style="margin:4px 0 0">Backups to the hosting and Supabase run on the website, renatel.shop.</p></div>`;
+let sbk=null;
+async function sbkNow(b){b.disabled=true;try{const j=await bkFetch('/api/backup/now',{method:'POST'});const h=j.hosting&&!j.hosting.error,sp=j.supabase&&!j.supabase.error;
+ uiAlert(j.same?'✔ Nothing has changed since the last backup, so the shop is already backed up.':(h||sp)?'✔ Backup saved online'+(h&&sp?' on the hosting and in Supabase.':h?' on the hosting.':' in Supabase.'):'⚠️ The backup could not be saved. Try again in a moment.');if(sbk)sbkShow()}catch(e){uiAlert('⚠️ '+e.message)}b.disabled=false}
+async function sbkShow(){const e=$('#bklist');if(e)e.innerHTML='<p class="mut">⏳ Loading backups…</p>';try{const j=await bkFetch('/api/backups'),g={};
+ j.backups.forEach(b=>{const k=b.sha256||b.at;const x=g[k]||(g[k]={at:b.at,name:b.name,counts:b.counts,src:{}});if(b.at>x.at)x.at=b.at;x.src[b.source]=b.id});
+ sbk={rows:Object.values(g).sort((a,b)=>b.at.localeCompare(a.at)).slice(0,60),warn:j.supabaseError}}catch(er){sbk={err:er.message}}const f=$('#bklist');if(f)f.innerHTML=sbkHtml()}
+function sbkHtml(){if(!sbk)return '';if(sbk.err)return `<p class="bad">⚠️ ${esc(sbk.err)}</p>`;if(!sbk.rows.length)return '<p class="mut">No backups yet. The first one is made within 10 minutes.</p>';const own=me&&me.role=='owner';
+ return `${sbk.warn?`<p class="low">⚠️ ${esc(sbk.warn)} Showing hosting copies only.</p>`:''}<div class="tw"><table><tr><th>When</th><th>Made</th><th>Contents</th><th>Saved in</th>${own?'<th></th>':''}</tr>${sbk.rows.map(r=>{const c=r.counts||{},src=r.src.supabase?['supabase',r.src.supabase]:['hosting',r.src.hosting];
+  return `<tr><td>${fdt(Date.parse(r.at))}</td><td>${esc(r.name||'')}</td><td style="white-space:normal">${c.products||0} products · ${c.sales||0} sales · ${c.customers||0} customers · ${c.staff||0} staff</td><td>${r.src.hosting?'Hosting ✓ ':''}${r.src.supabase?'Supabase ✓':''}</td>${own?`<td><button class="btn" onclick="sbkRestore('${src[0]}','${esc(src[1])}','${esc(r.at)}')">Restore</button></td>`:''}</tr>`}).join('')}</table></div>`}
+async function sbkRestore(src,idv,at){if(!me||me.role!='owner')return;
+ if(!await uiConfirm(`Replace the WHOLE shop, for everyone, with the backup from ${fdt(Date.parse(at))}? A backup of the shop as it is now is made first. Everyone, on every phone and computer, will need to log in again.`,'Restore this backup'))return;
+ try{logit('Restored online backup','from '+fdt(Date.parse(at)));save();await sleep(800);const j=await bkFetch('/api/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:src,id:idv})});
+  await uiAlert('✔ The shop was restored from the backup of '+fdt(Date.parse(at))+'. Log in again.');sessClear();location.reload()}catch(e){uiAlert('⚠️ Restore failed: '+e.message)}}
+function bkCard(){if(ONWEB){const can=me&&['owner','manager'].includes(me.role),own=me&&me.role=='owner';
+ return `<div class="card"><b>🌐 Online backup (hosting + Supabase)</b><p class="mut ln" style="margin:4px 0 8px">The website backs up the whole shop by itself every 10 minutes when something has changed, on your Hostinger hosting and in Supabase. Nothing is backed up on phones or computers. Backups from the last 2 days are all kept, then one a day for 90 days.</p>
+ ${can?`<div class="form"><button class="btn" onclick="sbkNow(this)">Back up now</button><button class="btn" onclick="sbkShow()">${own?'Restore from online backup':'See online backups'}</button></div><div id="bklist" style="margin-top:8px">${sbkHtml()}</div>`:'<p class="mut ln" style="margin:0">Only the owner or a manager can see the backups.</p>'}</div>`}
+ if(!ONWEB)return `<div class="card"><b>🌐 Online backup</b><p class="mut ln" style="margin:4px 0 0">Backups to the hosting and Supabase run on the website, renatel.shop.</p></div>`;
  const own=me&&me.role=='owner';
  return `<div class="card"><b>🌐 Online backup (hosting + Supabase)</b><p class="mut ln" style="margin:4px 0 8px">Every change on this device is copied to your Hostinger hosting and to Supabase about a minute later. Backups from the last 2 days are all kept, then one a day for 90 days.</p>
  <p class="ln" id="bkst" style="margin:0 0 8px">${bkStatus()}</p>
