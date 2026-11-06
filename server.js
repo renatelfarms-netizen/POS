@@ -1,13 +1,13 @@
 'use strict';
 // Multi-shop web server: many shops, each with its own link (site/<shop-link>), data, staff,
-// logins, backups and free trial. Tessa POS, built from the Renatel Shop app.
+// logins and backups. Free to use. Tessa POS, built from the Renatel Shop app.
 // - /                 the platform page: sign up a new shop, find your shop
-// - /admin            platform admin (you): every shop, trial, paid, suspend
+// - /admin            platform admin (you): every shop, pause / open, notes
 // - /<link>           a shop's app; its API is /<link>/api/...
 // No dependencies. Secrets come from environment variables:
 //   SUPABASE_URL, SUPABASE_KEY, SUPABASE_BACKUP_TOKEN   the database (multi-shop functions, see schema.sql)
 //   PLATFORM_ADMIN_PASSWORD                             password for /admin
-//   PLATFORM_NAME (default Tessa POS), PLATFORM_HOST (optional), TRIAL_DAYS (default 30)
+//   PLATFORM_NAME (default Tessa POS), PLATFORM_HOST (optional)
 //   BACKUP_DIR (optional) hosting copies, one folder per shop
 const http = require('http');
 const fs = require('fs');
@@ -23,7 +23,6 @@ const T = () => ctx.getStore() || {};
 const SID = () => (T().shop || {}).id || '-';
 const PLATFORM = process.env.PLATFORM_NAME || 'Tessa POS';
 const SITE = process.env.PLATFORM_HOST || 'the website';
-const TRIAL_DAYS = +process.env.TRIAL_DAYS || 30;
 
 const PAGE = path.join(__dirname, 'index.html'), LANDING = path.join(__dirname, 'landing.html'), ADMIN = path.join(__dirname, 'admin.html'), LOGIN = path.join(__dirname, 'login.html'), REGISTER = path.join(__dirname, 'register.html'), CSS = path.join(__dirname, 'site.css');
 const PORT = process.env.PORT || 3000;
@@ -226,7 +225,7 @@ async function restoreDocs(docs, by) {
   console.log('restore: ' + n + ' documents changed by ' + by);
   return n;
 }
-// Automatic backups: every shop that is open (active or on trial), one after another.
+// Automatic backups: every open shop, one after another.
 async function backupAll() {
   let shops = []; try { shops = (await sbCall('mt_shop_list', {})) || []; } catch (e) { return console.error('auto backup list', e.message); }
   for (const sh of shops) if (sh.status !== 'suspended') await ctx.run({ shop: sh }, () => snapshot('Automatic')).catch((e) => console.error('auto backup ' + sh.slug, e.message));
@@ -308,17 +307,13 @@ function tooMany(key) { const f = loginFails.get(key); return f && f.until > Dat
 function failed(key, max) { const f = loginFails.get(key) || { n: 0, until: 0 }; f.n++; if (f.n >= max) { f.until = Date.now() + 15 * 60000; f.n = 0; } loginFails.set(key, f); }
 setInterval(() => { const t = Date.now(); for (const [k, v] of loginFails) if (v.until && v.until < t) loginFails.delete(k); }, 600000).unref();
 
-// Is the shop open? Paused shops and shops whose trial ended (and are not paid) can't log in. Their data is kept.
+// Is the shop open? Paused shops can't log in. Their data is kept.
 const fdate = (t) => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-function planState(sh) {
-  const now = Date.now(), paid = sh.paid_until && Date.parse(sh.paid_until) > now, trial = sh.trial_ends && Date.parse(sh.trial_ends) > now;
-  return sh.status === 'suspended' ? 'suspended' : paid ? 'paid' : trial ? 'trial' : 'expired';
-}
+// Tessa POS is free to use: a shop is either open, or paused by the platform admin.
+function planState(sh) { return sh.status === 'suspended' ? 'suspended' : 'active'; }
 function shopClosed() {
   const sh = T().shop; if (!sh) return [404, 'Shop not found.'];
-  const st = planState(sh);
-  if (st === 'suspended') return [403, 'This shop has been paused. Contact ' + PLATFORM + ' to open it again. All your data is kept safe.'];
-  if (st === 'expired') return [402, 'The free trial for ' + sh.name + ' ended on ' + fdate(sh.paid_until && Date.parse(sh.paid_until) > Date.parse(sh.trial_ends) ? sh.paid_until : sh.trial_ends) + '. Contact ' + PLATFORM + ' to keep using the shop. All your data is kept safe.'];
+  if (planState(sh) === 'suspended') return [403, 'This shop has been paused. Contact ' + PLATFORM + ' to open it again. All your data is kept safe.'];
   return null;
 }
 async function login(req, res) {
@@ -572,7 +567,7 @@ async function shopBySlug(slug) {
   slugCache.set(slug, { at: Date.now(), rec: rec || null });
   return rec || null;
 }
-const pubShop = (r) => ({ id: r.id, slug: r.slug, name: r.name, owner: r.owner_name, email: r.email, phone: r.phone, status: r.status, plan: planState(r), created: r.created_at, trialEnds: r.trial_ends, paidUntil: r.paid_until, note: r.note || '' });
+const pubShop = (r) => ({ id: r.id, slug: r.slug, name: r.name, owner: r.owner_name, email: r.email, phone: r.phone, status: r.status, plan: planState(r), created: r.created_at, note: r.note || '' });
 const signups = new Map();
 function signupAllowed(ip) { const m = signups.get(ip) || { n: 0, since: Date.now() }; if (Date.now() - m.since > 3600e3) { m.n = 0; m.since = Date.now(); } m.n++; signups.set(ip, m); return m.n <= 5; }
 
@@ -589,7 +584,7 @@ async function signup(req, res) {
   const rule = pwRule(pw, {}); if (rule) return send(res, 400, { error: rule, f: 'password' });
   if (!signupAllowed(clientIp(req))) return send(res, 429, { error: 'Too many new shops from this connection. Try again in an hour.' });
   let rec;
-  try { rec = await sbCall('mt_shop_create', { p_slug: slug, p_name: name, p_owner: owner, p_email: email, p_phone: phone, p_trial_days: TRIAL_DAYS }); }
+  try { rec = await sbCall('mt_shop_create', { p_slug: slug, p_name: name, p_owner: owner, p_email: email, p_phone: phone, p_trial_days: 365 }); }
   catch (e) { console.error('signup', e.message); return send(res, 502, { error: 'Could not create the shop. Try again in a moment.' }); }
   if (!rec || rec.error === 'taken') return send(res, 409, { error: 'That shop link is already used. Try another, e.g. ' + slug + '-' + (2 + crypto.randomInt(98)) + '.', f: 'slug' });
   slugCache.delete(slug);
@@ -598,25 +593,40 @@ async function signup(req, res) {
     const main = { set: { name, phone, email, addr: '', cur, branches: nb, brNames: { kum: br1, acc: br2 }, created: Date.now() }, staff: [ownerRec], suppliers: [], seq: 10 };
     try { await sbCall('shop_db_put', { p_col: 'shop', p_id: 'main', p_data: main }); }
     catch (e) { console.error('signup main', e.message); return send(res, 502, { error: 'The shop was created but could not be opened. Try logging in at /' + slug + '.' }); }
-    serverLog('Shop created', name + ' · free trial until ' + fdate(rec.trial_ends), ownerRec);
+    serverLog('Shop created', name + ' · on ' + PLATFORM, ownerRec);
     console.log('new shop: ' + slug);
     sendEmail({ to: [email], subject: 'Welcome to ' + PLATFORM + ' - your shop ' + name + ' is ready',
-      text: 'Hello ' + owner + ',\n\nYour shop "' + name + '" is ready.\n\nYour shop link: ' + (process.env.PLATFORM_HOST ? 'https://' + process.env.PLATFORM_HOST : '') + '/' + slug + '\nLog in with your name (' + owner + ') and the password you chose.\n\nYour free trial runs until ' + fdate(rec.trial_ends) + '.\nAdd your staff in Staff, and your products in Stock.\n\n-- \n' + PLATFORM }).catch((e) => console.error('welcome mail', e.message));
-    return send(res, 200, { ok: true, slug, token: makeToken(1, cleanDev(m.dev)), sid: 1, name: owner, exp: Date.now() + SESSION_DAYS * 864e5, trialEnds: rec.trial_ends });
+      text: 'Hello ' + owner + ',\n\nYour shop "' + name + '" is ready.\n\nYour shop link: ' + (process.env.PLATFORM_HOST ? 'https://' + process.env.PLATFORM_HOST : '') + '/' + slug + '\nLog in with your name (' + owner + ') and the password you chose.\n\n'+PLATFORM+' is free to use.\nAdd your staff in Staff, and your products in Stock.\n\n-- \n' + PLATFORM }).catch((e) => console.error('welcome mail', e.message));
+    return send(res, 200, { ok: true, slug, token: makeToken(1, cleanDev(m.dev)), sid: 1, name: owner, exp: Date.now() + SESSION_DAYS * 864e5 });
   });
 }
 
-// Platform admin (you): one password in PLATFORM_ADMIN_PASSWORD.
-const adminSign = (b) => crypto.createHmac('sha256', secret() + ':admin:' + (process.env.PLATFORM_ADMIN_PASSWORD || '')).update(b).digest('base64url');
-function adminOK(req) {
+// Platform admin (you). The first password is PLATFORM_ADMIN_PASSWORD; after you change it on /admin,
+// only a salted hash of the new one is kept in the database (mt_kv 'admin_pw').
+let adminPw = { at: 0, hash: null };
+async function adminHash(fresh) {
+  if (!fresh && Date.now() - adminPw.at < 60000) return adminPw.hash;
+  try { adminPw = { at: Date.now(), hash: (await sbCall('mt_kv_get', { p_k: 'admin_pw' })) || null }; } catch (e) { console.error('admin pw', e.message); }
+  return adminPw.hash;
+}
+// Admin logins are signed with the current password, so changing it signs out every admin session.
+const adminSign = (b) => crypto.createHmac('sha256', secret() + ':admin:' + (adminPw.hash || process.env.PLATFORM_ADMIN_PASSWORD || '')).update(b).digest('base64url');
+async function adminOK(req) {
   const [b, mac] = String(req.headers.authorization || '').replace(/^Bearer /, '').split('.');
-  if (!b || !mac || !process.env.PLATFORM_ADMIN_PASSWORD) return false;
+  await adminHash(false);
+  if (!b || !mac || !(adminPw.hash || process.env.PLATFORM_ADMIN_PASSWORD)) return false;
   const want = adminSign(b); if (mac.length !== want.length || !crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(want))) return false;
   try { return JSON.parse(Buffer.from(b, 'base64url').toString()).exp > Date.now(); } catch (e) { return false; }
 }
+async function adminPwOK(p) {
+  const h = await adminHash(true);
+  if (h) return pwOK(p, h);
+  const want = process.env.PLATFORM_ADMIN_PASSWORD; return !!want && eq(sha(String(p)), sha(want));
+}
+const adminToken = () => { const b = b64u(JSON.stringify({ exp: Date.now() + 12 * 3600e3 })); return b + '.' + adminSign(b); };
 async function platformApi(req, res, url) {
   const q = new URL(req.url, 'http://x').searchParams;
-  if (req.method === 'GET' && url === '/api/platform/info') return send(res, 200, { name: PLATFORM, trialDays: TRIAL_DAYS, price: process.env.PRICE || '' });
+  if (req.method === 'GET' && url === '/api/platform/info') return send(res, 200, { name: PLATFORM });
   if (req.method === 'GET' && url === '/api/platform/slug') {
     const v = String(q.get('s') || '').toLowerCase(), want = slugOK(v) ? v : slugify(v);
     if (!slugOK(want)) return send(res, 200, { ok: false, slug: want, why: 'Use 3 to 40 small letters, numbers or dashes.' });
@@ -635,14 +645,25 @@ async function platformApi(req, res, url) {
   if (req.method === 'POST' && url === '/api/platform/admin/login') {
     const k = 'adm:' + clientIp(req), w = tooMany(k); if (w) return send(res, 429, { error: 'Too many wrong tries. Wait ' + w + ' minutes.' });
     let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
-    const want = process.env.PLATFORM_ADMIN_PASSWORD; if (!want) return send(res, 503, { error: 'Set PLATFORM_ADMIN_PASSWORD on the server first.' });
-    if (!eq(sha(String(m.password || '')), sha(want))) { failed(k, 6); return send(res, 401, { error: 'Wrong admin password.' }); }
-    const b = b64u(JSON.stringify({ exp: Date.now() + 12 * 3600e3 })); return send(res, 200, { ok: true, token: b + '.' + adminSign(b) });
+    if (!(await adminHash(true)) && !process.env.PLATFORM_ADMIN_PASSWORD) return send(res, 503, { error: 'Set PLATFORM_ADMIN_PASSWORD on the server first.' });
+    if (!(await adminPwOK(String(m.password || '').slice(0, 200)))) { failed(k, 6); return send(res, 401, { error: 'Wrong admin password.' }); }
+    loginFails.delete(k); return send(res, 200, { ok: true, token: adminToken() });
   }
   if (url.startsWith('/api/platform/admin/')) {
-    if (!adminOK(req)) return send(res, 401, { error: 'Log in as admin again.' });
+    if (!(await adminOK(req))) return send(res, 401, { error: 'Log in as admin again.' });
+    if (req.method === 'POST' && url === '/api/platform/admin/password') {
+      const k = 'admpw:' + clientIp(req), w = tooMany(k); if (w) return send(res, 429, { error: 'Too many wrong tries. Wait ' + w + ' minutes.' });
+      let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+      const cur = String(m.current || '').slice(0, 200), np = String(m.password || '').slice(0, 200);
+      if (!(await adminPwOK(cur))) { failed(k, 6); return send(res, 400, { error: 'Your current password is not right.', f: 'cur' }); }
+      if (np.length < 8 || !/[A-Za-z]/.test(np) || !/\d/.test(np)) return send(res, 400, { error: 'Use at least 8 characters with both letters and numbers.', f: 'np' });
+      if (np === cur) return send(res, 400, { error: 'Choose a password different from the current one.', f: 'np' });
+      try { await sbCall('mt_kv_set', { p_k: 'admin_pw', p_v: await mkHash(np) }); } catch (e) { console.error('admin pw save', e.message); return send(res, 502, { error: 'Could not save the new password. Try again.' }); }
+      await adminHash(true); console.log('admin password changed');
+      return send(res, 200, { ok: true, token: adminToken() });
+    }
     if (req.method === 'GET' && url === '/api/platform/admin/shops') {
-      try { const L = (await sbCall('mt_shop_list', {})) || []; return send(res, 200, { ok: true, shops: L.map(pubShop), trialDays: TRIAL_DAYS }); }
+      try { const L = (await sbCall('mt_shop_list', {})) || []; return send(res, 200, { ok: true, shops: L.map(pubShop) }); }
       catch (e) { return send(res, 502, { error: 'Could not load the shops.' }); }
     }
     if (req.method === 'POST' && url === '/api/platform/admin/shop') {
@@ -651,9 +672,6 @@ async function platformApi(req, res, url) {
       const now = Date.now(), base = (d) => Math.max(now, d ? Date.parse(d) : 0), n = Math.max(1, Math.min(36, +m.n || 1)), patch = {};
       if (m.act === 'suspend') patch.status = 'suspended';
       else if (m.act === 'activate') patch.status = 'active';
-      else if (m.act === 'trial') patch.trial_ends = new Date(base(r.trial_ends) + Math.min(90, +m.n || 7) * 864e5).toISOString();
-      else if (m.act === 'paid') patch.paid_until = new Date(base(r.paid_until) + n * 30 * 864e5).toISOString();
-      else if (m.act === 'unpaid') patch.paid_until = null;
       else if (m.act === 'note') patch.note = String(m.note || '').slice(0, 300);
       else return send(res, 400, { error: 'Unknown action.' });
       try { const out = await sbCall('mt_shop_set', { p_id: r.id, p_patch: patch }); slugCache.delete(r.slug); return send(res, 200, { ok: true, shop: pubShop(out) }); }
@@ -671,11 +689,11 @@ function html(res, req, body, code) {
   res.writeHead(code || 200, Object.assign({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }, HEADERS));
   res.end(req.method === 'HEAD' ? undefined : body);
 }
-const platInfo = (extra) => '<script>window.PLAT=' + jsonScript(Object.assign({ name: PLATFORM, trialDays: TRIAL_DAYS, price: process.env.PRICE || '' }, extra || {})) + '</script>';
+const platInfo = (extra) => '<script>window.PLAT=' + jsonScript(Object.assign({ name: PLATFORM }, extra || {})) + '</script>';
 function landing(req, res, extra, code, f) { return html(res, req, file(f || LANDING).replace('<!--PLAT-->', platInfo(extra)), code); }
 const notFound = (req, res, slug) => landing(req, res, { notFound: String(slug).slice(0, 40) }, 404, LOGIN);
 function shopPage(req, res, rec) {
-  const info = { slug: rec.slug, name: rec.name, plan: planState(rec), trialEnds: rec.trial_ends, paidUntil: rec.paid_until, platform: PLATFORM };
+  const info = { slug: rec.slug, name: rec.name, plan: planState(rec), platform: PLATFORM };
   const b = file(PAGE).replace('<head>', '<head><script>window.SHOP=' + jsonScript(info) + '</script>')
     .replace('href="/manifest.webmanifest"', 'href="/' + rec.slug + '/manifest.webmanifest"')
     .replace(/<title>[^<]*<\/title>/, '<title>' + rec.name.replace(/[<&]/g, '') + ' · ' + PLATFORM + '</title>')

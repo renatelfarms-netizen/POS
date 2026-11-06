@@ -16,14 +16,14 @@ h1{font-size:1.5rem;margin:0}.top{display:flex;align-items:center;gap:12px;margi
 .btn:hover{border-color:var(--ac)}.btn.pri{background:var(--ac);color:#fff;border-color:var(--ac)}.btn.bad{color:var(--bad)}.btn.sm{padding:5px 9px;font-size:.85rem}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:18px}
 .login{max-width:380px;margin:12vh auto}.login input{width:100%;padding:12px;border:1px solid var(--bd);border-radius:10px;font:inherit;margin:12px 0}
-.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}.stats .card{padding:14px}.stats small{color:var(--mut);display:block}.stats b{font-size:1.5rem}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}.stats .card{padding:14px}.stats small{color:var(--mut);display:block}.stats b{font-size:1.5rem}
 .tools{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap}.tools input,.tools select{padding:9px 12px;border:1px solid var(--bd);border-radius:10px;font:inherit;background:#fff}.tools input{flex:1;min-width:200px}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px 10px;border-bottom:1px solid var(--bd);vertical-align:top}th{font-size:.8rem;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
 td small{display:block;color:var(--mut)}td a{color:var(--ac);font-weight:600;text-decoration:none}
 .pill{display:inline-block;padding:3px 9px;border-radius:99px;font-size:.8rem;font-weight:650}
-.p-trial{background:#e0f2fe;color:#075985}.p-paid{background:#dcfce7;color:#166534}.p-expired{background:#fef3c7;color:#92400e}.p-suspended{background:#fee2e2;color:#991b1b}
+.p-active{background:#dcfce7;color:#166534}.p-suspended{background:#fee2e2;color:#991b1b}
 .acts{display:flex;gap:6px;flex-wrap:wrap}
-.msg{min-height:1.3em;color:var(--bad);margin:0}.empty{color:var(--mut);text-align:center;padding:30px}
+.msg{min-height:1.3em;color:var(--bad);margin:0}.pwg{display:grid;gap:10px}.pwg label{display:grid;gap:5px;font-weight:600;font-size:.9rem}.pwg input{padding:10px 12px;border:1px solid var(--bd);border-radius:10px;font:inherit}.empty{color:var(--mut);text-align:center;padding:30px}
 @media (max-width:800px){.stats{grid-template-columns:repeat(2,1fr)}table,tbody,tr,td{display:block}thead{display:none}tr{border:1px solid var(--bd);border-radius:12px;margin-bottom:10px;padding:6px}td{border:0;padding:6px 8px}}
 </style>
 </head>
@@ -34,24 +34,35 @@ const $=s=>document.querySelector(s),P=window.PLAT||{name:'Platform'},esc=s=>Str
 let tok=sessionStorage.getItem('mt-admin')||'',shops=[],q='',f='all';
 const fd=t=>t?new Date(t).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'—';
 const left=t=>{const d=Math.ceil((Date.parse(t)-Date.now())/864e5);return d>0?d+' day'+(d==1?'':'s')+' left':'ended '+(-d)+' day'+(d==-1?'':'s')+' ago'};
-const LBL={trial:'Free trial',paid:'Paid',expired:'Trial ended',suspended:'Paused'};
+const LBL={active:'Open',suspended:'Paused'};
 async function api(p,body){const r=await fetch('/api/platform/admin/'+p,{method:body?'POST':'GET',headers:Object.assign({Authorization:'Bearer '+tok},body?{'Content-Type':'application/json'}:{}),body:body?JSON.stringify(body):undefined});const j=await r.json().catch(()=>({}));if(r.status==401){tok='';sessionStorage.removeItem('mt-admin');login();throw new Error(j.error)}if(!r.ok)throw new Error(j.error||'Error '+r.status);return j}
-function login(m){document.title=P.name+' · Admin';$('#app').innerHTML=`<div class="card login"><h1>${esc(P.name)} admin</h1><p style="color:var(--mut);margin:4px 0 0">Every shop on the platform: trials, payments and pauses.</p><form onsubmit="event.preventDefault();doLogin()"><input id="pw" type="password" placeholder="Admin password" autocomplete="current-password" autofocus><p class="msg" id="lm">${esc(m||'')}</p><button class="btn pri" style="width:100%;justify-content:center">Log in</button></form></div>`}
+function login(m){document.title=P.name+' · Admin';$('#app').innerHTML=`<div class="card login"><h1>${esc(P.name)} admin</h1><p style="color:var(--mut);margin:4px 0 0">Every shop on the platform. Free to use; you can pause a shop.</p><form onsubmit="event.preventDefault();doLogin()"><input id="pw" type="password" placeholder="Admin password" autocomplete="current-password" autofocus><p class="msg" id="lm">${esc(m||'')}</p><button class="btn pri" style="width:100%;justify-content:center">Log in</button></form></div>`}
 async function doLogin(){try{const r=await fetch('/api/platform/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('#pw').value})});const j=await r.json();if(!r.ok)throw new Error(j.error);tok=j.token;sessionStorage.setItem('mt-admin',tok);load()}catch(e){$('#lm').textContent=e.message}}
 async function load(){try{const j=await api('shops');shops=j.shops;draw()}catch(e){if(tok)$('#app').innerHTML='<p class="msg">'+esc(e.message)+'</p>'}}
 function draw(){const n=k=>shops.filter(s=>s.plan==k).length,v=q.toLowerCase();
  const L=shops.filter(s=>(f=='all'||s.plan==f)&&(!v||[s.name,s.slug,s.owner,s.email,s.phone].join(' ').toLowerCase().includes(v)));
- $('#app').innerHTML=`<div class="top"><h1>${esc(P.name)} · Shops</h1><span class="sp"></span><button class="btn" onclick="load()">Refresh</button><button class="btn" onclick="tok='';sessionStorage.removeItem('mt-admin');login()">Log out</button></div>
- <div class="stats"><div class="card"><small>All shops</small><b>${shops.length}</b></div><div class="card"><small>On free trial</small><b>${n('trial')}</b></div><div class="card"><small>Paid</small><b>${n('paid')}</b></div><div class="card"><small>Trial ended</small><b>${n('expired')}</b></div><div class="card"><small>Paused</small><b>${n('suspended')}</b></div></div>
- <div class="tools"><input placeholder="Search shop, owner, email or phone" value="${esc(q)}" oninput="q=this.value;draw();const i=document.querySelector('.tools input');i.focus();i.setSelectionRange(q.length,q.length)"><select onchange="f=this.value;draw()">${[['all','All'],['trial','Free trial'],['paid','Paid'],['expired','Trial ended'],['suspended','Paused']].map(([k,l])=>`<option value="${k}" ${f==k?'selected':''}>${l}</option>`).join('')}</select></div>
+ $('#app').innerHTML=`<div class="top"><h1>${esc(P.name)} · Shops</h1><span class="sp"></span><button class="btn" onclick="load()">Refresh</button><button class="btn" onclick="pwForm()">Change password</button><button class="btn" onclick="tok='';sessionStorage.removeItem('mt-admin');login()">Log out</button></div>
+ <div class="stats"><div class="card"><small>All shops</small><b>${shops.length}</b></div><div class="card"><small>Open</small><b>${n('active')}</b></div><div class="card"><small>Paused</small><b>${n('suspended')}</b></div></div>
+ <div class="tools"><input placeholder="Search shop, owner, email or phone" value="${esc(q)}" oninput="q=this.value;draw();const i=document.querySelector('.tools input');i.focus();i.setSelectionRange(q.length,q.length)"><select onchange="f=this.value;draw()">${[['all','All'],['active','Open'],['suspended','Paused']].map(([k,l])=>`<option value="${k}" ${f==k?'selected':''}>${l}</option>`).join('')}</select></div>
  <div class="card" style="padding:4px 8px"><table><thead><tr><th>Shop</th><th>Owner</th><th>Status</th><th>Started</th><th>Actions</th></tr></thead><tbody>${L.map(row).join('')||'<tr><td colspan="5" class="empty">No shops yet.</td></tr>'}</tbody></table></div>`}
-function row(s){const until=s.plan=='paid'?'Paid until '+fd(s.paidUntil):s.plan=='suspended'?'':'Trial '+left(s.trialEnds);
+function row(s){const until='';
  return `<tr><td><a href="/${esc(s.slug)}" target="_blank">${esc(s.name)}</a><small>/${esc(s.slug)}</small>${s.note?`<small>📝 ${esc(s.note)}</small>`:''}</td>
  <td>${esc(s.owner)}<small>${esc(s.email)}</small><small>${esc(s.phone||'')}</small></td>
  <td><span class="pill p-${s.plan}">${LBL[s.plan]}</span><small>${until}</small></td><td>${fd(s.created)}</td>
- <td><div class="acts"><button class="btn sm" onclick="act('${s.id}','paid',1)">+1 month paid</button><button class="btn sm" onclick="act('${s.id}','trial',7)">+7 days trial</button>${s.plan=='suspended'?`<button class="btn sm" onclick="act('${s.id}','activate')">Open again</button>`:`<button class="btn sm bad" onclick="if(confirm('Pause ${esc(s.name).replace(/'/g,'')}? Nobody can log in until you open it again. Data is kept.'))act('${s.id}','suspend')">Pause</button>`}<button class="btn sm" onclick="note('${s.id}')">Note</button></div></td></tr>`}
+ <td><div class="acts">${s.plan=='suspended'?`<button class="btn sm" onclick="act('${s.id}','activate')">Open again</button>`:`<button class="btn sm bad" onclick="if(confirm('Pause ${esc(s.name).replace(/'/g,'')}? Nobody can log in until you open it again. Data is kept.'))act('${s.id}','suspend')">Pause</button>`}<button class="btn sm" onclick="note('${s.id}')">Note</button></div></td></tr>`}
 async function act(id,a,n){try{const j=await api('shop',{id,act:a,n});shops=shops.map(s=>s.id==id?j.shop:s);draw()}catch(e){alert(e.message)}}
 async function note(id){const s=shops.find(x=>x.id==id),v=prompt('Note for '+s.name+' (only you see it):',s.note||'');if(v!==null){const j=await api('shop',{id,act:'note',note:v});shops=shops.map(x=>x.id==id?j.shop:x);draw()}}
+function pwForm(){if($('#pwf'))return $('#pwf').remove();const d=document.createElement('div');d.id='pwf';d.className='card';d.style.cssText='max-width:440px;margin:0 0 16px';
+ d.innerHTML=`<h2 style="margin:0 0 4px;font-size:1.15rem">Change admin password</h2><p style="color:var(--mut);margin:0 0 12px">Use at least 8 characters with letters and numbers. Other admin sessions are signed out.</p>
+ <form onsubmit="event.preventDefault();pwSave()" class="pwg"><label>Current password<input id="pw_c" type="password" autocomplete="current-password"></label><label>New password<input id="pw_n" type="password" autocomplete="new-password"></label><label>Type the new password again<input id="pw_r" type="password" autocomplete="new-password"></label>
+ <label style="flex-direction:row;display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" style="width:auto;margin:0" onchange="['pw_c','pw_n','pw_r'].forEach(i=>$('#'+i).type=this.checked?'text':'password')"> Show passwords</label>
+ <p class="msg" id="pw_m"></p><div style="display:flex;gap:8px"><button class="btn pri" id="pw_b">Save new password</button><button type="button" class="btn" onclick="$('#pwf').remove()">Cancel</button></div></form>`;
+ $('.top').after(d);$('#pw_c').focus()}
+async function pwSave(){const c=$('#pw_c').value,n=$('#pw_n').value,r=$('#pw_r').value,m=$('#pw_m');m.style.color='var(--bad)';
+ if(!c||!n)return m.textContent='Fill in your current and new password.';if(n!==r)return m.textContent='The two new passwords are not the same.';
+ const b=$('#pw_b');b.disabled=true;b.textContent='Saving…';
+ try{const j=await api('password',{current:c,password:n});tok=j.token;sessionStorage.setItem('mt-admin',tok);m.style.color='var(--ac)';m.textContent='✓ Password changed. Use the new password next time you log in.';b.textContent='Saved';setTimeout(()=>{const f=$('#pwf');if(f)f.remove()},2500)}
+ catch(e){m.textContent=e.message;b.disabled=false;b.textContent='Save new password'}}
 tok?load():login();
 </script>
 </body>

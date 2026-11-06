@@ -18,7 +18,7 @@
  <div class="auth-side">
   <i class="orb" style="width:260px;height:260px;right:-80px;top:-60px"></i><i class="orb" style="width:160px;height:160px;left:-50px;bottom:40px;animation-delay:-4s"></i>
   <h2>Open your shop in two minutes</h2>
-  <p><span class="td">30</span> days free with every feature. No card needed.</p>
+  <p>Free to use, with every feature. No card needed.</p>
   <ul><li><span>✓</span>Your own shop link for your staff</li><li><span>✓</span>Selling, receipts, stock and warehouse</li><li><span>✓</span>Staff, branches and reports, set up inside your shop</li><li><span>✓</span>Saved online, backed up every 10 minutes</li></ul>
  </div>
  <div class="auth-main"><div class="card">
@@ -38,15 +38,15 @@
    <label>Currency<select id="cur"><option>GH₵</option><option>₦</option><option>KSh</option><option>R</option><option>CFA</option><option>$</option><option>£</option><option>€</option></select></label>
    <p class="msg" id="sum" role="status" aria-live="polite"></p>
    <button class="btn pri" id="sub" type="submit">Create my shop</button>
-   <p class="small" style="margin:0;text-align:center">Free for <span class="td">30</span> days. Add branches, staff and products inside your shop.</p>
+   <p class="small" style="margin:0;text-align:center">Free to use. Add branches, staff and products inside your shop.</p>
   </form>
   <p class="alt">Already have a shop? <a href="/login">Log in</a></p>
  </div></div>
 </main>
 <footer><div class="wrap"><span>© 2026 by Zoe &amp; Tessa</span><span class="pname">Tessa POS</span></div></footer>
 <script>
-const $=s=>document.querySelector(s),P=window.PLAT||{name:'Tessa POS',trialDays:30};
-document.querySelectorAll('.pname').forEach(e=>e.textContent=P.name);document.querySelectorAll('.td').forEach(e=>e.textContent=P.trialDays);document.title='Create your shop · '+P.name;
+const $=s=>document.querySelector(s),P=window.PLAT||{name:'Tessa POS'};
+document.querySelectorAll('.pname').forEach(e=>e.textContent=P.name);document.title='Create your shop · '+P.name;
 $('#hostp').textContent=location.host+'/';
 $('#pwb').onclick=()=>{const i=$('#password');i.type=i.type=='password'?'text':'password';$('#pwb').textContent=i.type=='password'?'Show':'Hide'};
 const slugify=v=>String(v||'').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40).replace(/-+$/,'');

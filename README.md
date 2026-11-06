@@ -2,9 +2,9 @@
 
 Built from the Renatel Shop app. Many shops each run their own shop on one website.
 
-- `/` platform page: create a shop (free trial), or find your shop by name
+- `/` platform page: main page; `/register` create a shop (free to use); `/login` find your shop
 - `/<shop-link>` a shop's app, e.g. `/kofi-mart`. Staff log in there with name + password.
-- `/admin` platform admin: every shop, trial days, mark paid, pause, notes
+- `/admin` platform admin: every shop, pause / open, notes
 
 Each shop's data, staff, logins, backups and limits are kept apart by shop id.
 A login token from one shop is refused by every other shop.
@@ -18,9 +18,8 @@ A login token from one shop is refused by every other shop.
 ## Environment variables
 - `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_BACKUP_TOKEN`
 - `PLATFORM_ADMIN_PASSWORD` password for /admin
-- `PLATFORM_NAME` (default "Tessa POS"), `PLATFORM_HOST` (e.g. the domain), `TRIAL_DAYS` (default 30)
+- `PLATFORM_NAME` (default "Tessa POS"), `PLATFORM_HOST` (e.g. the domain)
 - `MAIL_API_BASE` optional; mail settings are read from `site_secret_get` in Supabase
 
 ## Not done yet
-- Online payment (Paystack / Mobile Money). For now you mark a shop paid in /admin.
 - More than two branches per shop.

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Tessa POS · Point of sale for your shop</title>
-<meta name="description" content="Sell, track stock, manage staff and branches from any phone or computer. Free trial.">
+<meta name="description" content="Sell, track stock, manage staff and branches from any phone or computer. Free to use.">
 <meta name="theme-color" content="#0f6e56">
 <link rel="icon" href="/icon-192.png">
 <link rel="stylesheet" href="/assets/site.css">
@@ -119,11 +119,11 @@ h2{font-size:clamp(1.5rem,3vw,2.1rem);letter-spacing:-.01em;margin:0 0 8px}
 <div class="wrap">
  <div class="hero">
   <div>
-   <span class="pill"><i></i><span id="trialpill">30-day free trial · no card needed</span></span>
+   <span class="pill"><i></i><span>Free to use · no card needed</span></span>
    <h1>Run your shop from <em>any phone or computer</em></h1>
    <p class="lead">Sell, print receipts, track stock in your shop and warehouse, manage staff and branches, and get reports by email. Everything is saved online, so every device sees the same shop.</p>
    <div class="cta"><a class="btn pri" href="/register">Create your shop</a><a class="btn" href="/login">Log in to my shop</a></div>
-   <p class="small" style="margin-top:14px">Set up in two minutes. Your shop gets its own link for your staff.</p>
+   <p class="small" style="margin-top:14px">Free to use. Set up in two minutes. Your shop gets its own link for your staff.</p>
   </div>
   <div class="vid" data-scene="sell" aria-label="Animation: a cashier sells three items and prints a receipt">
    <div class="vid-in"><div class="stage" data-w="600" data-h="380">
@@ -216,13 +216,13 @@ h2{font-size:clamp(1.5rem,3vw,2.1rem);letter-spacing:-.01em;margin:0 0 8px}
  </div>
 </div></section>
 
-<section style="padding-top:10px"><div class="wrap"><div class="band reveal"><div><h2>Ready to open your shop?</h2><p><span class="td">30</span> days free. No card needed.</p></div><div class="cta"><a class="btn" href="/register">Create your shop</a><a class="btn ghost" style="color:#fff" href="/login">I already have a shop</a></div></div></div></section>
+<section style="padding-top:10px"><div class="wrap"><div class="band reveal"><div><h2>Ready to open your shop?</h2><p>Free to use. No card needed.</p></div><div class="cta"><a class="btn" href="/register">Create your shop</a><a class="btn ghost" style="color:#fff" href="/login">I already have a shop</a></div></div></div></section>
 </main>
 
 <footer><div class="wrap"><span>© 2026 by Zoe &amp; Tessa</span><span class="pname">Tessa POS</span></div></footer>
 
 <script>
-const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)],P=window.PLAT||{name:'Tessa POS',trialDays:30};
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)],P=window.PLAT||{name:'Tessa POS'};
 const I={sell:'<circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2.5 3.5h2.6l2.3 11.2a1.6 1.6 0 0 0 1.6 1.3h8.4a1.6 1.6 0 0 0 1.6-1.2L21 7H6"/>',
  inv:'<path d="M12 2.8 20.5 7.4v9.2L12 21.2 3.5 16.6V7.4z"/><path d="m3.5 7.4 8.5 4.6 8.5-4.6M12 12v9.2M7.8 5.1l8.5 4.6"/>',
  staff:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.4c1.9.8 3 2.8 3 5.6"/>',
@@ -236,7 +236,7 @@ const I={sell:'<circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/>
  soap:'<rect x="3.5" y="9" width="17" height="10" rx="4"/><circle cx="9" cy="5.5" r="1.8"/><circle cx="14.5" cy="4.5" r="1.2"/>',
  leaf:'<path d="M5 19c0-8 5-14 15-15-1 10-7 15-15 15z"/><path d="M5 19 13 11"/>'};
 $$('[data-i]').forEach(e=>e.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+(I[e.dataset.i]||'')+'</svg>');
-$$('.pname').forEach(e=>e.textContent=P.name);$('#trialpill').textContent=P.trialDays+'-day free trial · no card needed';$$('.td').forEach(e=>e.textContent=P.trialDays);
+$$('.pname').forEach(e=>e.textContent=P.name);
 
 /* ---------- motion scenes: each frame is drawn from the time in the loop ---------- */
 const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
