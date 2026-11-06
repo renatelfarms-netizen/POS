@@ -248,6 +248,7 @@ function findStaff(staff, v) {
   let L = staff.filter((x) => nmz(x.name) === q);
   if (!L.length) L = staff.filter((x) => words(x.name) === q.split(' ').sort().join(' '));
   if (!L.length && !q.includes(' ')) L = staff.filter((x) => nmz(x.name).split(' ').includes(q));
+  if (!L.length) L = staff.filter((x) => nmz(x.name).replace(/ /g, '') === q.replace(/ /g, '') || nmz(x.name).split(' ').reverse().join('') === q.replace(/ /g, ''));
   return L.length === 1 ? L[0] : null;
 }
 const eq = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
