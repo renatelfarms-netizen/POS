@@ -145,6 +145,7 @@ body.lgmode main#app{padding:0;max-width:none}
 .lg2-link:hover{color:var(--ac)}
 .lg2-foot{margin:18px 0 0;color:var(--mut);font-size:.8rem;display:flex;align-items:center;gap:6px}
 .lg2-foot svg{width:14px;height:14px}
+.lg2-copy{margin:6px 0 0;color:var(--mut);font-size:.75rem;opacity:.85}
 @media (max-width:420px){.lg2-card{padding:26px 20px 18px;border-radius:20px}.lg2{justify-content:flex-start;padding-top:9vh}}
 </style>
 </head>
@@ -427,7 +428,7 @@ function loginShell(o){document.body.classList.add('lgmode');const h=new Date().
    <button class="lg2-btn" id="${o.btn}" type="submit">Log in</button>
    <button type="button" class="lg2-link" onclick="${o.forgot}()">Forgot password?</button>
   </form></div>
-  <p class="lg2-foot">${LGI.shield}${esc(o.foot)}</p></div>`}
+  <p class="lg2-foot">${LGI.shield}${esc(o.foot)}</p><p class="lg2-copy">© 2026 by Zoe &amp; Tessa</p></div>`}
 function loginView(){const pre=lsel&&db.staff.find(x=>x.id==lsel);
  let where='Saved on this device';try{if(WEB0)where='Secure login · everything runs online';else if(cloud)where='Saved in the shop database'}catch(e){}
  return loginShell({u:'lu',p:'lp',msg:'lmsg',btn:'lbtn',go:'doLogin',forgot:'forgotDlg',name:pre?pre.name:'',foot:where})}
