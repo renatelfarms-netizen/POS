@@ -1,6 +1,8 @@
 'use strict';
 // Web server for renatel.shop.
 // - Serves the shop page (index.html).
+// - Shared shop database: devices that joined with the shop code read and write one
+//   live copy of the shop in Supabase through /api/db.
 // - Online backup: the shop sends its data here; the server keeps a copy on the
 //   hosting (compressed files outside the website folder) and in Supabase.
 // No dependencies. Secrets come from environment variables set in Hostinger:
@@ -152,6 +154,10 @@ function sbSave(dev, name, raw, digest, cnt) {
   return sbCall('site_backup_save', null, head.slice(0, -1) + ',"p_data":' + raw + '}');
 }
 
+// Collections the shop page stores (same list as COLS in index.html).
+const DB_COLS = new Set(['shop', 'devices', 'products', 'customers', 'sales', 'expenses', 'deliveries', 'pos', 'moves', 'log', 'whMoves', 'transfers', 'trReq', 'whItems', 'whPos',
+  'accra_products', 'accra_customers', 'accra_sales', 'accra_expenses', 'accra_deliveries', 'accra_pos', 'accra_moves']);
+
 // ---- API ----
 async function api(req, res, url) {
   const c = codeOK(req);
@@ -160,7 +166,31 @@ async function api(req, res, url) {
   if (c !== 'ok') return send(res, 401, { error: 'Wrong backup code.' });
 
   if (req.method === 'GET' && url === '/api/backup/status') {
-    return send(res, 200, { ok: true, hosting: true, supabase: sbOn() });
+    return send(res, 200, { ok: true, hosting: true, supabase: sbOn(), shared: sbOn() });
+  }
+
+  // ---- shared shop database (every device that joined with the shop code sees the same data) ----
+  if (url === '/api/db' || url.startsWith('/api/db/')) {
+    if (!sbOn()) return send(res, 503, { error: 'The shared shop database is not set up on the server yet.' });
+    try {
+      if (req.method === 'GET' && url === '/api/db') {
+        const since = Math.max(0, parseInt(new URL(req.url, 'http://x').searchParams.get('since') || '0', 10) || 0);
+        return send(res, 200, await sbCall('shop_db_pull', { p_since: since }));
+      }
+      if (req.method === 'POST' && (url === '/api/db/put' || url === '/api/db/del')) {
+        let msg;
+        try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, e.code === 413 ? 413 : 400, { error: e.code === 413 ? 'That is too big to save.' : 'Not valid data.' }); }
+        const col = String(msg && msg.c || ''), id = String(msg && msg.id || '');
+        if (!DB_COLS.has(col) || !/^[A-Za-z0-9_.-]{1,120}$/.test(id)) return send(res, 400, { error: 'Unknown document.' });
+        if (url === '/api/db/del') return send(res, 200, await sbCall('shop_db_del', { p_col: col, p_id: id }));
+        if (!msg.d || typeof msg.d !== 'object' || Array.isArray(msg.d)) return send(res, 400, { error: 'Not valid data.' });
+        return send(res, 200, await sbCall('shop_db_put', { p_col: col, p_id: id, p_data: msg.d }));
+      }
+    } catch (e) {
+      console.error('shared db', e.message);
+      return send(res, 502, { error: 'Could not reach the shop database.' });
+    }
+    return send(res, 404, { error: 'Not found.' });
   }
 
   if (req.method === 'POST' && url === '/api/backup') {
