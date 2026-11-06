@@ -1,4 +1,4 @@
-# Multi-shop POS platform (test version)
+# Tessa POS (test version)
 
 Built from the Renatel Shop app. Many shops each run their own shop on one website.
 
@@ -18,7 +18,7 @@ A login token from one shop is refused by every other shop.
 ## Environment variables
 - `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_BACKUP_TOKEN`
 - `PLATFORM_ADMIN_PASSWORD` password for /admin
-- `PLATFORM_NAME` (default "Renatel POS"), `PLATFORM_HOST` (e.g. the domain), `TRIAL_DAYS` (default 30), `PRICE` (shown on the page)
+- `PLATFORM_NAME` (default "Tessa POS"), `PLATFORM_HOST` (e.g. the domain), `TRIAL_DAYS` (default 30)
 - `MAIL_API_BASE` optional; mail settings are read from `site_secret_get` in Supabase
 
 ## Not done yet

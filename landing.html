@@ -86,8 +86,8 @@ footer .wrap{display:flex;gap:12px;flex-wrap:wrap;justify-content:space-between}
 </head>
 <body>
 <header><div class="wrap">
- <a class="logo" href="/"><i><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 5 4h14l2 5.5"/><path d="M3 9.5a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12.5V20h14v-7.5"/><path d="M10 20v-5h4v5"/></svg></i><span id="pname">Shop POS</span></a>
- <nav><a class="btn ghost" href="#features">Features</a><a class="btn ghost" href="#pricing">Pricing</a><a class="btn" href="#find">Log in</a><a class="btn pri" href="#start">Start free</a></nav>
+ <a class="logo" href="/"><i><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 5 4h14l2 5.5"/><path d="M3 9.5a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12.5V20h14v-7.5"/><path d="M10 20v-5h4v5"/></svg></i><span id="pname">Tessa POS</span></a>
+ <nav><a class="btn ghost" href="#features">Features</a><a class="btn" href="#find">Log in</a><a class="btn pri" href="#start">Start free</a></nav>
 </div></header>
 
 <main>
@@ -135,16 +135,7 @@ footer .wrap{display:flex;gap:12px;flex-wrap:wrap;justify-content:space-between}
  </div>
 </div></section>
 
-<section id="pricing"><div class="wrap">
- <h2>Simple pricing</h2>
- <p class="sub">Try every feature free. Keep using it on a monthly plan.</p>
- <div class="price">
-  <div class="plan"><b>Free trial</b><div class="amt" id="trialdays">30 days</div><span class="small">Every feature, no card needed.</span>
-   <ul><li>Unlimited sales and products</li><li>Staff and branches</li><li>Online backups</li></ul></div>
-  <div class="plan hl"><b>Monthly plan</b><div class="amt" id="price">Ask us</div><span class="small">After the free trial. Your data stays with you.</span>
-   <ul><li>Everything in the trial</li><li>Reports by email</li><li>Help when you need it</li></ul></div>
- </div>
-</div></section>
+
 
 <section id="start"><div class="wrap two">
  <div class="card">
@@ -187,7 +178,7 @@ footer .wrap{display:flex;gap:12px;flex-wrap:wrap;justify-content:space-between}
 <footer><div class="wrap"><span>© 2026 by Zoe &amp; Tessa</span><span id="fname"></span></div></footer>
 
 <script>
-const $=s=>document.querySelector(s), P=window.PLAT||{name:'Shop POS',trialDays:30};
+const $=s=>document.querySelector(s), P=window.PLAT||{name:'Tessa POS',trialDays:30};
 const I={sell:'<circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2.5 3.5h2.6l2.3 11.2a1.6 1.6 0 0 0 1.6 1.3h8.4a1.6 1.6 0 0 0 1.6-1.2L21 7H6"/>',
  inv:'<path d="M12 2.8 20.5 7.4v9.2L12 21.2 3.5 16.6V7.4z"/><path d="m3.5 7.4 8.5 4.6 8.5-4.6M12 12v9.2M7.8 5.1l8.5 4.6"/>',
  staff:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.4c1.9.8 3 2.8 3 5.6"/>',
@@ -199,8 +190,7 @@ const I={sell:'<circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/>
  exp:'<rect x="2.5" y="6" width="19" height="13" rx="2.5"/><path d="M2.5 10h19"/><path d="M16 14.5h2.5"/><path d="M5 6l9.5-3 1.4 3"/>'};
 document.querySelectorAll('[data-i]').forEach(e=>e.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+(I[e.dataset.i]||'')+'</svg>');
 document.title=P.name+' · Point of sale for your shop';$('#pname').textContent=P.name;$('#fname').textContent=P.name;
-$('#trialdays').textContent=P.trialDays+' days';document.querySelectorAll('.td').forEach(e=>e.textContent=P.trialDays);$('#trialpill').textContent=P.trialDays+'-day free trial · no card needed';
-if(P.price)$('#price').textContent=P.price;
+document.querySelectorAll('.td').forEach(e=>e.textContent=P.trialDays);$('#trialpill').textContent=P.trialDays+'-day free trial · no card needed';
 $('#hostp').textContent=location.host+'/';
 if(P.notFound){$('#nf').innerHTML='<div class="nf"><b>There is no shop at /'+P.notFound.replace(/[<&>"]/g,'')+'.</b> Check the link with your shop owner, or find your shop by name below.</div>';$('#fq').value=P.notFound.replace(/-/g,' ')}
 const slugify=v=>String(v||'').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40).replace(/-+$/,'');

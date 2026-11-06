@@ -1,13 +1,13 @@
 'use strict';
 // Multi-shop web server: many shops, each with its own link (site/<shop-link>), data, staff,
-// logins, backups and free trial. Built from the Renatel Shop app.
+// logins, backups and free trial. Tessa POS, built from the Renatel Shop app.
 // - /                 the platform page: sign up a new shop, find your shop
 // - /admin            platform admin (you): every shop, trial, paid, suspend
 // - /<link>           a shop's app; its API is /<link>/api/...
 // No dependencies. Secrets come from environment variables:
 //   SUPABASE_URL, SUPABASE_KEY, SUPABASE_BACKUP_TOKEN   the database (multi-shop functions, see schema.sql)
 //   PLATFORM_ADMIN_PASSWORD                             password for /admin
-//   PLATFORM_NAME (optional), PLATFORM_HOST (optional), TRIAL_DAYS (default 30), PRICE (shown on the page)
+//   PLATFORM_NAME (default Tessa POS), PLATFORM_HOST (optional), TRIAL_DAYS (default 30)
 //   BACKUP_DIR (optional) hosting copies, one folder per shop
 const http = require('http');
 const fs = require('fs');
@@ -21,7 +21,7 @@ const { AsyncLocalStorage } = require('async_hooks');
 const ctx = new AsyncLocalStorage();
 const T = () => ctx.getStore() || {};
 const SID = () => (T().shop || {}).id || '-';
-const PLATFORM = process.env.PLATFORM_NAME || 'Renatel POS';
+const PLATFORM = process.env.PLATFORM_NAME || 'Tessa POS';
 const SITE = process.env.PLATFORM_HOST || 'the website';
 const TRIAL_DAYS = +process.env.TRIAL_DAYS || 30;
 
@@ -318,7 +318,7 @@ function shopClosed() {
   const sh = T().shop; if (!sh) return [404, 'Shop not found.'];
   const st = planState(sh);
   if (st === 'suspended') return [403, 'This shop has been paused. Contact ' + PLATFORM + ' to open it again. All your data is kept safe.'];
-  if (st === 'expired') return [402, 'The free trial for ' + sh.name + ' ended on ' + fdate(sh.paid_until && Date.parse(sh.paid_until) > Date.parse(sh.trial_ends) ? sh.paid_until : sh.trial_ends) + '. Renew the plan to keep using the shop. All your data is kept safe.'];
+  if (st === 'expired') return [402, 'The free trial for ' + sh.name + ' ended on ' + fdate(sh.paid_until && Date.parse(sh.paid_until) > Date.parse(sh.trial_ends) ? sh.paid_until : sh.trial_ends) + '. Contact ' + PLATFORM + ' to keep using the shop. All your data is kept safe.'];
   return null;
 }
 async function login(req, res) {
