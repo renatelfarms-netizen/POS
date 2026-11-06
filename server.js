@@ -158,12 +158,99 @@ function sbSave(dev, name, raw, digest, cnt) {
 const DB_COLS = new Set(['shop', 'devices', 'products', 'customers', 'sales', 'expenses', 'deliveries', 'pos', 'moves', 'log', 'whMoves', 'transfers', 'trReq', 'whItems', 'whPos',
   'accra_products', 'accra_customers', 'accra_sales', 'accra_expenses', 'accra_deliveries', 'accra_pos', 'accra_moves']);
 
+// ---- staff login: name + password are checked here against the shared shop's staff list ----
+// A correct login returns a signed session token; devices use it for /api/db and backups.
+const SESSION_DAYS = 30;
+const secret = () => sha('renatel-session:' + (process.env.SUPABASE_BACKUP_TOKEN || ''));
+const b64u = (s) => Buffer.from(s).toString('base64url');
+const sign = (body) => crypto.createHmac('sha256', secret()).update(body).digest('base64url');
+function makeToken(sid, dev) {
+  const body = b64u(JSON.stringify({ sid, dev, iat: Date.now(), exp: Date.now() + SESSION_DAYS * 864e5 }));
+  return body + '.' + sign(body);
+}
+function readToken(t) {
+  const [body, mac] = String(t || '').split('.');
+  if (!body || !mac) return null;
+  const want = sign(body);
+  if (mac.length !== want.length || !crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(want))) return null;
+  try { const p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); return p.exp > Date.now() ? p : null; } catch (e) { return null; }
+}
+let shopCache = { at: 0, doc: null };
+async function shopMain(fresh) {
+  if (!fresh && shopCache.doc && Date.now() - shopCache.at < 15000) return shopCache.doc;
+  const doc = await sbCall('shop_db_get', { p_col: 'shop', p_id: 'main' });
+  shopCache = { at: Date.now(), doc };
+  return doc;
+}
+// Same name matching and password checks as the shop page (index.html: nmz, findStaff, pwOK).
+const nmz = (v) => String(v || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+function findStaff(staff, v) {
+  const q = nmz(v); if (!q) return null;
+  const ex = staff.filter((x) => nmz(x.name) === q); if (ex.length) return ex.length === 1 ? ex[0] : null;
+  const fn = staff.filter((x) => nmz(x.name).split(' ')[0] === q); return fn.length === 1 ? fn[0] : null;
+}
+const eq = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+function pwOK(p, stored) {
+  stored = String(stored || ''); if (!stored) return Promise.resolve(false);
+  if (stored.startsWith('p2$')) {
+    const salt = stored.split('$')[1];
+    return new Promise((ok) => crypto.pbkdf2(String(p), salt, 150000, 32, 'sha256', (e, k) => ok(!e && eq('p2$' + salt + '$' + k.toString('hex'), stored))));
+  }
+  return Promise.resolve(eq(sha('renatel:' + p), stored));
+}
+const loginFails = new Map(); // ip and name -> {n, until}
+function tooMany(key) { const f = loginFails.get(key); return f && f.until > Date.now() ? Math.ceil((f.until - Date.now()) / 60000) : 0; }
+function failed(key, max) { const f = loginFails.get(key) || { n: 0, until: 0 }; f.n++; if (f.n >= max) { f.until = Date.now() + 15 * 60000; f.n = 0; } loginFails.set(key, f); }
+setInterval(() => { const t = Date.now(); for (const [k, v] of loginFails) if (v.until && v.until < t) loginFails.delete(k); }, 600000).unref();
+
+async function login(req, res) {
+  if (!sbOn()) return send(res, 503, { error: 'The shop database is not set up on the server yet.' });
+  const ip = 'ip:' + clientIp(req);
+  let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+  const name = String(msg && msg.name || '').slice(0, 80), pw = String(msg && msg.password || '').slice(0, 200);
+  if (!name || !pw) return send(res, 400, { error: 'Type your name and password.' });
+  const nk = 'name:' + nmz(name);
+  const wait = tooMany(ip) || tooMany(nk);
+  if (wait) return send(res, 429, { error: 'Too many wrong tries. Wait ' + wait + ' minute' + (wait > 1 ? 's' : '') + ', then try again.' });
+  let shop; try { shop = await shopMain(true); } catch (e) { console.error('login', e.message); return send(res, 502, { error: 'Could not reach the shop database. Try again in a moment.' }); }
+  if (!shop) return send(res, 404, { error: 'The shop has not been set up yet.', setup: true });
+  const s = findStaff(shop.staff || [], name);
+  if (!s || !(await pwOK(pw, s.pin))) { failed(ip, 20); failed(nk, 6); return send(res, 401, { error: 'That name and password don’t match. Check how your name is spelled and try again.' }); }
+  if (s.locked) return send(res, 423, { error: s.name + '’s account is locked after too many wrong tries. Ask the owner or a manager to unlock it.' });
+  loginFails.delete(nk);
+  const dev = cleanDev(msg.dev);
+  return send(res, 200, { ok: true, token: makeToken(s.id, dev), sid: s.id, name: s.name, exp: Date.now() + SESSION_DAYS * 864e5 });
+}
+// Who is calling: a logged-in staff member (session token) or a device with the shop code.
+async function caller(req) {
+  const h = String(req.headers.authorization || '');
+  if (h.startsWith('Bearer ')) {
+    const t = readToken(h.slice(7));
+    if (!t || !sbOn()) return { err: [401, 'Please log in again.'] };
+    let shop; try { shop = await shopMain(false); } catch (e) { return { err: [502, 'Could not reach the shop database.'] }; }
+    const s = shop && (shop.staff || []).find((x) => x.id === t.sid);
+    if (!s || s.locked) return { err: [401, 'Please log in again.'] };
+    if (shop.set && shop.set.sessEpoch && t.iat < shop.set.sessEpoch) return { err: [401, 'The owner signed out every device. Log in again.'] };
+    return { staff: s };
+  }
+  if (!req.headers['x-backup-code']) return { err: [401, 'Please log in.'] };
+  const c = codeOK(req);
+  if (c === 'off') return { err: [503, 'Online backup is not set up on the server yet.'] };
+  if (c === 'wait') return { err: [429, 'Too many wrong codes. Try again in 15 minutes.'] };
+  if (c !== 'ok') return { err: [401, 'Wrong shop code.'] };
+  return { code: true };
+}
+
 // ---- API ----
 async function api(req, res, url) {
-  const c = codeOK(req);
-  if (c === 'off') return send(res, 503, { error: 'Online backup is not set up on the server yet.' });
-  if (c === 'wait') return send(res, 429, { error: 'Too many wrong backup codes. Try again in 15 minutes.' });
-  if (c !== 'ok') return send(res, 401, { error: 'Wrong backup code.' });
+  if (req.method === 'POST' && url === '/api/login') return login(req, res);
+  const who = await caller(req);
+  if (who.err) return send(res, who.err[0], { error: who.err[1] });
+  // Restoring or listing backups: shop code, or the owner / a manager logged in.
+  const canRestore = who.code || ['owner', 'manager'].includes(who.staff.role);
+  if (!canRestore && req.method === 'GET' && (url === '/api/backups' || url.startsWith('/api/backup/hosting/') || url.startsWith('/api/backup/supabase/'))) {
+    return send(res, 403, { error: 'Only the owner or a manager can restore backups.' });
+  }
 
   if (req.method === 'GET' && url === '/api/backup/status') {
     return send(res, 200, { ok: true, hosting: true, supabase: sbOn(), shared: sbOn() });
@@ -182,9 +269,10 @@ async function api(req, res, url) {
         try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, e.code === 413 ? 413 : 400, { error: e.code === 413 ? 'That is too big to save.' : 'Not valid data.' }); }
         const col = String(msg && msg.c || ''), id = String(msg && msg.id || '');
         if (!DB_COLS.has(col) || !/^[A-Za-z0-9_.-]{1,120}$/.test(id)) return send(res, 400, { error: 'Unknown document.' });
-        if (url === '/api/db/del') return send(res, 200, await sbCall('shop_db_del', { p_col: col, p_id: id }));
-        if (!msg.d || typeof msg.d !== 'object' || Array.isArray(msg.d)) return send(res, 400, { error: 'Not valid data.' });
-        return send(res, 200, await sbCall('shop_db_put', { p_col: col, p_id: id, p_data: msg.d }));
+        if (url === '/api/db/put' && (!msg.d || typeof msg.d !== 'object' || Array.isArray(msg.d))) return send(res, 400, { error: 'Not valid data.' });
+        const out = url === '/api/db/del' ? await sbCall('shop_db_del', { p_col: col, p_id: id }) : await sbCall('shop_db_put', { p_col: col, p_id: id, p_data: msg.d });
+        if (col === 'shop') shopCache.at = 0; // staff, password or sign-out changes take effect at once
+        return send(res, 200, out);
       }
     } catch (e) {
       console.error('shared db', e.message);

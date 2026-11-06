@@ -183,29 +183,29 @@ function firstLoad(){ready=true;const has=!!remote['shop/main'];
  if(has){const loc=chunks(),same=Object.keys(remote).every(p=>p.startsWith('devices/')||cj(JSON.parse(remote[p]))===cj(loc[p]));if(!same&&db.staff.length&&(db.sales.length||db.staff.length)){try{localStorage.setItem(K+'-before-cloud',JSON.stringify(db))}catch(e){}}
   last={...remote};assemble(remote);register();cstate='saved'}
  else{last={...remote};register();cstate='saving'}
- syncUI();afterRemote();flush();checkSched()}
+ syncUI();autoIn();afterRemote();flush();checkSched()}
 function applyRemote(changed){const loc={},cur=chunks();for(const p in cur)loc[p]=cj(cur[p]);let any=false;
  changed.forEach(p=>{const r=remote[p];if(r===last[p])return;if(loc[p]===last[p]||(loc[p]===undefined&&last[p]===undefined)){if(r===undefined){delete loc[p];delete last[p]}else{loc[p]=r;last[p]=r}any=true}});
  if(any){assemble(loc);afterRemote()}}
 /* renatel.shop: the same database API, served by the website (Supabase behind it). Devices join with the shop code. */
 function webDb(){const subs={},errs=[];let since=0,first=true,stop=false,timer=null,busyP=false;
- async function call(p,o){let r;try{r=await fetch(p,Object.assign({cache:'no-store'},o||{},{headers:{'X-Backup-Code':BK.code||'','Content-Type':'application/json'}}))}catch(e){const x=new Error('offline');x.code='unavailable';throw x}
+ async function call(p,o){let r;try{r=await fetch(p,Object.assign({cache:'no-store'},o||{},{headers:Object.assign(authH(),{'Content-Type':'application/json'})}))}catch(e){const x=new Error('offline');x.code='unavailable';throw x}
   let j={};try{j=await r.json()}catch(e){}
   if(!r.ok){const x=new Error(j.error||('The server answered '+r.status+'.'));x.code=r.status==401?'revoked':r.status==413?'quota_exceeded':r.status==400?'invalid_argument':'unavailable';throw x}return j}
  const snap=L=>({docChanges:()=>L.map(d=>({type:d.x?'removed':'modified',doc:{id:d.id,data:()=>d.d}})),metadata:{fromCache:false}});
- async function poll(){if(stop||busyP)return;clearTimeout(timer);if(!BK.code){stop=true;return}busyP=true;
+ async function poll(){if(stop||busyP)return;clearTimeout(timer);if(!webAuth()){stop=true;return}busyP=true;
   try{const acc={};let more=true;
    while(more){const j=await call('/api/db?since='+since);(j.docs||[]).forEach(d=>(acc[d.c]=acc[d.c]||[]).push(d));since=j.rev||since;more=!!j.more;
     if(!first)for(const c in acc){(subs[c]||[]).forEach(f=>f(snap(acc[c])));delete acc[c]}}
    if(first){first=false;Object.keys(subs).forEach(c=>subs[c].forEach(f=>f(snap(acc[c]||[]))))}
    if(ready&&cstate=='offline'){cstate=dirty?'error':'saved';syncUI();if(dirty)cloudSave()}
-  }catch(e){if(e.code=='revoked'){stop=true;delete BK.code;bkPut();busyP=false;errs.forEach(f=>f(e));render();return}errs.forEach(f=>f(e))}
+  }catch(e){if(e.code=='revoked'){stop=true;delete BK.code;bkPut();sessClear();busyP=false;errs.forEach(f=>f(e));render();return}errs.forEach(f=>f(e))}
   busyP=false;if(!stop)timer=setTimeout(poll,document.hidden?20000:4000)}
  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!stop)poll()});setTimeout(poll,0);
  return {web:true,collection:c=>({onSnapshot:(f,e)=>{(subs[c]=subs[c]||[]).push(f);if(e&&!errs.includes(e))errs.push(e)}}),
   doc:p=>{const i=p.indexOf('/'),c=p.slice(0,i),id=p.slice(i+1);return {set:d=>call('/api/db/put',{method:'POST',body:JSON.stringify({c,id,d})}),delete:()=>call('/api/db/del',{method:'POST',body:JSON.stringify({c,id})})}}}}
 (async()=>{await 0;let c=null;try{c=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){}
- if(!c&&ONWEB&&BK.code)c=webDb();
+ if(!c&&ONWEB&&webAuth())c=webDb();
  if(!c){cstate='off';syncUI();render();checkSched();return}
  cloud=c;const seen=new Set(),pend=new Set();let to=setTimeout(()=>{if(!ready){if(seen.size){firstLoad()}else{cstate='offline';syncUI();render()}}},10000);
  COLS.forEach(col=>cloud.collection(col).onSnapshot(snap=>{const ch=[];snap.docChanges().forEach(d=>{const p=col+'/'+d.doc.id;if(d.type=='removed')delete remote[p];else remote[p]=cj(d.doc.data());ch.push(p)});
@@ -222,7 +222,7 @@ function render(){
  const ok=t=>!!me&&staffTabs(me).includes(t),pc=ok('rep')?pendQ().length:0;$('#bell').hidden=!pc;$('#bell').textContent='🔔 '+pc+' report'+(pc>1?'s':'');
  if(me){brCheck();const ob=staffBranches(me).length>1;$('#brsw').hidden=false;$('#brsw').textContent='📍 '+BRN()+(ob?' ▾':'');$('#brsw').style.cursor=ob?'pointer':'default'}else $('#brsw').hidden=true;
  if(me)navHTML();else{$('#tabs').innerHTML='';$('#bnav').innerHTML=''}
- syncUI();let jv=false;try{jv=ONWEB&&!cloud&&!BK.code}catch(e){}if(jv)return $('#app').innerHTML=joinView();
+ syncUI();let jv=false;try{jv=ONWEB&&!cloud&&!webAuth()}catch(e){}if(jv)return $('#app').innerHTML=webLoginView();
  if(!db.staff.length&&cloud&&!ready)return $('#app').innerHTML=box(cstate=='offline'?'Can’t reach your shop':'Opening your shop…','<span class="mut">'+(cstate=='offline'?'Check the internet connection. Your shop opens as soon as renatel.shop can be reached.':'Loading your shop’s data from the database.')+'</span>');
  if(!db.staff.length&&cstate=='connecting')return $('#app').innerHTML=box('Opening your shop…','<span class="mut">Loading your shop’s data from the database.</span>');
  if(!db.staff.length)return $('#app').innerHTML=setup();
@@ -357,6 +357,25 @@ function repOld(){
  <div class="card"><b>Low stock</b>${low.map(p=>`<div class="row"><span>${esc(p.name)}</span><span class="low">${p.stock} left</span></div>`).join('')||'<p class="mut">All stocked up.</p>'}</div></div>
  <div class="card" style="margin-top:12px"><b>Recent sales</b><div class="tw"><table><tr><th>#</th><th>Time</th><th>Items</th><th>Method</th><th>Total</th><th></th></tr>${ss.slice(-30).reverse().map(s=>`<tr><td>${s.id}</td><td>${new Date(s.ts).toLocaleString()}</td><td>${s.items.reduce((a,i)=>a+i.qty,0)}</td><td>${s.method}</td><td>${money(s.total)}</td><td><button class="btn sm" onclick="showReceipt(db.sales.find(x=>x.id==${s.id}))">Receipt</button></td></tr>`).join('')}</table></div></div>`}
 const box=(t,b)=>`<div class="card" style="max-width:380px;margin:30px auto"><b>${t}</b><div class="form" style="margin-top:10px;flex-direction:column">${b}</div></div>`;
+function webLoginView(){const h=new Date().getHours(),hi=h<12?'Good morning':h<17?'Good afternoon':'Good evening';
+ return `<div class="lgw"><div class="lgh"><div class="lgl">🛍️</div><h1>${esc(db.set.name)}</h1><p class="mut">${hi} · ${new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'})}</p></div>
+ <div class="card lgc"><b style="font-size:1.1rem">Staff login</b><p class="mut ln" style="margin:2px 0 14px">Type your name and password.</p>
+  <label for="wu" class="mut" style="font-size:.9rem">Your name</label>
+  <input id="wu" class="lgin" type="text" autocomplete="username" autocapitalize="words" spellcheck="false" placeholder="e.g. Kofi Mensah" onkeydown="if(event.key=='Enter'){event.preventDefault();$('#wp').focus()}">
+  <label for="wp" class="mut" style="font-size:.9rem">Password or PIN</label>
+  <input id="wp" class="lgin" type="password" autocomplete="current-password" onkeydown="if(event.key=='Enter'){event.preventDefault();doWebLogin()}">
+  <p id="wmsg" class="ln" style="margin:8px 0 0;min-height:1.2em"></p>
+  <button id="wbtn" class="btn pri" style="width:100%;margin-top:6px" onclick="doWebLogin()">Log in</button></div></div>`}
+async function webLoginCall(name,password){const r=await fetch('/api/login',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,password,dev:DEV.id})});let j={};try{j=await r.json()}catch(e){}if(!r.ok)throw new Error(j.error||('The server answered '+r.status+'.'));
+ try{localStorage.setItem(K+'-sess',JSON.stringify({t:j.token,sid:j.sid,exp:j.exp}))}catch(e){}return j}
+async function doWebLogin(){const n=($('#wu').value||'').trim(),p=$('#wp').value||'',m=$('#wmsg'),b=$('#wbtn');
+ if(!n){m.textContent='Type your name first.';return $('#wu').focus()}if(!p){m.textContent='Type your password / PIN too.';return $('#wp').focus()}
+ b.disabled=true;b.textContent='Checking…';m.textContent='';
+ try{const j=await webLoginCall(n,p);try{localStorage.setItem(K+'-auto',JSON.stringify({sid:j.sid,ts:Date.now()}))}catch(e){}b.textContent='Opening your shop…';m.textContent='✔ Password correct. Welcome, '+j.name+'!';setTimeout(()=>location.reload(),300)}
+ catch(e){b.disabled=false;b.textContent='Log in';$('#wp').value='';m.textContent='✖ '+(e.message==='Failed to fetch'?'Can’t reach renatel.shop. Check the internet connection.':e.message);$('#wp').focus()}}
+function webRelogin(n,p){if(!n||!p)return;webLoginCall(n,p).catch(()=>{})}
+function autoIn(){let a=null;try{a=JSON.parse(localStorage.getItem(K+'-auto')||'null')}catch(e){}if(!a)return;try{localStorage.removeItem(K+'-auto')}catch(e){}
+ if(Date.now()-a.ts>120000)return;const s=db.staff.find(x=>x.id==a.sid);if(!s||s.locked)return;me=s;loginAt=Date.now();lastAct=Date.now();tab='home';cart=[];logit('Logged in','on renatel.shop');save()}
 function joinView(){return box('Join your shop','<span class="mut ln">Type the shop code once on this phone or computer. It then shows the same products, sales and staff as every other device.</span><input id="jc" placeholder="Shop code (RNTL-XXXX-XXXX-XXXX-XXXX)" autocapitalize="characters" autocomplete="off" spellcheck="false" onkeydown="if(event.key==\'Enter\')joinShop()"><input id="jn" placeholder="Name of this device, e.g. Counter PC" value="'+esc(BK.name||'')+'"><button class="btn pri" onclick="joinShop()">Join shop</button><p class="mut ln" style="margin:8px 0 0;font-size:.85rem">The owner finds the shop code in Hostinger (BACKUP_CODE).</p>')}
 async function joinShop(){const c=($('#jc').value||'').trim().toUpperCase(),n=($('#jn').value||'').trim().slice(0,40);if(!c)return uiAlert('Type the shop code first.');
  try{await bkFetch('/api/backup/status',{},c)}catch(e){return uiAlert('⚠️ '+(e.message==='Failed to fetch'?'Can’t reach renatel.shop. Check the internet connection.':e.message))}
@@ -433,7 +452,7 @@ async function doLogin(){if(lbusy)return;const nm=($('#lu').value||'').trim();if
  if(!(await pwOK($('#lp').value,s.pin))){$('#lp').value='';const m=failTry(s,'login');s.nextTry=Date.now()+(DELAYS[Math.min(s.fails||0,DELAYS.length-1)]||0)*1000;save();lbusy=false;$('#lbtn').disabled=false;
   if(s.locked){const o=$('#lc_'+s.id);if(o)o.textContent='🔒 Locked'}
   pwShow('lp','lmsg',false,'✖ '+asT(m));$('#lp').focus();return}
- if(!String(s.pin).startsWith('p2$'))s.pin=await mkHash($('#lp').value);s.fails=0;s.nextTry=0;loginAt=Date.now();lastAct=Date.now();pwShow('lp','lmsg',true,'✔ Password correct. Welcome!');$('#lbtn').textContent='Opening your shop…';$('#lp').disabled=true;
+ if(!String(s.pin).startsWith('p2$'))s.pin=await mkHash($('#lp').value);s.fails=0;s.nextTry=0;loginAt=Date.now();try{if(ONWEB)webRelogin(nm,$('#lp').value)}catch(e){}lastAct=Date.now();pwShow('lp','lmsg',true,'✔ Password correct. Welcome!');$('#lbtn').textContent='Opening your shop…';$('#lp').disabled=true;
  setTimeout(()=>{lbusy=false;ufail=0;unext=0;lsel='';me=s;tab='home';cart=[];logit('Logged in');save();render();scrollTo(0,0)},900)}
 function logout(){logit('Logged out');save();me=null;cart=[];render()}
 let lf='';
@@ -1494,23 +1513,29 @@ function prnCard(){const s=db.set;if(!ONWEB)return `<div class="card"><b>🖨️
  <label class="ln" style="display:flex;gap:6px;align-items:center"><input type="checkbox" ${s.autoPrint?'checked':''} onchange="db.set.autoPrint=this.checked;logit('Settings changed','Print receipt after each sale '+(this.checked?'on':'off'));save()" style="width:auto"> Open the print window automatically after each sale</label>
  <div class="form"><button class="btn" onclick="prnTest()">Print a test receipt</button></div></div></div>`}
 function prnTest(){const s=db.sales[db.sales.length-1];if(s)showReceipt(s);else{const r=$('#receipt');r.className='';r.innerHTML=`<div style="text-align:center"><b>${esc(SN().toUpperCase())}</b><br>Test receipt<br>${new Date().toLocaleString()}</div><hr><div class="r"><span>Printer test</span><span>0.00</span></div><hr><div style="text-align:center">If you can read this, printing works ✓</div>`;$('#rbtns').innerHTML=`<button class="btn" onclick="$('#modal').classList.remove('on')">Close</button>`;$('#modal').classList.add('on')}setTimeout(printRcpt,250)}
+/* ---------- website session: set by a staff login checked on the server ---------- */
+function SESS(){try{const x=JSON.parse(localStorage.getItem(K+'-sess')||'null');return x&&x.t&&x.exp>Date.now()?x:null}catch(e){return null}}
+function sessClear(){try{localStorage.removeItem(K+'-sess')}catch(e){}}
+function bkCode(){try{return BK.code||''}catch(e){return ''}}
+function webAuth(){return !!(SESS()||bkCode())}
+function authH(){const h={},s=SESS();if(s)h.Authorization='Bearer '+s.t;const c=bkCode();if(c)h['X-Backup-Code']=c;return h}
 /* ---------- online backup (renatel.shop hosting + Supabase) ---------- */
 const BKK=K+'-bk',ONWEB=/^https?:$/.test(location.protocol)&&!/claude\.(ai|site)|claudeusercontent|anthropic/.test(location.hostname);
 let BK={};try{BK=JSON.parse(localStorage.getItem(BKK)||'{}')}catch(e){}
 if(!BK.dev){BK={dev:Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-4),name:/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)?'Phone':'Computer',auto:true}}
 const bkPut=()=>{try{localStorage.setItem(BKK,JSON.stringify(BK))}catch(e){}};bkPut();
 let bkT=null,bkBusy=false,bkPend=false,bkList=null;
-const bkOn=()=>ONWEB&&!!BK.code&&BK.auto!==false;
+const bkOn=()=>ONWEB&&webAuth()&&BK.auto!==false;
 function bkDirty(){if(!bkOn())return;bkPend=true;clearTimeout(bkT);bkT=setTimeout(()=>bkRun(false),60000)}
-async function bkFetch(p,o,code){const r=await fetch(p,Object.assign({cache:'no-store'},o||{},{headers:Object.assign({'X-Backup-Code':code||BK.code||''},(o&&o.headers)||{})}));let j={};try{j=await r.json()}catch(e){}if(!r.ok)throw new Error(j.error||('The server answered '+r.status+'.'));return j}
-async function bkRun(manual){if(!ONWEB||!BK.code||window.__rst)return;if(bkBusy){bkPend=true;return}bkBusy=true;bkPend=false;clearTimeout(bkT);bkRefresh('⏳ Backing up…');
+async function bkFetch(p,o,code){const r=await fetch(p,Object.assign({cache:'no-store'},o||{},{headers:Object.assign(code?{'X-Backup-Code':code}:authH(),(o&&o.headers)||{})}));let j={};try{j=await r.json()}catch(e){}if(!r.ok)throw new Error(j.error||('The server answered '+r.status+'.'));return j}
+async function bkRun(manual){if(!ONWEB||!webAuth()||window.__rst)return;if(bkBusy){bkPend=true;return}bkBusy=true;bkPend=false;clearTimeout(bkT);bkRefresh('⏳ Backing up…');
  try{lsSave();const raw=localStorage.getItem(K);if(!raw)throw new Error('Nothing to back up yet.');
   const j=await bkFetch('/api/backup',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"device":'+JSON.stringify(BK.dev)+',"name":'+JSON.stringify(BK.name||'')+',"data":'+raw+'}'});
   const he=j.hosting&&j.hosting.error,se=j.supabase&&j.supabase.error;BK.last={at:Date.now(),ok:true,h:!he,s:!se,err:[he,se].filter(Boolean).join(' ')};
   if(manual)uiAlert(he||se?'⚠️ Backup saved, but only '+(he?'in Supabase':'on the hosting')+'. '+(he||se):'✔ Backup saved on the hosting and in Supabase.')
  }catch(e){BK.last={at:Date.now(),ok:false,err:e.message==='Failed to fetch'?'Can’t reach renatel.shop (no internet?). It will try again.':e.message};if(manual)uiAlert('⚠️ Backup failed: '+BK.last.err)}
  bkPut();bkBusy=false;bkRefresh();if(bkPend)bkDirty()}
-function bkStatus(){if(!BK.code)return '⚪ Not connected on this device. Enter the shop backup code to start.';const L=BK.last,off=BK.auto===false?' · automatic backup is off':'';
+function bkStatus(){if(!webAuth())return '⚪ Not connected on this device. Enter the shop backup code to start.';const L=BK.last,off=BK.auto===false?' · automatic backup is off':'';
  if(!L)return '🟡 Connected. The first backup runs in a moment'+off+'.';
  if(!L.ok)return `⚠️ Last try ${fdt(L.at)} failed: ${esc(L.err)}${off}`;
  return `${L.h&&L.s?'✅':'⚠️'} Last backup ${fdt(L.at)}: hosting ${L.h?'✓':'✗'} · Supabase ${L.s?'✓':'✗'}${L.err?' · '+esc(L.err):''}${off}`}
@@ -1523,11 +1548,11 @@ function bkCard(){if(!ONWEB)return `<div class="card"><b>🌐 Online backup</b><
   <label class="fl"><span class="mut">Shop backup code${BK.code?' (saved on this device; type a new one only to change it)':''}</span><input id="bk_code" type="password" autocomplete="off" spellcheck="false" placeholder="${BK.code?'••••••••••••':'RNTL-XXXX-XXXX-XXXX-XXXX'}"></label>
   <label class="fl"><span class="mut">Name of this device (shown in the backup list)</span><input id="bk_name" value="${esc(BK.name||'')}" maxlength="40"></label>
   <label class="ln" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="bk_auto" ${BK.auto!==false?'checked':''} style="width:auto"> Back up automatically</label>
-  <div class="form"><button class="btn" onclick="bkConnect()">${BK.code?'Save':'Connect'}</button>${BK.code?`<button class="btn" onclick="bkRun(true)">Back up now</button><button class="btn" onclick="bkShow()">Restore from online backup</button><button class="btn del" onclick="bkForget()">Remove code from this device</button>`:''}</div></div>
+  <div class="form"><button class="btn" onclick="bkConnect()">${webAuth()?'Save':'Connect'}</button>${webAuth()?`<button class="btn" onclick="bkRun(true)">Back up now</button><button class="btn" onclick="bkShow()">Restore from online backup</button><button class="btn del" onclick="bkForget()">Remove code from this device</button>`:''}</div></div>
   <div id="bklist" style="margin-top:8px">${bkListHtml()}</div>`:'<p class="mut ln" style="margin:0">Only the owner can change online backup or restore from it.</p>'}</div>`}
 async function bkConnect(){const c=($('#bk_code').value||'').trim().toUpperCase(),n=($('#bk_name').value||'').trim().slice(0,40),a=$('#bk_auto').checked;
  if(c){try{await bkFetch('/api/backup/status',{},c)}catch(e){return uiAlert('⚠️ '+(e.message==='Failed to fetch'?'Can’t reach renatel.shop. Check the internet connection.':e.message))}BK.code=c}
- else if(!BK.code)return uiAlert('Type the shop backup code first.');
+ else if(!webAuth())return uiAlert('Type the shop backup code first.');
  BK.name=n||BK.name;BK.auto=a;bkPut();logit('Settings changed','Online backup '+(c?'connected':'updated')+' on '+BK.name);save();render();if(c||a)bkRun(false)}
 async function bkForget(){if(!await uiConfirm('Remove the shop code from this device? This device will leave the shared shop and stop backing up until the code is entered again. The shop’s data and backups are kept.','Remove code',false))return;logit('Settings changed','Shop code removed from '+BK.name);save();await new Promise(r=>setTimeout(r,1500));delete BK.code;BK.last=null;bkList=null;bkPut();location.reload()}
 async function bkShow(){const e=$('#bklist');if(e)e.innerHTML='<p class="mut">⏳ Loading backups…</p>';try{const j=await bkFetch('/api/backups');const g={};
@@ -1538,7 +1563,7 @@ function bkListHtml(){if(!bkList)return '';if(bkList.err)return `<p class="bad">
   return `<tr><td>${fdt(Date.parse(r.at))}</td><td>${esc(r.name||r.device)}${r.device==BK.dev?' <span class="mut">(this one)</span>':''}</td><td style="white-space:normal">${c.products||0} products · ${c.sales||0} sales · ${c.customers||0} customers</td><td>${r.src.hosting?'Hosting ✓ ':''}${r.src.supabase?'Supabase ✓':''}</td><td><button class="btn" onclick="bkRestore('${src[0]}','${esc(src[1])}','${esc(r.at)}','${esc(r.name||r.device)}')">Restore</button></td></tr>`}).join('')}</table></div>`}
 async function bkRestore(src,idv,at,dev){if(me.role!='owner')return;
  if(!await uiConfirm(`Replace ALL data on this device with the backup from ${fdt(Date.parse(at))} (${dev})? A copy of the current data is backed up first. Everyone will need to log in again.`,'Restore this backup'))return;
- try{if(BK.code)await bkRun(false);const j=await bkFetch('/api/backup/'+src+'/'+encodeURIComponent(idv));const d=j.data;
+ try{if(webAuth())await bkRun(false);const j=await bkFetch('/api/backup/'+src+'/'+encodeURIComponent(idv));const d=j.data;
   if(!d||!Array.isArray(d.products)||!Array.isArray(d.sales))throw new Error('That backup doesn’t look like shop data.');
   logit('Restored online backup','from '+fdt(Date.parse(at))+' ('+dev+')');lsSave();
   window.__rst=true;const cur=localStorage.getItem(K);try{if(cur)localStorage.setItem(K+'-before-restore',cur)}catch(e){}
