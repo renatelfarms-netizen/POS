@@ -368,14 +368,14 @@ function webLoginView(){const h=new Date().getHours(),hi=h<12?'Good morning':h<1
   <label for="wu" class="mut" style="font-size:.9rem">Your name</label>
   <input id="wu" class="lgin" type="text" autocomplete="username" autocapitalize="words" spellcheck="false" placeholder="e.g. Kofi Mensah" onkeydown="if(event.key=='Enter'){event.preventDefault();$('#wp').focus()}">
   <label for="wp" class="mut" style="font-size:.9rem">Password or PIN</label>
-  <input id="wp" class="lgin" type="password" autocomplete="current-password" onkeydown="if(event.key=='Enter'){event.preventDefault();doWebLogin()}">
+  <div class="lgpw"><input id="wp" type="password" placeholder="Type it here" autocomplete="current-password" onkeydown="if(event.key=='Enter'){event.preventDefault();doWebLogin()}"><button type="button" class="lgeye" onclick="eyeFor(this,'wp')" aria-label="Show password" title="Show password">👁️</button></div>
   <p id="wmsg" class="ln" style="margin:8px 0 0;min-height:1.2em"></p>
   <button id="wbtn" class="btn pri" style="width:100%;margin-top:6px" onclick="doWebLogin()">Log in</button>
   <button class="btn" style="width:100%;margin-top:8px" onclick="webForgot()">Forgot password?</button></div></div>`}
 function webForgot(){$('#dlgc').innerHTML=`<b>🔑 Reset a password</b><p class="mut ln" style="margin:4px 0 10px">Use the shop recovery code (the owner created it in Settings → Security). If you don’t have it, ask the owner or a manager to reset your password for you.</p>
  <label class="fl"><span class="mut">Your name</span><input id="wf_n" value="${esc(($('#wu')||{}).value||'')}" autocapitalize="words" spellcheck="false"></label>
  <label class="fl" style="margin-top:8px"><span class="mut">Recovery code</span><input id="wf_c" placeholder="XXXX-XXXX-XXXX" autocapitalize="characters" autocomplete="off" spellcheck="false"></label>
- <label class="fl" style="margin-top:8px"><span class="mut">New password</span><input id="wf_p" type="password" autocomplete="new-password" placeholder="6+ letters and numbers"></label>
+ <label class="fl" style="margin-top:8px"><span class="mut">New password</span><div class="lgpw"><input id="wf_p" type="password" autocomplete="new-password" placeholder="6+ letters and numbers"><button type="button" class="lgeye" onclick="eyeFor(this,'wf_p')" aria-label="Show password" title="Show password">👁️</button></div></label>
  <p id="wf_m" class="ln" style="margin:8px 0 0;min-height:1.2em"></p>
  <div class="form" style="margin-top:8px"><button class="btn pri" id="wf_b" onclick="doWebReset()">Reset and log in</button><button class="btn" onclick="$('#dlg').classList.remove('on')">Cancel</button></div>`;$('#dlg').classList.add('on')}
 async function doWebReset(){const n=$('#wf_n').value.trim(),c=$('#wf_c').value.trim(),p=$('#wf_p').value,m=$('#wf_m'),b=$('#wf_b');if(!n||!c||!p){m.textContent='Fill in your name, the recovery code and a new password.';return}
@@ -416,6 +416,7 @@ function loginView(){const pre=lsel&&db.staff.find(x=>x.id==lsel),h=new Date().g
   <button class="btn pri lgbtn" id="lbtn" onclick="doLogin()">Log in</button>
   <button type="button" class="lglink" onclick="forgotDlg()">Forgot password?</button></div>
  <p class="lgf mut">🔒 ${where}</p></div>`}
+function eyeFor(b,id){const i=$('#'+id);if(!i)return;const show=i.type=='password';i.type=show?'text':'password';b.textContent=show?'🙈':'👁️';b.setAttribute('aria-label',show?'Hide password':'Show password');b.title=show?'Hide password':'Show password';i.focus()}
 function lpEye(b){const i=$('#lp');if(!i)return;const show=i.type=='password';i.type=show?'text':'password';b.textContent=show?'🙈':'👁️';b.setAttribute('aria-label',show?'Hide password':'Show password');b.title=b.getAttribute('aria-label');i.focus()}
 const MAXF=6,sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function failTry(s,what){s.fails=(s.fails||0)+1;const left=MAXF-s.fails;db.log.push({ts:Date.now(),sid:s.id,who:s.name,a:left<=0?'Account locked':'Failed '+what,d:left<=0?MAXF+' wrong tries in a row':(s.fails+' of '+MAXF)});if(left<=0){s.locked=true;s.fails=0}save();
