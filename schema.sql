@@ -46,10 +46,10 @@ alter table mt_backups enable row level security;
 -- Server token check (the same secret as SUPABASE_BACKUP_TOKEN, stored as a SHA-256 fingerprint).
 create table if not exists mt_secret (k text primary key, v text not null);
 alter table mt_secret enable row level security;
--- insert into mt_secret values ('token_sha', encode(digest('<SUPABASE_BACKUP_TOKEN>', 'sha256'), 'hex'));
+-- insert into mt_secret values ('token_sha', '<sha256 hex of the Tessa server token>');
 create or replace function _mt_check(p_token text) returns void language plpgsql security definer set search_path = public, extensions as $$
 begin
-  if p_token is null or encode(digest(p_token, 'sha256'), 'hex') is distinct from (select v from mt_secret where k = 'token_sha') then
+  if p_token is null or encode(sha256(convert_to(p_token, 'UTF8')), 'hex') is distinct from (select v from mt_secret where k = 'token_sha') then
     raise exception 'not allowed' using errcode = '42501';
   end if;
 end $$;
@@ -161,5 +161,9 @@ end $$;
 create or replace function mt_backup_get(p_token text, p_shop uuid, p_id bigint) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 begin perform _mt_check(p_token); return (select data from mt_backups where shop_id = p_shop and id = p_id); end $$;
 
-revoke all on all functions in schema public from public, anon, authenticated;
-grant execute on function mt_shop_create, mt_shop_by_slug, mt_shop_list, mt_shop_set, mt_db_pull, mt_db_get, mt_db_put, mt_db_del, mt_ids, mt_backup_save, mt_backup_list, mt_backup_get to anon;
+-- Mail settings (shared mailbox) for the Tessa server.
+create or replace function mt_secret_get(p_token text, p_name text) returns text language plpgsql security definer set search_path = public, extensions as $$
+begin perform _mt_check(p_token); if p_name not in ('mail_api_token', 'mail_mailbox_id', 'mail_from') then return null; end if; return (select value from site_secrets where name = p_name); end $$;
+
+revoke all on function _mt_check, _mt_rev, mt_shop_create, mt_shop_by_slug, mt_shop_list, mt_shop_set, mt_db_pull, mt_db_get, mt_db_put, mt_db_del, mt_ids, mt_backup_save, mt_backup_list, mt_backup_get, mt_secret_get from public, anon, authenticated;
+grant execute on function mt_shop_create, mt_shop_by_slug, mt_shop_list, mt_shop_set, mt_db_pull, mt_db_get, mt_db_put, mt_db_del, mt_ids, mt_backup_save, mt_backup_list, mt_backup_get, mt_secret_get to anon;

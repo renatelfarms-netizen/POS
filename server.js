@@ -369,7 +369,7 @@ async function resetPw(req, res) {
 let mailCache = { at: 0, cfg: null };
 async function mailCfg() {
   if (mailCache.cfg && Date.now() - mailCache.at < 300000) return mailCache.cfg;
-  const get = (n) => sbCall('site_secret_get', { p_name: n });
+  const get = (n) => sbCall('mt_secret_get', { p_name: n });
   const [token, box, from] = await Promise.all([get('mail_api_token'), get('mail_mailbox_id'), get('mail_from')]);
   mailCache = { at: Date.now(), cfg: token && box ? { token, box, from: from || '' } : null };
   return mailCache.cfg;
