@@ -270,7 +270,7 @@ const prod=i=>db.products.find(p=>p.id==i), cu=i=>db.customers.find(c=>c.id==i);
 
 
 const TABS={sell:'🛒 Sell',cust:'👥 Customers',inv:'📦 Inventory',exp:'💸 Expenses',rep:'📊 Reports',staff:'🔐 Staff & activity',po:'🧾 Purchases',docs:'📄 Receipts & invoices'},OWN=['inv','exp','rep','staff','set'],GROUPS=[['Sales',['sell','docs','cust','del']],['Manage',['inv','po','exp']],['Insights',['rep']],['Admin',['staff','set']]];
-function render(){document.body.classList.remove('lgmode');
+function render(){document.body.classList.remove('lgmode');setTimeout(meSave,0);
  $('#who').textContent=me?'👤 '+me.name+' ▾':'';$('#who').hidden=!me;$('#brand').textContent=db.set.name;document.title=db.set.name+' POS';applyTheme();
  const ok=t=>!!me&&staffTabs(me).includes(t),pc=ok('rep')?pendQ().length:0;$('#bell').hidden=!pc;$('#bell').textContent='🔔 '+pc+' report'+(pc>1?'s':'');
  if(me){brCheck();const ob=staffBranches(me).length>1;$('#brsw').hidden=false;$('#brsw').textContent='📍 '+BRN()+(ob?' ▾':'');$('#brsw').style.cursor=ob?'pointer':'default'}else $('#brsw').hidden=true;
@@ -438,7 +438,14 @@ async function doWebLogin(){const n=($('#wu').value||'').trim(),p=$('#wp').value
  try{const j=await webLoginCall(n,p);try{sessionStorage.setItem(K+'-auto',JSON.stringify({sid:j.sid,ts:Date.now()}))}catch(e){}b.innerHTML=RING()+' Opening your shop…';pwShow('wp','wmsg',true,'✔ Welcome, '+j.name+'!');setTimeout(()=>location.reload(),300)}
  catch(e){b.disabled=false;b.textContent='Log in';$('#wp').value='';pwShow('wp','wmsg',false,'✖ '+(e.message==='Failed to fetch'?'Can’t reach renatel.shop. Check the internet connection.':e.message));$('#wp').focus()}}
 function webRelogin(n,p){if(!n||!p)return;webLoginCall(n,p).catch(()=>{})}
-function autoIn(){let a=null;try{a=JSON.parse(sessionStorage.getItem(K+'-auto')||'null')}catch(e){}if(!a)return;try{sessionStorage.removeItem(K+'-auto')}catch(e){}
+function meSave(){if(!WEB0)return;try{if(me&&SESS())sessionStorage.setItem(K+'-me',JSON.stringify({sid:me.id,at:loginAt,act:lastAct,tab,sset,b:curB,y:window.scrollY||0}))}catch(e){}}
+addEventListener('pagehide',meSave);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')meSave()});
+function meRestore(){let a=null;try{a=JSON.parse(sessionStorage.getItem(K+'-me')||'null')}catch(e){}if(!a||me)return false;const se=SESS();
+ const s=db.staff.find(x=>x.id==a.sid),idle=+(db.set.idleMin??10);
+ if(!s||s.locked||!se||(db.set.sessEpoch&&a.at<db.set.sessEpoch)||(idle>0&&Date.now()-(a.act||0)>idle*60000)){try{sessionStorage.removeItem(K+'-me')}catch(e){}return false}
+ me=s;loginAt=a.at;lastAct=Date.now();if(a.tab)tab=a.tab;if(a.sset)sset=a.sset;if(a.b&&staffBranches(s).includes(a.b))useBranch(a.b);brPref=s.id;
+ const y=+a.y||0;if(y)setTimeout(()=>scrollTo(0,y),60);return true}
+function autoIn(){if(meRestore())return;let a=null;try{a=JSON.parse(sessionStorage.getItem(K+'-auto')||'null')}catch(e){}if(!a)return;try{sessionStorage.removeItem(K+'-auto')}catch(e){}
  if(Date.now()-a.ts>120000)return;const s=db.staff.find(x=>x.id==a.sid);if(!s||s.locked)return;me=s;loginAt=Date.now();lastAct=Date.now();tab='home';cart=[];logit('Logged in','on renatel.shop');save();if(s.mustChange)setTimeout(()=>pinDlg(true),600)}
 function joinView(){return box('Join your shop','<span class="mut ln">Type the shop code once on this phone or computer. It then shows the same products, sales and staff as every other device.</span><input id="jc" placeholder="Shop code (RNTL-XXXX-XXXX-XXXX-XXXX)" autocapitalize="characters" autocomplete="off" spellcheck="false" onkeydown="if(event.key==\'Enter\')joinShop()"><input id="jn" placeholder="Name of this device, e.g. Counter PC" value="'+esc(BK.name||'')+'"><button class="btn pri" onclick="joinShop()">Join shop</button><p class="mut ln" style="margin:8px 0 0;font-size:.85rem">The owner finds the shop code in Hostinger (BACKUP_CODE).</p>')}
 async function joinShop(){const c=($('#jc').value||'').trim().toUpperCase(),n=($('#jn').value||'').trim().slice(0,40);if(!c)return uiAlert('Type the shop code first.');
@@ -525,7 +532,7 @@ async function doLogin(){if(lbusy)return;const nm=($('#lu').value||'').trim();if
   pwShow('lp','lmsg',false,'✖ '+asT(m));$('#lp').focus();return}
  if(!String(s.pin).startsWith('p2$'))s.pin=await mkHash($('#lp').value);s.fails=0;s.nextTry=0;loginAt=Date.now();try{if(ONWEB)webRelogin(nm,$('#lp').value)}catch(e){}lastAct=Date.now();pwShow('lp','lmsg',true,'✔ Password correct. Welcome!');$('#lbtn').innerHTML=RING()+' Opening your shop…';$('#lp').disabled=true;
  setTimeout(()=>{lbusy=false;ufail=0;unext=0;lsel='';me=s;tab='home';cart=[];logit('Logged in');save();render();scrollTo(0,0);if(s.mustChange)setTimeout(()=>pinDlg(true),300)},900)}
-function logout(){logit('Logged out');save();me=null;cart=[];render()}
+function logout(){logit('Logged out');save();me=null;cart=[];try{sessionStorage.removeItem(K+'-me')}catch(e){}render()}
 let lf='';
 const RICON={warehouse:'🏭',owner:'👑',manager:'🧑‍💼',accountant:'📒',cashier:'🛒',stock:'📦',delivery:'🚚'},RPLUR={warehouse:'Warehouse keepers',owner:'Owners',manager:'Managers',accountant:'Accountants',cashier:'Cashiers',stock:'Stock keepers',delivery:'Delivery riders'},REXTRA={warehouse:['Transfers to the shop','Own purchases'],owner:['Staff & settings','Change stock','Recovery code'],manager:['Refunds','Edit receipts','Any discount'],accountant:['Sees all sales','Supplier payments'],cashier:['Own sales only','Discount up to '+'LIMIT%'],stock:['Restock & damages'],delivery:['Only their deliveries']};
 function lastIn(id){for(let i=db.log.length-1;i>=0;i--){const l=db.log[i];if(l.sid==id&&(l.a=='Logged in'||l.a=='Owner account created'))return l.ts}return null}
