@@ -200,11 +200,12 @@ async function restoreDocs(docs, by) {
   // Everyone is signed out so no device keeps working on the old data.
   const main = JSON.parse(JSON.stringify(docs['shop/main']));
   main.set = Object.assign({}, main.set, { sessEpoch: Date.now() }); docs['shop/main'] = main;
+  // The activity trail is never rolled back: it keeps every entry, including what happened after the backup.
   for (const [k, d] of Object.entries(docs)) {
-    if (JSON.stringify(cur[k]) === JSON.stringify(d)) continue;
+    if (k.startsWith('log/') || JSON.stringify(cur[k]) === JSON.stringify(d)) continue;
     const i = k.indexOf('/'); await sbCall('shop_db_put', { p_col: k.slice(0, i), p_id: k.slice(i + 1), p_data: d }); n++;
   }
-  for (const k of Object.keys(cur)) if (!(k in docs)) { const i = k.indexOf('/'); await sbCall('shop_db_del', { p_col: k.slice(0, i), p_id: k.slice(i + 1) }); n++; }
+  for (const k of Object.keys(cur)) if (!(k in docs) && !k.startsWith('log/')) { const i = k.indexOf('/'); await sbCall('shop_db_del', { p_col: k.slice(0, i), p_id: k.slice(i + 1) }); n++; }
   shopCache.at = 0;
   console.log('restore: ' + n + ' documents changed by ' + by);
   return n;
@@ -212,6 +213,25 @@ async function restoreDocs(docs, by) {
 if (sbOn()) {
   setTimeout(() => snapshot('Automatic').catch((e) => console.error('auto backup', e.message)), 60000).unref();
   setInterval(() => snapshot('Automatic').catch((e) => console.error('auto backup', e.message)), SNAP_MIN * 60000).unref();
+}
+
+// ---- activity trail entries written by the server (logins, resets, backups) ----
+// They go into the shop's own 'log' collection, so they show in Staff → Activity trail with everything else.
+let logQueue = Promise.resolve();
+function serverLog(a, d, who) {
+  if (!sbOn()) return;
+  const day = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Accra' });
+  const rec = { ts: Date.now(), sid: who && who.id != null ? who.id : null, who: (who && who.name) || '—', a, d: String(d || '').slice(0, 300) };
+  logQueue = logQueue.then(async () => {
+    for (let n = 0; n < 20; n++) {
+      const id = day + '_server_' + n, cur = await sbCall('shop_db_get', { p_col: 'log', p_id: id });
+      const recs = (cur && Array.isArray(cur.recs)) ? cur.recs : [];
+      if (recs.length >= 300) continue;
+      recs.push(Object.assign({ _c: id }, rec));
+      await sbCall('shop_db_put', { p_col: 'log', p_id: id, p_data: { recs } });
+      return;
+    }
+  }).catch((e) => console.error('activity log', e.message));
 }
 
 // ---- staff login: name + password are checked here against the shared shop's staff list ----
@@ -279,8 +299,9 @@ async function login(req, res) {
   const s = findStaff(shop.staff || [], name);
   if (!s || !(await pwOK(pw, s.pin))) {
     console.log('login failed: ' + (s ? 'wrong password for ' + s.name : 'no staff member called "' + nmz(name) + '"'));
+    serverLog('Failed login', s ? 'wrong password · on renatel.shop' : 'name not recognised: “' + name.slice(0, 40) + '” · on renatel.shop', s);
     failed(ip, 20); failed(nk, 6); return send(res, 401, { error: 'That name and password don’t match. Check how your name is spelled and try again.' }); }
-  if (s.locked) return send(res, 423, { error: s.name + '’s account is locked after too many wrong tries. Ask the owner or a manager to unlock it.' });
+  if (s.locked) { serverLog('Failed login', 'account is locked · on renatel.shop', s); return send(res, 423, { error: s.name + '’s account is locked after too many wrong tries. Ask the owner or a manager to unlock it.' }); }
   loginFails.delete(nk);
   console.log('login ok: ' + s.name);
   const dev = cleanDev(msg.dev);
@@ -300,10 +321,10 @@ async function resetPw(req, res) {
   const s = findStaff(shop.staff || [], name);
   if (!s) return send(res, 400, { error: 'No staff member with that name. Type the name exactly as the owner added it.' });
   if (!shop.set || !shop.set.rc) return send(res, 400, { error: 'This shop has no recovery code yet. Ask the owner.' });
-  if (!code || !(await pwOK('rc:' + code, shop.set.rc))) { console.log('reset failed: wrong recovery code for ' + s.name); failed(ip, 5); return send(res, 401, { error: 'That recovery code is not right.' }); }
+  if (!code || !(await pwOK('rc:' + code, shop.set.rc))) { console.log('reset failed: wrong recovery code for ' + s.name); serverLog('Failed recovery code', 'on renatel.shop', s); failed(ip, 5); return send(res, 401, { error: 'That recovery code is not right.' }); }
   const rule = pwRule(pw, shop.set); if (rule) return send(res, 400, { error: rule });
   await setPin(shop, s.id, pw);
-  console.log('password reset with the recovery code: ' + s.name);
+  console.log('password reset with the recovery code: ' + s.name); serverLog('Password reset', 'with the shop recovery code · on renatel.shop', s);
   return send(res, 200, { ok: true, token: makeToken(s.id, cleanDev(msg.dev)), sid: s.id, name: s.name, exp: Date.now() + SESSION_DAYS * 864e5 });
 }
 // ---- email from the shop's own mailbox (shop@renatel.shop) through the Hostinger Mail API ----
@@ -361,6 +382,7 @@ async function resetCode(req, res) {
     await sendEmail({ to: [s.email], subject: (shop.set && shop.set.name || 'Renatel Shop') + ' - password reset code: ' + code,
       text: 'Hello ' + s.name + ',\n\nSomeone asked to reset your password for ' + (shop.set && shop.set.name || 'Renatel Shop') + '. Your reset code is:\n\n    ' + code + '\n\nIt expires in 15 minutes. If this wasn’t you, ignore this email and tell the shop owner.\n\n-- \nshop@renatel.shop' });
   } catch (e) { resetCodes.delete(s.id); return send(res, 502, { error: 'The code email could not be sent. Try again, or use the recovery code.' }); }
+  serverLog('Reset code emailed', 'to ' + maskEmail(s.email) + ' from the shop email', s);
   return send(res, 200, { ok: true, to: maskEmail(s.email) });
 }
 async function resetByEmail(req, res) {
@@ -370,11 +392,11 @@ async function resetByEmail(req, res) {
   const rc = s && resetCodes.get(s.id);
   if (!s || !rc || rc.exp < Date.now()) return send(res, 400, { error: 'That code has expired or was never sent. Send a new code.' });
   if (rc.tries >= 5) { resetCodes.delete(s.id); return send(res, 429, { error: 'Too many wrong codes. Send a new code.' }); }
-  if (sha('rst:' + String(msg.code || '').replace(/\D/g, '')) !== rc.h) { rc.tries++; return send(res, 401, { error: 'That code is not right. ' + (5 - rc.tries) + ' tries left.' }); }
+  if (sha('rst:' + String(msg.code || '').replace(/\D/g, '')) !== rc.h) { rc.tries++; serverLog('Failed reset code', (5 - rc.tries) + ' tries left · on renatel.shop', s); return send(res, 401, { error: 'That code is not right. ' + (5 - rc.tries) + ' tries left.' }); }
   const pw = String(msg.password || '').slice(0, 200), rule = pwRule(pw, shop.set);
   if (rule) return send(res, 400, { error: rule });
   await setPin(shop, s.id, pw); resetCodes.delete(s.id);
-  console.log('password reset by email code: ' + s.name);
+  console.log('password reset by email code: ' + s.name); serverLog('Password reset', 'with a code emailed to ' + maskEmail(s.email) + ' · on renatel.shop', s);
   return send(res, 200, { ok: true, token: makeToken(s.id, cleanDev(msg.dev)), sid: s.id, name: s.name, exp: Date.now() + SESSION_DAYS * 864e5 });
 }
 // Who is calling: a logged-in staff member (session token) or a device with the shop code.
@@ -462,7 +484,7 @@ async function api(req, res, url) {
   }
   if (req.method === 'POST' && url === '/api/backup/now') {
     if (!canRestore) return send(res, 403, { error: 'Only the owner or a manager can do this.' });
-    try { return send(res, 200, Object.assign({ ok: true }, await snapshot('Backed up by ' + (who.staff ? who.staff.name : 'shop code'), true))); }
+    try { const out = await snapshot('Backed up by ' + (who.staff ? who.staff.name : 'shop code'), true); if (!out.same) serverLog('Online backup made', 'Back up now · hosting and Supabase', who.staff); return send(res, 200, Object.assign({ ok: true }, out)); }
     catch (e) { console.error('backup now', e.message); return send(res, 502, { error: 'Could not make the backup.' }); }
   }
   if (req.method === 'GET' && url === '/api/backups') {
@@ -491,6 +513,7 @@ async function api(req, res, url) {
       if (!snap || snap.format !== SNAP_FORMAT || !snap.docs || !snap.docs['shop/main']) return send(res, 400, { error: 'That backup is from an old device copy and can’t be restored here.' });
       await snapshot('Before restore', true);
       const n = await restoreDocs(snap.docs, who.staff ? who.staff.name : 'shop code');
+      serverLog('Restored online backup', 'backup of ' + (snap.at || '?') + ' · ' + n + ' records changed · everyone signed out', who.staff);
       return send(res, 200, { ok: true, changed: n });
     } catch (e) { console.error('restore', e.message); return send(res, 502, { error: 'Could not restore that backup.' }); }
   }
