@@ -40,6 +40,9 @@ module.exports = function store(d) {
     catch (e) { console.error('paystack key', e.message); }
   }
   loadKey(); setInterval(loadKey, 60000).unref();
+  // Before anything that depends on the payment mode, re-read the key if it is more than a few seconds old,
+  // so every process switches to (or away from) Paystack together.
+  const freshKey = async () => { if (!process.env.PAYSTACK_SECRET_KEY && Date.now() - PK.at > 3000) await loadKey(); };
   const KEY = () => PK.key;
   const PS_API = process.env.PAYSTACK_API || 'https://api.paystack.co';
   const mode = () => (KEY() ? (KEY().startsWith('sk_test_') ? 'paystack-test' : 'paystack') : 'test');
@@ -106,7 +109,6 @@ module.exports = function store(d) {
     serverLog('Added customer', a.name + ' · ' + ph + ' (online shop account, ' + BR[b].name + ')', WHO);
     return id;
   }
-  const resetCodes = new Map(); // phone -> {h, exp, tries, sent}
 
   // ---- orders (kept in their own collection; the tills ignore it) ----
   const ORD = 'webOrders';
@@ -117,28 +119,42 @@ module.exports = function store(d) {
   // Append one record to a list document ({recs:[...]}) the way the tills do: up to 300 per document.
   async function appendRec(col, base, rec) {
     for (let n = 0; n < 50; n++) {
-      const id = base + '_web_' + n, cur = await sbCall('shop_db_get', { p_col: col, p_id: id });
+      // Each server process writes its own documents, so processes running side by side never overwrite each other.
+      const id = base + '_web' + process.pid + '_' + n, cur = await sbCall('shop_db_get', { p_col: col, p_id: id });
       const recs = cur && Array.isArray(cur.recs) ? cur.recs : [];
       if (recs.length >= 300) continue;
       recs.push(Object.assign({ _c: id }, rec));
       await sbCall('shop_db_put', { p_col: col, p_id: id, p_data: { recs } });
-      return;
+      return id;
     }
     throw new Error('no room in ' + col);
   }
 
-  // Record a paid order in the POS. One at a time, so two orders can never sell the same last item.
+  // Record a paid order in the POS. The site may run as several processes, so the order is first claimed in the
+  // database (only one process ever gets it) and each item's stock is taken atomically (it can never go below zero).
   let q = Promise.resolve();
   function finalize(ref, pay) { const job = q.then(() => finalizeNow(ref, pay)); q = job.catch(() => {}); return job; }
   async function finalizeNow(ref, pay) {
     const o = await getOrder(ref);
     if (!o) throw new Error('order not found');
     if (o.status !== 'pending') return o;
+    if (!(await sbCall('web_order_claim', { p_ref: ref }))) return (await getOrder(ref)) || o;
+    try { return await finalizeClaimed(ref, o, pay); }
+    catch (e) {
+      console.error('finalize ' + ref, e.message);
+      o.status = 'paid_short'; o.paidAt = o.paidAt || Date.now(); o.payment = pay; o.short = 'could not be recorded automatically';
+      try { await putOrder(ref, o); } catch (e2) { console.error('finalize save', e2.message); }
+      serverLog('Online order needs attention', 'Order ' + ref + ' was paid (' + money(o.total) + ') but could not be recorded automatically. Check the stock and record the sale for ' + o.name + ' ' + o.phone + '.', WHO);
+      return o;
+    }
+  }
+  async function finalizeClaimed(ref, o, pay) {
     const b = brOf(o.branch), PF = BR[b].pf;
     const prods = [];
     for (const it of o.items) {
-      const p = await getProd(b, it.id);
-      if (!p || (p.stock || 0) < it.qty) {
+      const p = await sbCall('web_stock_take', { p_col: PF + 'products', p_id: 'p' + it.id, p_qty: it.qty });
+      if (!p) {
+        for (const [tp, ti] of prods) await sbCall('web_stock_take', { p_col: PF + 'products', p_id: 'p' + tp.id, p_qty: -ti.qty }); // put back what was taken
         o.status = 'paid_short'; o.paidAt = Date.now(); o.payment = pay; o.short = it.name;
         await putOrder(ref, o);
         serverLog('Online order needs attention', 'Order ' + ref + ' was paid (' + money(o.total) + ') but ' + it.name + ' is out of stock at the ' + BR[b].name + '. Contact ' + o.name + ' ' + o.phone + ' to refund or swap.', WHO);
@@ -150,10 +166,8 @@ module.exports = function store(d) {
     const shop = await shopMain(false), set = (shop && shop.set) || {};
     const now = Date.now(), saleId = ids[0];
     const via = pay.provider === 'test' ? 'TEST payment' : 'Paystack' + (pay.channel ? ' ' + pay.channel : '');
-    // 1. deduct stock (fresh copy of each product, only the stock changes)
+    // 1. stock was taken above; log the stock moves
     for (const [p, it] of prods) {
-      p.stock = (p.stock || 0) - it.qty;
-      await sbCall('shop_db_put', { p_col: PF + 'products', p_id: 'p' + p.id, p_data: p });
       await appendRec(PF + 'moves', accraDay(now).slice(0, 7), { ts: now, pid: p.id, name: p.name, qty: -it.qty, reason: 'Online order #' + saleId, by: 'Online shop' });
     }
     // 2. the sale, shaped like a till sale
@@ -169,7 +183,7 @@ module.exports = function store(d) {
       const dl = { id: ids[1], ts: now, sale: saleId, name: o.name, phone: o.phone, addr: o.addr, region: o.region || '', city: o.city || '', gps: '', note: ('Online order ' + ref + '. ' + (o.note || '')).trim(),
         items: items.map((i) => i.qty + ' × ' + i.name).join(', '), fee: 0, rider: null, status: 'Pending', by: 'Online shop', byId: null, when: '', cod: 0, codPaid: false };
       sale.dlv = dl.id; o.dlvId = dl.id;
-      await appendRec(PF + 'deliveries', accraDay(now).slice(0, 7), dl);
+      o.dlvDoc = await appendRec(PF + 'deliveries', accraDay(now).slice(0, 7), dl);
     }
     await appendRec(PF + 'sales', accraDay(now), sale);
     o.status = 'paid'; o.saleId = saleId; o.paidAt = now; o.payment = pay;
@@ -217,6 +231,7 @@ module.exports = function store(d) {
     if (!sbOn()) return send(res, 503, { error: 'The online shop is not set up yet.' });
     try {
       if (req.method === 'GET' && url === '/api/store/info') {
+        await freshKey();
         const shop = await shopMain(false), set = (shop && shop.set) || {}; CUR = set.cur || CUR;
         const b = brOf(new URL(req.url, 'http://x').searchParams.get('b')), names = set.brNames || {};
         const list = await listed(b, false);
@@ -238,10 +253,11 @@ module.exports = function store(d) {
           if (req.method === 'POST') {
             if (process.env.PAYSTACK_SECRET_KEY) return send(res, 409, { error: 'The key is set on the hosting, so it can’t be changed here.' });
             const m = await json(req), key = String(m && m.key || '').trim();
+            console.log('payments: key ' + (key ? 'attempt (' + key.slice(0, 8) + '…, ' + key.length + ' chars)' : 'removal') + ' by ' + st.name);
             if (key && !/^sk_(test|live)_[A-Za-z0-9]{20,100}$/.test(key)) return send(res, 400, { error: 'That doesn’t look like a Paystack secret key. It starts with sk_live_ or sk_test_. (The public key pk_… is not needed.)' });
             if (key) {
               try { await paystack('/transaction?perPage=1', null, key); }
-              catch (e) { return send(res, 400, { error: 'Paystack did not accept this key (' + e.message.replace(/^Paystack: /, '') + '). Copy the Secret Key again from Paystack → Settings → API Keys & Webhooks.' }); }
+              catch (e) { console.log('payments: Paystack refused the key: ' + e.message); serverLog('Payment key refused', 'Paystack said: ' + e.message.replace(/^Paystack: /, '') + ' · ' + key.slice(0, 8) + '…', st); return send(res, 400, { error: 'Paystack did not accept this key (' + e.message.replace(/^Paystack: /, '') + '). Copy the Secret Key again from Paystack → Settings → API Keys & Webhooks.' }); }
             }
             try { await sbCall('site_secret_set', { p_name: 'paystack_secret', p_value: key }); } catch (e) { console.error('save key', e.message); return send(res, 502, { error: 'Could not save the key. Try again.' }); }
             await loadKey();
@@ -267,7 +283,8 @@ module.exports = function store(d) {
           await putOrder(ref, o); orderDocs[ref] = o;
           if (f === 'done' && o.mode === 'delivery' && o.dlvId) {
             const col = BR[brOf(o.branch)].pf + 'deliveries', mon = accraDay(o.paidAt || o.created).slice(0, 7);
-            for (let n = 0; n < 50; n++) { const id = mon + '_web_' + n, cur = await sbCall('shop_db_get', { p_col: col, p_id: id }); if (!cur) break; const r = (cur.recs || []).find((x) => x.id === o.dlvId); if (r) { r.status = 'Delivered'; r.deliveredTs = Date.now(); await sbCall('shop_db_put', { p_col: col, p_id: id, p_data: cur }); break; } }
+            const docIds = o.dlvDoc ? [o.dlvDoc] : Array.from({ length: 50 }, (_, n) => mon + '_web_' + n);
+            for (const id of docIds) { const cur = await sbCall('shop_db_get', { p_col: col, p_id: id }); if (!cur) break; const r = (cur.recs || []).find((x) => x.id === o.dlvId); if (r) { r.status = 'Delivered'; r.deliveredTs = Date.now(); await sbCall('shop_db_put', { p_col: col, p_id: id, p_data: cur }); break; } }
           }
           const L = { '': 'back to new', ready: 'ready for ' + (o.mode === 'delivery' ? 'delivery' : 'pickup'), done: o.mode === 'delivery' ? 'delivered' : 'collected', refunded: 'refunded', cancelled: 'cancelled' };
           serverLog('Online order ' + (L[f] || f), (o.saleId ? 'receipt #' + o.saleId + ' · ' : '') + 'order ' + ref + ' · ' + o.name + ' ' + o.phone, st);
@@ -341,27 +358,28 @@ module.exports = function store(d) {
         const a = await acctGet(ph), shop = await shopMain(false), sp = (shop && shop.set && shop.set.phone) || '';
         if (!a) return send(res, 404, { error: 'No account uses that phone number. Create an account instead.' });
         if (!a.email) return send(res, 400, { error: 'This account has no email for a reset code.' + (sp ? ' Call the shop on ' + sp + ' for help.' : ' Call the shop for help.') });
-        const prev = resetCodes.get(ph); if (prev && Date.now() - prev.sent < 60000) return send(res, 429, { error: 'A code was sent less than a minute ago. Check your email (and spam).' });
+        const prev = a.rst; if (prev && Date.now() - prev.sent < 60000) return send(res, 429, { error: 'A code was sent less than a minute ago. Check your email (and spam).' });
         const code = String(100000 + crypto.randomInt(900000));
-        resetCodes.set(ph, { h: crypto.createHash('sha256').update('c:' + code).digest('hex'), exp: Date.now() + 15 * 60000, tries: 0, sent: Date.now() });
+        a.rst = { h: crypto.createHash('sha256').update('c:' + code).digest('hex'), exp: Date.now() + 15 * 60000, tries: 0, sent: Date.now() };
+        await acctPut(ph, a, false);
         const nm = (shop && shop.set && shop.set.name) || 'Renatel Shop';
         try { await sendEmail({ to: [a.email], subject: nm + ' - your password reset code: ' + code, text: 'Hello ' + a.name + ',\n\nYour code to reset your ' + nm + ' online shop password is:\n\n    ' + code + '\n\nIt expires in 15 minutes. If you did not ask for this, ignore this email.' }); }
-        catch (e) { resetCodes.delete(ph); return send(res, 502, { error: 'The code email could not be sent. Try again later.' }); }
+        catch (e) { delete a.rst; await acctPut(ph, a, false); return send(res, 502, { error: 'The code email could not be sent. Try again later.' }); }
         const [u, d] = a.email.split('@');
         return send(res, 200, { ok: true, to: u.slice(0, 2) + '•••@' + d });
       }
       if (req.method === 'POST' && url === '/api/store/reset') {
-        const m = await json(req); const ph = m && normPhone(m.phone), rc = ph && resetCodes.get(ph);
+        const m = await json(req); const ph = m && normPhone(m.phone), a = ph ? await acctGet(ph) : null, rc = a && a.rst;
         if (!rc || rc.exp < Date.now()) return send(res, 400, { error: 'That code has expired. Send a new code.' });
-        if (rc.tries >= 5) { resetCodes.delete(ph); return send(res, 429, { error: 'Too many wrong codes. Send a new code.' }); }
-        if (crypto.createHash('sha256').update('c:' + String(m.code || '').replace(/\D/g, '')).digest('hex') !== rc.h) { rc.tries++; return send(res, 401, { error: 'That code is not right.' }); }
+        if (rc.tries >= 5) { delete a.rst; await acctPut(ph, a, false); return send(res, 429, { error: 'Too many wrong codes. Send a new code.' }); }
+        if (crypto.createHash('sha256').update('c:' + String(m.code || '').replace(/\D/g, '')).digest('hex') !== rc.h) { rc.tries++; await acctPut(ph, a, false); return send(res, 401, { error: 'That code is not right.' }); }
         if (pwRule(m.password)) return send(res, 400, { error: pwRule(m.password) });
-        const a = await acctGet(ph); if (!a) return send(res, 404, { error: 'Account not found.' });
-        a.pw = await hashPw(m.password); a.pwAt = Date.now(); await acctPut(ph, a, false); resetCodes.delete(ph);
+        a.pw = await hashPw(m.password); a.pwAt = Date.now(); delete a.rst; await acctPut(ph, a, false);
         return send(res, 200, { token: ctoken(ph), me: profile(ph, a) });
       }
       if (req.method === 'POST' && url === '/api/store/order') {
         if (!allow(req, 15)) return send(res, 429, { error: 'Too many orders from here. Try again in an hour.' });
+        await freshKey();
         const cust = await custOf(req);
         if (!cust) return send(res, 401, { error: 'Please create an account or sign in to check out.', auth: true });
         if (cust.blocked) return send(res, 403, { error: 'Your account is blocked. Please call the shop.' });
@@ -401,11 +419,13 @@ module.exports = function store(d) {
       }
       const om = url.match(/^\/api\/store\/order\/(RS[A-Z0-9]{10})$/);
       if (req.method === 'GET' && om) {
+        await freshKey();
         let o = await getOrder(om[1]);
         if (o && o.status === 'pending' && o.pay !== 'test' && KEY()) { try { o = await verifyPaystack(om[1]); } catch (e) { console.error('verify', e.message); } }
         return o ? send(res, 200, publicOrder(o, om[1])) : send(res, 404, { error: 'Order not found.' });
       }
       if (req.method === 'POST' && url === '/api/store/testpay') {
+        await freshKey();
         if (mode() !== 'test') return send(res, 403, { error: 'Test payments are off: real payments are switched on.' });
         const m = await json(req); const ref = m && String(m.ref || '');
         if (!REF_RX.test(ref)) return send(res, 400, { error: 'Unknown order.' });
@@ -416,6 +436,7 @@ module.exports = function store(d) {
       }
       if (req.method === 'POST' && url === '/api/store/paystack') {
         // Paystack webhook: signed with the secret key. Records the sale even if the customer closes the page.
+        await freshKey();
         const raw = await readBody(req), sig = String(req.headers['x-paystack-signature'] || '');
         const want = KEY() ? crypto.createHmac('sha512', KEY()).update(raw).digest('hex') : '';
         if (!want || sig.length !== want.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))) return send(res, 401, { error: 'bad signature' });

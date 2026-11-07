@@ -1530,10 +1530,15 @@ function payCard(){if(!PAY){PAY={busy:true};webApi('/api/store/admin/pay').then(
   <li>On the same Paystack page, set the <b>Webhook URL</b> to:${cp(PAY.webhook)}It lets the shop record a payment even if the customer closes their phone before returning.</li>
   <li>Optional: set the <b>Callback URL</b> to:${cp(PAY.callback)}</li>
   <li>Do one small test order on the shop with your own MoMo, then check it in 🧾 Orders and Receipts.</li></ol></details></div>`}
-async function paySave(b){const k=$('#paykey').value.trim(),m=$('#paymsg');if(!k)return m.textContent='Paste the Secret Key first.';
- if(k.startsWith('sk_live_')&&!await uiConfirm('Switch on LIVE payments? Customers will pay real money into your Paystack account from now on.'))return;
- b.disabled=true;b.textContent='Checking with Paystack…';m.textContent='';
- try{PAY=await webApi('/api/store/admin/pay',{method:'POST',body:JSON.stringify({key:k})});WEB.mode=PAY.mode;render();toast(PAY.mode=='paystack'?'✔ Live payments are on':'✔ Paystack test mode is on')}catch(e){m.textContent='✖ '+e.message;b.disabled=false;b.textContent='Check & save key'}}
+async function paySave(b){const m=$('#paymsg'),say=(t,ok)=>{m.style.color=ok?'var(--ac)':'';m.textContent=t};
+ try{const k=($('#paykey').value||'').replace(/\s+/g,'');if(!k)return say('✖ Paste the Secret Key in the box first.');
+  if(/^pk_/.test(k))return say('✖ That is the Public Key (pk_…). Copy the SECRET Key (sk_live_… or sk_test_…) instead.');
+  if(!/^sk_(live|test)_/.test(k))return say('✖ That doesn’t look like a Paystack Secret Key. It must start with sk_live_ or sk_test_.');
+  if(k.startsWith('sk_live_')&&!await uiConfirm('Switch on LIVE payments? Customers will pay real money into your Paystack account from now on.'))return say('Not saved: you pressed Cancel.');
+  b.disabled=true;b.textContent='Checking with Paystack…';say('⏳ Checking the key with Paystack…',true);
+  PAY=await webApi('/api/store/admin/pay',{method:'POST',body:JSON.stringify({key:k})});WEB.mode=PAY.mode;render();
+  const ok=PAY.mode=='paystack'?'✔ Saved. LIVE payments are on.':'✔ Saved. Paystack test mode is on.';toast(ok);const m2=$('#paymsg');if(m2){m2.style.color='var(--ac)';m2.textContent=ok}}
+ catch(e){say('✖ '+(e.message||'Something went wrong.')+' Nothing was saved.');b.disabled=false;b.textContent='Check & save key'}}
 async function payOff(b){if(!await uiConfirm('Switch off Paystack? The shop goes back to practice payments (no real money).'))return;b.disabled=true;
  try{PAY=await webApi('/api/store/admin/pay',{method:'POST',body:JSON.stringify({key:''})});WEB.mode=PAY.mode;render()}catch(e){b.disabled=false;uiAlert(e.message)}}
 function webSaveSet(){if(!webCan(me,'settings'))return;const o=Object.assign({open:true,msg:'',pickup:true,delivery:true,dnote:''},db.set.store||{}),n={open:$('#ws_open').checked,pickup:$('#ws_pickup').checked,delivery:$('#ws_delivery').checked,msg:$('#ws_msg').value.trim(),dnote:$('#ws_dnote').value.trim()};

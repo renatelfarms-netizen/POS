@@ -226,7 +226,7 @@ function serverLog(a, d, who) {
   const rec = { ts: Date.now(), sid: who && who.id != null ? who.id : null, who: (who && who.name) || '—', a, d: String(d || '').slice(0, 300) };
   logQueue = logQueue.then(async () => {
     for (let n = 0; n < 20; n++) {
-      const id = day + '_server_' + n, cur = await sbCall('shop_db_get', { p_col: 'log', p_id: id });
+      const id = day + '_server' + process.pid + '_' + n, cur = await sbCall('shop_db_get', { p_col: 'log', p_id: id }); // one document per process
       const recs = (cur && Array.isArray(cur.recs)) ? cur.recs : [];
       if (recs.length >= 300) continue;
       recs.push(Object.assign({ _c: id }, rec));
