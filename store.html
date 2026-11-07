@@ -207,6 +207,7 @@ input.f:focus,textarea.f:focus{border-color:var(--g);box-shadow:0 0 0 3px var(--
 .rv.in{opacity:1;transform:none}
 .price{white-space:nowrap}.pfoot{flex-wrap:wrap;row-gap:8px}
 @media (prefers-reduced-motion:reduce){.art *,.promo .pbig,.fadeup,.rv,.p.pop{animation:none!important;transition:none!important}.fadeup,.rv,.art .chipf{opacity:1;transform:none}.art .bag .slide.on{opacity:1}}
+.mslogo{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:9px;background:var(--y,#ffc94d);color:var(--ink,#1b1f1d);font-weight:800;font-size:18px}
 </style>
 </head>
 <body>
@@ -228,10 +229,13 @@ input.f:focus,textarea.f:focus{border-color:var(--g);box-shadow:0 0 0 3px var(--
 <div class="drawer" id="drawer" onclick="if(event.target==this)closeCart()"><div class="pane" id="pane"></div></div>
 <script>
 'use strict';
+// Multi-shop platform: the server sets window.STORE={base:'/<shop-link>',slug,name}; on renatel.shop it is not set.
+const MS=window.STORE||null,BASE=MS?MS.base:'',SK=MS?':'+MS.slug:'',HOME=MS?BASE+'/shop':'/',PATH=()=>location.pathname.slice(BASE.length);
+if(MS){const f0=window.fetch.bind(window);window.fetch=(u,o)=>f0(typeof u=='string'&&u.startsWith('/api/')?BASE+u:u,o);document.addEventListener('DOMContentLoaded',()=>{const l=document.querySelector('.logo');if(l){l.href=HOME;const i=l.querySelector('img');if(i)i.outerHTML='<span class="mslogo">'+String(MS.name||'S').trim().charAt(0).toUpperCase()+'</span>'}const pb=document.getElementById('posbtn');if(pb)pb.href=BASE})}
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let S={products:[],cur:'GH₵',mode:'test'},cart={},cat='',q='',step='shop',ck={name:'',phone:'',email:'',mode:'pickup',addr:'',city:'',note:''};
-try{cart=JSON.parse(sessionStorage.getItem('rs-cart')||'{}')||{}}catch(e){cart={}}
-const keep=()=>{try{sessionStorage.setItem('rs-cart',JSON.stringify(cart))}catch(e){}};
+try{cart=JSON.parse(sessionStorage.getItem('rs-cart'+SK)||'{}')||{}}catch(e){cart={}}
+const keep=()=>{try{sessionStorage.setItem('rs-cart'+SK,JSON.stringify(cart))}catch(e){}};
 const money=n=>S.cur+' '+Number(n||0).toFixed(2);
 const P=id=>S.products.find(p=>p.id==id);
 const BAG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>';
@@ -246,15 +250,15 @@ const BRPOS={kum:[6.6885,-1.6244],acc:[5.6037,-0.187]};
 const km=(a,b)=>{const r=x=>x*Math.PI/180,d=r(b[0]-a[0]),e=r(b[1]-a[1]),h=Math.sin(d/2)**2+Math.cos(r(a[0]))*Math.cos(r(b[0]))*Math.sin(e/2)**2;return 12742*Math.asin(Math.sqrt(h))};
 const nearest=pt=>Object.keys(BRPOS).sort((x,y)=>km(pt,BRPOS[x])-km(pt,BRPOS[y]))[0];
 const nearRegion=pt=>Object.keys(REGIONS).sort((x,y)=>km(pt,REGIONS[x])-km(pt,REGIONS[y]))[0];
-let LOC=null;try{LOC=JSON.parse(localStorage.getItem('rs-loc')||'null')}catch(e){}
-const BRANCH=()=>(LOC&&BRPOS[LOC.branch])?LOC.branch:'kum';
-const brName=b=>((S.branches||{})[b||BRANCH()]||{}).name||({kum:'Kumasi branch',acc:'Accra branch'})[b||BRANCH()];
-const brCity=b=>((S.branches||{})[b||BRANCH()]||{}).city||({kum:'Kumasi',acc:'Accra'})[b||BRANCH()];
-async function setLoc(l){const before=BRANCH();LOC=l;try{localStorage.setItem('rs-loc',JSON.stringify(l))}catch(e){}$('#locmodal').hidden=true;
+let LOC=null;try{LOC=JSON.parse(localStorage.getItem('rs-loc'+SK)||'null')}catch(e){}
+const BRANCH=()=>(LOC&&BRPOS[LOC.branch]&&(!MS||(S.branches||{})[LOC.branch]))?LOC.branch:'kum';
+const brName=b=>((S.branches||{})[b||BRANCH()]||{}).name||(MS?'shop':({kum:'Kumasi branch',acc:'Accra branch'})[b||BRANCH()]);
+const brCity=b=>((S.branches||{})[b||BRANCH()]||{}).city||(MS?'':({kum:'Kumasi',acc:'Accra'})[b||BRANCH()]);
+async function setLoc(l){const before=BRANCH();LOC=l;try{localStorage.setItem('rs-loc'+SK,JSON.stringify(l))}catch(e){}$('#locmodal').hidden=true;
  if(BRANCH()!=before&&Object.keys(cart).length){cart={};keep()}
  if(l.region&&!ck.city)ck.city='';cat='';await load();badge();if(step!='done')render();locBar()}
-function locBar(){const b=$('#locbar');if(!b)return;b.hidden=false;$('#locwrap').innerHTML=LOC?`<span>📍 <span class="lreg">${LOC.region?'Your region: <b>'+esc(LOC.region)+'</b> · ':''}</span>Served by our <b>${esc(brName())}</b></span><button onclick="locAsk()">Change</button>`:`📍 <span>Tell us where you are so we send from the nearest branch (Kumasi or Accra).</span><button onclick="locAsk()">Choose location</button>`}
-function locAsk(){const m=$('#locmodal');m.hidden=false;m.innerHTML=`<div class="mbox"><div style="font-size:34px">📍</div><h2 style="font-size:22px;margin:4px 0 6px">Where are you?</h2><p class="mut" style="margin:0 0 14px;font-size:14px">We serve you from our nearest branch, Kumasi or Accra, so your order is faster and comes from the right shop's stock.</p>
+function locBar(){const b=$('#locbar');if(!b)return;if(MS){const K=Object.keys(S.branches||{});if(K.length<2){b.hidden=true;return}b.hidden=false;$('#locwrap').innerHTML=LOC?`<span>📍 Served by our <b>${esc(brName())}</b></span><button onclick="locAsk()">Change</button>`:`📍 <span>Choose the branch that serves you.</span><button onclick="locAsk()">Choose branch</button>`;return}b.hidden=false;$('#locwrap').innerHTML=LOC?`<span>📍 <span class="lreg">${LOC.region?'Your region: <b>'+esc(LOC.region)+'</b> · ':''}</span>Served by our <b>${esc(brName())}</b></span><button onclick="locAsk()">Change</button>`:`📍 <span>Tell us where you are so we send from the nearest branch (Kumasi or Accra).</span><button onclick="locAsk()">Choose location</button>`}
+function locAsk(){const m=$('#locmodal');if(MS){const K=Object.keys(S.branches||{});if(K.length<2)return;m.hidden=false;m.innerHTML=`<div class="mbox"><div style="font-size:34px">📍</div><h2 style="font-size:22px;margin:4px 0 12px">Which branch serves you?</h2>${K.map(k=>`<button class="btn big" style="margin-top:8px" onclick="setLoc({branch:'${k}',region:''})">${esc(brName(k))}${S.branches[k].city?' · '+esc(S.branches[k].city):''}</button>`).join('')}</div>`;return}m.hidden=false;m.innerHTML=`<div class="mbox"><div style="font-size:34px">📍</div><h2 style="font-size:22px;margin:4px 0 6px">Where are you?</h2><p class="mut" style="margin:0 0 14px;font-size:14px">We serve you from our nearest branch, Kumasi or Accra, so your order is faster and comes from the right shop's stock.</p>
  <button class="pill big" id="gpsb" onclick="useGps()">📍 Use my location</button><p id="gpsm" class="msg" style="text-align:center"></p>
  <label class="lbl" style="text-align:center;margin-top:4px">or choose your region</label><select id="regsel" onchange="if(this.value)pickRegion(this.value)"><option value="">Select region…</option>${Object.keys(REGIONS).map(r=>`<option ${LOC&&LOC.region==r?'selected':''}>${r}</option>`).join('')}</select>
  ${LOC?`<button class="btn big" style="margin-top:12px" onclick="$('#locmodal').hidden=true">Keep ${esc(brName())}</button>`:`<button class="ulink" style="display:block;margin:14px auto 0;font-size:13px" onclick="setLoc({branch:'kum',region:''})">Skip for now</button>`}</div>`}
@@ -262,13 +266,13 @@ function pickRegion(r){const pt=REGIONS[r],b=nearest(pt);setLoc({region:r,branch
 function useGps(){const m=$('#gpsm'),b=$('#gpsb');if(!navigator.geolocation)return m.textContent='Location is not available on this device. Choose your region instead.';b.disabled=true;b.textContent='Finding you…';
  navigator.geolocation.getCurrentPosition(p=>{const pt=[p.coords.latitude,p.coords.longitude],br=nearest(pt);setLoc({region:nearRegion(pt),branch:br,km:Math.round(km(pt,BRPOS[br])),how:'gps'})},
   e=>{b.disabled=false;b.textContent='📍 Use my location';m.textContent=e.code==1?'Location permission was refused. Choose your region instead.':'Could not find your location. Choose your region instead.'},{enableHighAccuracy:false,timeout:12000,maximumAge:600000})}
-const pimg=(p,big)=>p.img?`<img src="/img/${p.img}" alt="${esc(p.name)}" loading="lazy">`:`<span class="ico">${icon(p.cat||p.name)}</span>`;
+const pimg=(p,big)=>p.img?`<img src="${BASE}/img/${p.img}" alt="${esc(p.name)}" loading="lazy">`:`<span class="ico">${icon(p.cat||p.name)}</span>`;
 const lines=()=>Object.entries(cart).map(([id,n])=>({p:P(id),n})).filter(x=>x.p&&x.n>0);
 const total=()=>lines().reduce((t,x)=>t+x.p.price*x.n,0);
-let ME=null;try{ME=JSON.parse(localStorage.getItem('rs-cust')||'null')}catch(e){}
-const saveMe=(t,me)=>{ME=t?{t,me}:(ME?{t:ME.t,me}:null);try{if(ME)localStorage.setItem('rs-cust',JSON.stringify(ME));else localStorage.removeItem('rs-cust')}catch(e){}acctUI()};
-const signOut=()=>{ME=null;try{localStorage.removeItem('rs-cust')}catch(e){}acctUI()};
-try{if(localStorage.getItem('rs-pos-device')){const b=document.getElementById('posbtn');if(b)b.hidden=false}}catch(e){}
+let ME=null;try{ME=JSON.parse(localStorage.getItem('rs-cust'+SK)||'null')}catch(e){}
+const saveMe=(t,me)=>{ME=t?{t,me}:(ME?{t:ME.t,me}:null);try{if(ME)localStorage.setItem('rs-cust'+SK,JSON.stringify(ME));else localStorage.removeItem('rs-cust'+SK)}catch(e){}acctUI()};
+const signOut=()=>{ME=null;try{localStorage.removeItem('rs-cust'+SK)}catch(e){}acctUI()};
+try{if(localStorage.getItem('rs-pos-device'+SK)){const b=document.getElementById('posbtn');if(b)b.hidden=false}}catch(e){}
 function acctUI(){const n=$('#acctname');if(n)n.textContent=ME?ME.me.name.split(' ')[0]:'Sign in'}
 async function call(u,o){o=o||{};const h={'Content-Type':'application/json'};if(ME)h.Authorization='Bearer '+ME.t;const r=await fetch(u,Object.assign({},o,{headers:h}));let j={};try{j=await r.json()}catch(e){}if(!r.ok){if(r.status==401&&ME&&/\/api\/store\/(me|order)/.test(u))signOut();const e=new Error(j.error||'Something went wrong. Try again.');e.j=j;e.status=r.status;throw e}return j}
 
@@ -276,7 +280,7 @@ async function info(){for(let i=0;;i++){try{return await call('/api/store/info?b
 async function load(){try{const j=await info();S=j;document.title=j.name+' · Shop online';$('#shopname').textContent=j.name;
   $('#testbar').hidden=j.mode!='test';const st=j.store||{};$('#annbar').hidden=!st.msg&&st.open!==false;$('#annwrap').innerHTML=(st.open===false?'⛔ <b>We’re not taking online orders right now.</b> You can still look around. ':'')+(st.msg?'📣 '+esc(st.msg):'');
   if(j.phone)$('#calllink').href='tel:'+j.phone.replace(/[^\d+]/g,'');else $('#calllink').hidden=true;
-  $('#foot').innerHTML=`<img src="/logo-white.svg" alt="${esc(j.name)}" height="40" style="display:block;margin-bottom:10px"><b>${esc(j.name)}</b>${j.addr||j.city?' · '+esc([j.addr,j.city].filter(Boolean).join(', ')):''}${j.phone?' · <a href="tel:'+esc(j.phone.replace(/[^\d+]/g,''))+'">'+esc(j.phone)+'</a>':''}<br><span style="opacity:.75">Pay securely with Mobile Money or card${j.mode=='paystack-test'?' · Paystack test mode':''}.</span><br><a href="/pos" style="opacity:.6;font-size:12px">Staff login</a>`;
+  $('#foot').innerHTML=`${MS?'':'<img src="/logo-white.svg" alt="'+esc(j.name)+'" height="40" style="display:block;margin-bottom:10px">'}<b>${esc(j.name)}</b>${j.addr||j.city?' · '+esc([j.addr,j.city].filter(Boolean).join(', ')):''}${j.phone?' · <a href="tel:'+esc(j.phone.replace(/[^\d+]/g,''))+'">'+esc(j.phone)+'</a>':''}<br><span style="opacity:.75">Pay securely with Mobile Money or card${j.mode=='paystack-test'?' · Paystack test mode':''}.</span><br><a href="/pos" style="opacity:.6;font-size:12px">Staff login</a>`;
   Object.keys(cart).forEach(id=>{const p=P(id);if(!p)delete cart[id];else cart[id]=Math.min(cart[id],p.left)});keep()}
  catch(e){$('#app').innerHTML=`<div class="page"><div class="wrap narrow box"><b>The shop can’t be reached</b><p class="mut">${esc(e.message)}</p><button class="pill" onclick="location.reload()">Try again</button></div></div>`;throw e}}
 
@@ -285,13 +289,13 @@ function goCats(){if(step!='shop'){step='shop';render()}setTimeout(()=>{const e=
 function pickCat(c){cat=c;$('#catrow').innerHTML=catRow();$('#grid').innerHTML=cards();reveal();$('#products').scrollIntoView({behavior:'smooth',block:'start'})}
 function catRow(){const L=catList();return `<button class="cat rv ${cat?'':'on'}" onclick="pickCat('')"><div class="c">🛒</div><b>All</b><small>${S.products.length} product${S.products.length==1?'':'s'}</small></button>`+L.map(([c,n])=>`<button class="cat rv ${c==cat?'on':''}" onclick='pickCat(${esc(JSON.stringify(c))})'><div class="c">${icon(c)}</div><b>${esc(c)}</b><small>${n} product${n==1?'':'s'}</small></button>`).join('')}
 
-function shopView(){const city=brCity(),ph=S.products.filter(p=>p.img),pi=k=>ph.length?`<img src="/img/${ph[k%ph.length].img}" alt="">`:null,
+function shopView(){const city=brCity(),ph=S.products.filter(p=>p.img),pi=k=>ph.length?`<img src="${BASE}/img/${ph[k%ph.length].img}" alt="">`:null,
   ex=[...new Set(S.products.map(p=>icon(p.cat)))].concat(['🛍️','📦','🚚','💳']).slice(0,4).map((e,k)=>ph.length>k+1?pi(k+1):e),
-  bag=ph.length?`<div class="bag photos">${ph.slice(0,8).map((p,k)=>`<div class="slide${k?'':' on'}"><img src="/img/${p.img}" alt="${esc(p.name)}"></div>`).join('')}</div>`:'<div class="bag">🛍️</div>';
+  bag=ph.length?`<div class="bag photos">${ph.slice(0,8).map((p,k)=>`<div class="slide${k?'':' on'}"><img src="${BASE}/img/${p.img}" alt="${esc(p.name)}"></div>`).join('')}</div>`:'<div class="bag">🛍️</div>';
  return `<section class="hero" style="padding:0"><div class="wrap">
   <div><span class="tag fadeup"><i>🏪</i>${esc(S.name)} · Official online store</span>
    <h1 class="fadeup" style="animation-delay:.1s">Your One-Stop Shop<br>for <span class="g">Quality Products</span></h1>
-   <p class="lead fadeup" style="animation-delay:.2s">Order online, pay safely with Mobile Money or card, then pick up at our ${esc(city)} branch or have it delivered to you. We serve you from our nearest branch.</p>
+   <p class="lead fadeup" style="animation-delay:.2s">Order online, pay safely with Mobile Money or card, then pick up at ${MS?'our <b>'+esc(brName())+'</b>':'our '+esc(city)+' branch'} or have it delivered to you.${MS&&Object.keys(S.branches||{}).length<2?'':' We serve you from our nearest branch.'}</p>
    <div class="cta fadeup" style="animation-delay:.3s"><a class="pill" href="#products">Shop Now <span>→</span></a><button class="ulink" onclick="goCats()">Browse categories</button></div>
    <div class="trust fadeup" style="animation-delay:.4s"><span><i>🔒</i><span><b>Secure</b><br>payment</span></span><span><i>📱</i><span><b>MoMo</b><br>& card</span></span><span><i>🚚</i><span><b>Pickup</b><br>or delivery</span></span></div></div>
   <div class="art" aria-hidden="true"><div class="ring"></div><div class="disc"></div>${bag}
@@ -302,7 +306,7 @@ function shopView(){const city=brCity(),ph=S.products.filter(p=>p.img),pi=k=>ph.
   <div class="cats" id="catrow">${catRow()}</div>
   <div class="promos">
    <div class="promo rv"><span class="bdg">Pay your way</span><h3>Mobile Money or Card</h3><p>MTN MoMo, Telecel Cash, AirtelTigo Money and bank cards. Paid instantly and safely.</p><a class="pill sm" href="#products">Shop Now →</a><span class="pbig">📱</span></div>
-   <div class="promo y rv"><span class="bdg">Pickup or delivery</span><h3>Collect in ${esc(city)} or Get it Delivered</h3><p>Choose at checkout. For delivery we call you to arrange the time.</p><a class="pill sm" href="#products">Shop Now →</a><span class="pbig">🚚</span></div>
+   <div class="promo y rv"><span class="bdg">Pickup or delivery</span><h3>${city?'Collect in '+esc(city):'Collect in store'} or Get it Delivered</h3><p>Choose at checkout. For delivery we call you to arrange the time.</p><a class="pill sm" href="#products">Shop Now →</a><span class="pbig">🚚</span></div>
   </div></div></section>
  <section class="prods" id="products"><div class="wrap"><div class="phead"><div><p class="eyebrow">Products</p><h2>Featured <span class="g">Products</span></h2></div>
   <label class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6e7571" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" placeholder="Search products" value="${esc(q)}" oninput="q=this.value;$('#grid').innerHTML=cards();$('#grid').querySelectorAll('.rv').forEach(e=>e.classList.add('in'))" aria-label="Search products"></label></div>
@@ -337,7 +341,7 @@ function checkoutView(){const L=lines();if(!L.length){step='shop';return shopVie
   <label class="lbl">How do you want it?</label>
   <div class="seg" ${SS.pickup&&SS.delivery?'':'style="grid-template-columns:1fr"'}>${SS.pickup?`<label><input type="radio" name="dm" value="pickup" ${ck.mode=='pickup'?'checked':''} onchange="ck.mode='pickup';render()"><span><b>Pick up</b><br><small class="mut">Collect at our ${esc(brCity())} branch</small></span></label>`:''}
   ${SS.delivery?`<label><input type="radio" name="dm" value="delivery" ${ck.mode=='delivery'?'checked':''} onchange="ck.mode='delivery';render()"><span><b>Delivery</b><br><small class="mut">We call you to arrange it</small></span></label>`:''}</div>
-  ${ck.mode=='delivery'?`<label class="lbl">Delivery address or landmark *</label>${V('addr','text','House no., street, landmark','street-address')}<label class="lbl">Town / city</label>${V('city','text','e.g. Kumasi')}<p class="mut" style="font-size:13px;margin:8px 0 0">${esc((S.store&&S.store.dnote)||'Any delivery fee is agreed with you on the phone.')}</p>`:''}
+  ${ck.mode=='delivery'?`<label class="lbl">Delivery address or landmark *</label>${V('addr','text','House no., street, landmark','street-address')}<label class="lbl">Town / city</label>${V('city','text',MS?'Town or city':'e.g. Kumasi')}<p class="mut" style="font-size:13px;margin:8px 0 0">${esc((S.store&&S.store.dnote)||'Any delivery fee is agreed with you on the phone.')}</p>`:''}
   <label class="lbl">Note (optional)</label><textarea class="f" id="f_note" rows="2" oninput="ck.note=this.value">${esc(ck.note)}</textarea>
  </div>
  <div class="box"><b style="font-size:18px">Order summary</b>${L.map(x=>`<div class="row"><span>${x.n} × ${esc(x.p.name)}</span><b>${money(x.p.price*x.n)}</b></div>`).join('')}
@@ -378,7 +382,7 @@ async function doneView(ref,o){$('#cartbtn').hidden=false;if(!o){$('#app').inner
 // ---- customer accounts ----
 let nextStep='shop',authMode='signup',au={name:'',phone:'',email:'',password:'',password2:'',code:'',sent:''};
 function goCheckout(){closeCart();if(!lines().length)return;step=ME?'checkout':'auth';nextStep='checkout';if(!ME)authMode='signup';render();scrollTo(0,0)}
-function goAccount(){closeCart();step=ME?'account':'auth';nextStep='account';if(!ME)authMode='signin';if(/^\/store\/(pay|done)\//.test(location.pathname)){location.href='/#account';return}render();scrollTo(0,0)}
+function goAccount(){closeCart();step=ME?'account':'auth';nextStep='account';if(!ME)authMode='signin';if(/^\/(?:store|shop)\/(pay|done)\//.test(PATH())){location.href=HOME+'#account';return}render();scrollTo(0,0)}
 function authView(){const A=(k,t,ph,ac,lbl)=>`<label class="lbl">${lbl}</label><input class="f" id="a_${k}" type="${t}" value="${esc(au[k])}" placeholder="${ph}" autocomplete="${ac}" oninput="au.${k}=this.value" onkeydown="if(event.key=='Enter')authGo()">`;
  const why=nextStep=='checkout'?`<div style="background:var(--gl);border-radius:12px;padding:10px 12px;font-size:14px;margin-bottom:8px">🛒 Your cart is saved (${lines().reduce((t,x)=>t+x.n,0)} item${lines().reduce((t,x)=>t+x.n,0)==1?'':'s'}, ${money(total())}). ${authMode=='signin'?'Sign in':'Create a free account'} to check out.</div>`:'';
  let body;
@@ -424,10 +428,10 @@ let RVO=null;function reveal(){const els=[...document.querySelectorAll('.rv:not(
  if(!RVO)RVO=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');RVO.unobserve(e.target)}}),{rootMargin:'0px 0px -30px 0px'});
  els.forEach((e,k)=>{e.style.transitionDelay=Math.min(k%4,3)*80+'ms';RVO.observe(e)})}
 function render(){if(step!='account')acc={orders:null,err:''};$('#app').innerHTML=step=='checkout'?checkoutView():step=='auth'?authView():step=='account'?accountView():shopView();badge();acctUI();requestAnimationFrame(reveal)}
-(async()=>{const m=location.pathname.match(/^\/store\/(pay|done)\/(RS[A-Z0-9]{10})/);
+(async()=>{const m=PATH().match(/^\/(?:store|shop)\/(pay|done)\/(RS[A-Z0-9]{10})/);
  try{await load()}catch(e){return}badge();
  acctUI();if(m){$('#cartbtn').hidden=m[1]=='pay';$('#catbtn').hidden=true;return m[1]=='pay'&&S.mode=='test'?payView(m[2]):doneView(m[2])}
- locBar();acctUI();if(location.hash=='#account'){step=ME?'account':'auth';nextStep='account';authMode='signin';history.replaceState(null,'','/')}render();if(!LOC)setTimeout(locAsk,600);if(location.hash){const e=document.querySelector(location.hash);if(e)setTimeout(()=>e.scrollIntoView(),50)}})();
+ locBar();acctUI();if(location.hash=='#account'){step=ME?'account':'auth';nextStep='account';authMode='signin';history.replaceState(null,'',HOME)}render();if(!LOC&&(!MS||Object.keys(S.branches||{}).length>1))setTimeout(locAsk,600);if(location.hash){const e=document.querySelector(location.hash);if(e)setTimeout(()=>e.scrollIntoView(),50)}})();
 </script>
 </body>
 </html>
