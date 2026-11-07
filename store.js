@@ -542,6 +542,18 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
             return send(res, 200, { sent: true, to: mask(ph), link });
           }
         }
+        // Delivery SMS (rider job details, customer updates, instructions): any logged-in staff; the till writes the text.
+        if (req.method === 'POST' && url === '/api/store/admin/sms/dlv') {
+          if (!st || st.locked) return send(res, 403, { error: 'Please log in again.' });
+          if (!allow(req, 200, 'smsd')) return send(res, 429, { error: 'Too many SMS from this device. Try again later.' });
+          const m = await json(req) || {}, to = normPhone(m.to), text = String(m.text || '').replace(/\s+\n/g, '\n').trim().slice(0, 459), kind = String(m.kind || 'note').slice(0, 20), did = String(m.id || '').slice(0, 20);
+          if (!to) return send(res, 400, { error: 'That phone number is not valid.' });
+          if (text.length < 5) return send(res, 400, { error: 'Type the message.' });
+          try { await sendSms(to, fill(text, {})); } catch (e) { console.log('delivery sms: ' + e.message); return send(res, 502, { error: e.message }); }
+          const L = { rider: 'job sent to rider', out: 'customer told: on the way', courier: 'customer told: sent via courier', courierjob: 'job sent to courier', done: 'customer told: delivered', note: 'instructions sent' };
+          serverLog('Delivery SMS', '#' + did + ' · ' + (L[kind] || kind) + ' · to ' + mask(to) + ' · “' + text.slice(0, 70) + (text.length > 70 ? '…' : '') + '”', st);
+          return send(res, 200, { sent: true, to: mask(to) });
+        }
         const need = url.includes('/order') ? 'orders' : url.includes('/customer') ? 'customers' : url.endsWith('/pay') || url.includes('/sms') ? 'pay' : '';
         if (!st || (need === 'pay' ? st.role !== 'owner' || st.locked : !webCan(st, need))) return send(res, 403, { error: need === 'pay' ? 'Only the owner can change payment and SMS settings.' : 'You don’t have access to this part of the online shop. Ask the owner.' });
         if (url === '/api/store/admin/sms' || url === '/api/store/admin/sms/test') {
@@ -603,7 +615,13 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
           if (f === 'done' && o.mode === 'delivery' && o.dlvId) {
             const col = BR[brOf(o.branch)].pf + 'deliveries', mon = accraDay(o.paidAt || o.created).slice(0, 7);
             const docIds = o.dlvDoc ? [o.dlvDoc] : Array.from({ length: 50 }, (_, n) => mon + '_web_' + n);
-            for (const id of docIds) { const cur = await sbCall('shop_db_get', { p_col: col, p_id: id }); if (!cur) break; const r = (cur.recs || []).find((x) => x.id === o.dlvId); if (r) { r.status = 'Delivered'; r.deliveredTs = Date.now(); await sbCall('shop_db_put', { p_col: col, p_id: id, p_data: cur }); break; } }
+            let was = '';
+            for (const id of docIds) { const cur = await sbCall('shop_db_get', { p_col: col, p_id: id }); if (!cur) break; const r = (cur.recs || []).find((x) => x.id === o.dlvId); if (r) { was = r.status; r.status = 'Delivered'; r.deliveredTs = r.doneTs = Date.now(); await sbCall('shop_db_put', { p_col: col, p_id: id, p_data: cur }); break; } }
+            const set = ((await shopMain(false)) || {}).set || {};
+            if (was && was !== 'Delivered' && set.dlvDone !== false && normPhone(o.phone)) {
+              const msg = fill('Hello {name}, your {shop} order{no} has been delivered to {addr}. Thank you for shopping with us!', { name: String(o.name || '').split(/\s+/)[0] || 'customer', shop: set.name || 'Renatel Shop', no: o.saleId ? ' #' + o.saleId : '', addr: [o.addr, o.city].filter(Boolean).join(', ').slice(0, 90) || 'your address' });
+              sendSms(o.phone, msg).then(() => serverLog('Delivery SMS', 'order ' + ref + ' · customer told: delivered · to ' + mask(normPhone(o.phone)), st)).catch((e) => console.log('delivered sms: ' + e.message));
+            }
           }
           const L = { '': 'back to new', ready: 'ready for ' + (o.mode === 'delivery' ? 'delivery' : 'pickup'), done: o.mode === 'delivery' ? 'delivered' : 'collected', refunded: 'refunded', cancelled: 'cancelled' };
           serverLog('Online order ' + (L[f] || f), (o.saleId ? 'receipt #' + o.saleId + ' · ' : '') + 'order ' + ref + ' · ' + o.name + ' ' + o.phone, st);

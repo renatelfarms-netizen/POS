@@ -44,6 +44,13 @@ Payments use **Paystack** (Mobile Money and cards). The owner connects it in the
 - In a customer's profile: change the pay-by date, pause/resume reminders, text a reminder now, copy the invoice link.
 - Older credit sales made before this feature have no pay-by date, so they are not reminded until you set one in the profile.
 
+### Delivery SMS
+- When a rider is assigned (at the till or in Deliveries), the rider gets an SMS with the items, customer name and phone, address, GPS, amount to collect and note. Riders need a phone number in Staff.
+- **Out for delivery** texts the customer that it is on the way, with the rider's name and phone. **Delivered** texts the customer that it was delivered to the address. That includes online orders marked delivered.
+- **📦 To courier** hands a delivery over to a courier company, bus station or another rider, with phone and waybill number. The status becomes *With courier*, the customer is texted the courier details, and the courier can be texted the delivery details. You can hand over again for more legs.
+- **📱** in Deliveries sends any instructions by SMS to the rider, the courier, another rider, the customer or any number.
+- Each automatic text can be switched off in Online shop → Settings → Delivery SMS. Every SMS is recorded in the activity log.
+
 ## Hosting
 The site is hosted on Hostinger as a small Node.js app: `server.js` serves `index.html` and has no dependencies. Every push to `main` deploys automatically.
 
