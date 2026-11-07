@@ -5,20 +5,21 @@
 //   - a sale record is added (seller: "Online shop", method: "Online")
 //   - a stock move is logged ("Online order #…") and an activity-trail entry is written
 //   - a delivery job is created when the customer chose delivery
-// Only products the owner ticked "Sell on the online shop" (product.online) are listed, from one branch.
+// Every product with a price is listed, unless the owner ticked "Hide from the online shop" (product.hideOnline).
+// Each customer is served by the branch nearest to them (Kumasi or Accra), chosen in the page from their region
+// or their phone's location; that branch's products and stock are shown, and the sale is recorded there.
 //
 // Payments
 //   PAYSTACK_SECRET_KEY set   -> Paystack checkout (MoMo and cards). A sk_test_ key uses Paystack test mode.
 //   not set                   -> built-in TEST payment screen: no money moves, but stock and sales are real.
-// Optional: STORE_BRANCH = kum (default) or acc.
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
 module.exports = function store(d) {
   const { sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS } = d;
-  const BRANCH = process.env.STORE_BRANCH === 'acc' ? 'acc' : 'kum';
-  const PF = BRANCH === 'acc' ? 'accra_' : '';
+  const BR = { kum: { pf: '', name: 'Kumasi branch', city: 'Kumasi' }, acc: { pf: 'accra_', name: 'Accra branch', city: 'Accra' } };
+  const brOf = (b) => (BR[b] ? b : 'kum');
   const KEY = () => process.env.PAYSTACK_SECRET_KEY || '';
   const mode = () => (KEY() ? (KEY().startsWith('sk_test_') ? 'paystack-test' : 'paystack') : 'test');
   const WHO = { id: null, name: 'Online shop' };
@@ -28,30 +29,32 @@ module.exports = function store(d) {
   let pageCache = null;
 
   // ---- products ----
-  async function allProducts() {
-    // Only product documents are needed; pull pages and keep the shop branch's products.
-    const out = {}; let since = 0, more = true;
+  // Product documents of both branches, kept up to date with the same change feed the tills use.
+  const prodDocs = { kum: {}, acc: {} }; let prodRev = 0, prodAt = 0, prodBusy = null;
+  async function refreshProducts() {
+    let more = true;
     while (more) {
-      const j = await sbCall('shop_db_pull', { p_since: since });
-      for (const x of j.docs || []) if (x.c === PF + 'products') { if (x.x) delete out[x.id]; else out[x.id] = x.d; }
-      since = j.rev; more = !!j.more;
+      const j = await sbCall('shop_db_pull', { p_since: prodRev });
+      for (const x of j.docs || []) {
+        const b = x.c === 'products' ? 'kum' : x.c === 'accra_products' ? 'acc' : null;
+        if (b) { if (x.x) delete prodDocs[b][x.id]; else prodDocs[b][x.id] = x.d; }
+      }
+      prodRev = j.rev; more = !!j.more;
     }
-    return Object.values(out);
+    prodAt = Date.now();
   }
-  let listCache = { at: 0, list: null };
-  async function listed(fresh) {
-    if (!fresh && listCache.list && Date.now() - listCache.at < 10000) return listCache.list;
-    const list = (await allProducts()).filter((p) => p && p.online && p.price > 0);
-    listCache = { at: Date.now(), list };
-    return list;
+  const forSale = (p) => p && !p.hideOnline && p.price > 0;
+  async function listed(b, fresh) {
+    if (fresh || Date.now() - prodAt > 5000) { if (!prodBusy) prodBusy = refreshProducts().finally(() => { prodBusy = null; }); await prodBusy; }
+    return Object.values(prodDocs[brOf(b)]).filter(forSale);
   }
-  const getProd = (id) => sbCall('shop_db_get', { p_col: PF + 'products', p_id: 'p' + id });
+  const getProd = (b, id) => sbCall('shop_db_get', { p_col: BR[brOf(b)].pf + 'products', p_id: 'p' + id });
 
   // ---- orders (kept in their own collection; the tills ignore it) ----
   const ORD = 'webOrders';
   const getOrder = (ref) => sbCall('shop_db_get', { p_col: ORD, p_id: ref });
   const putOrder = (ref, o) => sbCall('shop_db_put', { p_col: ORD, p_id: ref, p_data: o });
-  const publicOrder = (o, ref) => ({ ref, status: o.status, items: o.items.map((i) => ({ name: i.name, qty: i.qty, price: i.price })), total: o.total, name: o.name, mode: o.mode, saleId: o.saleId || null, created: o.created, pay: o.pay || mode() });
+  const publicOrder = (o, ref) => ({ ref, branch: o.branch, branchName: (BR[o.branch] || BR.kum).name, status: o.status, items: o.items.map((i) => ({ name: i.name, qty: i.qty, price: i.price })), total: o.total, name: o.name, mode: o.mode, saleId: o.saleId || null, created: o.created, pay: o.pay || mode() });
 
   // Append one record to a list document ({recs:[...]}) the way the tills do: up to 300 per document.
   async function appendRec(col, base, rec) {
@@ -73,13 +76,14 @@ module.exports = function store(d) {
     const o = await getOrder(ref);
     if (!o) throw new Error('order not found');
     if (o.status !== 'pending') return o;
+    const b = brOf(o.branch), PF = BR[b].pf;
     const prods = [];
     for (const it of o.items) {
-      const p = await getProd(it.id);
+      const p = await getProd(b, it.id);
       if (!p || (p.stock || 0) < it.qty) {
         o.status = 'paid_short'; o.paidAt = Date.now(); o.payment = pay; o.short = it.name;
         await putOrder(ref, o);
-        serverLog('Online order needs attention', 'Order ' + ref + ' was paid (' + money(o.total) + ') but ' + it.name + ' is out of stock. Contact ' + o.name + ' ' + o.phone + ' to refund or swap.', WHO);
+        serverLog('Online order needs attention', 'Order ' + ref + ' was paid (' + money(o.total) + ') but ' + it.name + ' is out of stock at the ' + BR[b].name + '. Contact ' + o.name + ' ' + o.phone + ' to refund or swap.', WHO);
         return o;
       }
       prods.push([p, it]);
@@ -99,10 +103,10 @@ module.exports = function store(d) {
     const tax = set.tax ? o.total * set.tax / (100 + set.tax) : 0;
     const sale = { id: saleId, ts: now, items, sub: o.total, disc: 0, sdisc: 0, total: o.total, method: 'Online', pays: [{ m: 'Online', amt: o.total }], tend: null, change: null,
       cust: null, custName: o.name, by: null, byName: 'Online shop', tax, taxRate: set.tax || 0, refunds: [], dfee: 0,
-      online: { ref, phone: o.phone, email: o.email || '', mode: o.mode, provider: pay.provider, payRef: pay.reference || ref } };
+      online: { ref, phone: o.phone, email: o.email || '', mode: o.mode, region: o.region || '', provider: pay.provider, payRef: pay.reference || ref } };
     // 3. delivery job if asked
     if (o.mode === 'delivery') {
-      const dl = { id: ids[1], ts: now, sale: saleId, name: o.name, phone: o.phone, addr: o.addr, region: '', city: o.city || '', gps: '', note: ('Online order ' + ref + '. ' + (o.note || '')).trim(),
+      const dl = { id: ids[1], ts: now, sale: saleId, name: o.name, phone: o.phone, addr: o.addr, region: o.region || '', city: o.city || '', gps: '', note: ('Online order ' + ref + '. ' + (o.note || '')).trim(),
         items: items.map((i) => i.qty + ' × ' + i.name).join(', '), fee: 0, rider: null, status: 'Pending', by: 'Online shop', byId: null, when: '', cod: 0, codPaid: false };
       sale.dlv = dl.id;
       await appendRec(PF + 'deliveries', accraDay(now).slice(0, 7), dl);
@@ -110,12 +114,12 @@ module.exports = function store(d) {
     await appendRec(PF + 'sales', accraDay(now), sale);
     o.status = 'paid'; o.saleId = saleId; o.paidAt = now; o.payment = pay;
     await putOrder(ref, o);
-    listCache.at = 0;
-    serverLog('Sale', '#' + saleId + ' · ' + money(o.total) + ' · Online (' + via + ') · ' + o.name + ' ' + o.phone + ' · ' + (o.mode === 'delivery' ? 'delivery' : 'pickup') + ' · order ' + ref, WHO);
+    prodAt = 0;
+    serverLog('Sale', '#' + saleId + ' · ' + money(o.total) + ' · Online (' + via + ') · ' + BR[b].name + ' · ' + o.name + ' ' + o.phone + (o.region ? ' (' + o.region + ')' : '') + ' · ' + (o.mode === 'delivery' ? 'delivery' : 'pickup') + ' · order ' + ref, WHO);
     if (o.email) {
       const lines = items.map((i) => i.qty + ' × ' + i.name + '  ' + money(i.price * i.qty)).join('\n');
       sendEmail({ to: [o.email], subject: (set.name || 'Renatel Shop') + ' - order ' + ref + ' confirmed',
-        text: 'Hello ' + o.name + ',\n\nThank you for your order. Receipt #' + saleId + '\n\n' + lines + '\n\nTotal paid: ' + money(o.total) + '\n' + (o.mode === 'delivery' ? 'We will call you on ' + o.phone + ' to arrange delivery to: ' + o.addr : 'Pick it up at the shop' + (set.addr ? ': ' + set.addr : '') + '. Show this email or your order number.') + '\n\n-- \n' + (set.name || 'Renatel Shop') + (set.phone ? ' · ' + set.phone : '') })
+        text: 'Hello ' + o.name + ',\n\nThank you for your order. Receipt #' + saleId + '\n\n' + lines + '\n\nTotal paid: ' + money(o.total) + '\n' + (o.mode === 'delivery' ? 'We will call you on ' + o.phone + ' to arrange delivery to: ' + o.addr : 'Pick it up at our ' + BR[b].name + (b === 'kum' && set.addr ? ': ' + set.addr : '') + '. Show this email or your order number.') + '\n\n-- \n' + (set.name || 'Renatel Shop') + (set.phone ? ' · ' + set.phone : '') })
         .catch((e) => console.error('order email', e.message));
     }
     return o;
@@ -154,14 +158,17 @@ module.exports = function store(d) {
     try {
       if (req.method === 'GET' && url === '/api/store/info') {
         const shop = await shopMain(false), set = (shop && shop.set) || {}; CUR = set.cur || CUR;
-        const list = await listed(false);
-        return send(res, 200, { name: set.name || 'Renatel Shop', phone: set.phone || '', addr: set.addr || '', city: set.city || '', cur: set.cur || 'GH₵', branch: BRANCH, mode: mode(),
-          products: list.map((p) => ({ id: p.id, name: p.name, cat: p.cat || '', unit: p.unit || 'pcs', price: p.price, left: Math.max(0, p.stock || 0) })).sort((a, b) => a.name.localeCompare(b.name)) });
+        const b = brOf(new URL(req.url, 'http://x').searchParams.get('b')), names = set.brNames || {};
+        const list = await listed(b, false);
+        return send(res, 200, { name: set.name || 'Renatel Shop', phone: set.phone || '', addr: b === 'kum' ? set.addr || '' : '', city: BR[b].city, cur: set.cur || 'GH₵', mode: mode(),
+          branch: b, branches: Object.fromEntries(Object.entries(BR).map(([k, v]) => [k, { name: names[k] || v.name, city: v.city }])),
+          products: list.map((p) => ({ id: p.id, name: p.name, cat: p.cat || '', unit: p.unit || 'pcs', price: p.price, left: Math.max(0, p.stock || 0), img: /^[a-f0-9]{24}$/.test(p.img || '') ? p.img : '' })).sort((x, y) => x.name.localeCompare(y.name)) });
       }
       if (req.method === 'POST' && url === '/api/store/order') {
         if (!allow(req, 15)) return send(res, 429, { error: 'Too many orders from here. Try again in an hour.' });
         const m = await json(req); if (!m) return send(res, 400, { error: 'Not valid data.' });
         const name = String(m.name || '').trim().slice(0, 80), phone = String(m.phone || '').replace(/[^\d+]/g, '').slice(0, 16), email = String(m.email || '').trim().toLowerCase().slice(0, 120);
+        const branch = brOf(m.branch), region = String(m.region || '').trim().slice(0, 40);
         const dmode = m.mode === 'delivery' ? 'delivery' : 'pickup', addr = String(m.addr || '').trim().slice(0, 200), city = String(m.city || '').trim().slice(0, 60), note = String(m.note || '').trim().slice(0, 300);
         if (!name) return send(res, 400, { error: 'Enter your name.' });
         if (phone.replace(/\D/g, '').length < 10) return send(res, 400, { error: 'Enter a valid phone number, e.g. 024 000 0000.' });
@@ -173,19 +180,19 @@ module.exports = function store(d) {
         const shop = await shopMain(false); CUR = (shop && shop.set && shop.set.cur) || CUR;
         const items = []; let total = 0;
         for (const [id, qty] of want) {
-          const p = await getProd(id);
-          if (!p || !p.online || !(p.price > 0)) return send(res, 400, { error: 'One of the products is no longer sold online. Refresh the page.' });
+          const p = await getProd(branch, id);
+          if (!forSale(p)) return send(res, 400, { error: 'One of the products is no longer sold online. Refresh the page.' });
           if ((p.stock || 0) < qty) return send(res, 409, { error: 'Only ' + Math.max(0, p.stock || 0) + ' × ' + p.name + ' left. Change the quantity.' });
           items.push({ id: p.id, name: p.name, price: p.price, qty }); total += p.price * qty;
         }
         total = r2(total);
         const ref = 'RS' + crypto.randomBytes(8).toString('hex').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10).padEnd(10, '0');
-        const o = { status: 'pending', created: Date.now(), branch: BRANCH, items, total, name, phone, email, mode: dmode, addr, city, note, pay: mode(), ip: clientIp(req) };
+        const o = { status: 'pending', created: Date.now(), branch, region, items, total, name, phone, email, mode: dmode, addr, city, note, pay: mode(), ip: clientIp(req) };
         await putOrder(ref, o);
         if (mode() === 'test') return send(res, 200, { ref, pay_url: '/store/pay/' + ref });
         const host = 'https://' + String(req.headers['x-forwarded-host'] || req.headers.host || 'renatel.shop').split(',')[0].trim();
         const t = await paystack('/transaction/initialize', { email: email || phone.replace(/\D/g, '') + '@customers.renatel.shop', amount: Math.round(total * 100), currency: 'GHS', reference: ref,
-          callback_url: host + '/store/done/' + ref, channels: ['mobile_money', 'card'], metadata: { name, phone, shop_order: ref } });
+          callback_url: host + '/store/done/' + ref, channels: ['mobile_money', 'card'], metadata: { name, phone, shop_order: ref, branch } });
         return send(res, 200, { ref, pay_url: t.authorization_url });
       }
       const om = url.match(/^\/api\/store\/order\/(RS[A-Z0-9]{10})$/);

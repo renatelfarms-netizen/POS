@@ -11,6 +11,7 @@
 //   SUPABASE_KEY           the project's publishable key (not secret)
 //   SUPABASE_BACKUP_TOKEN  secret token; Supabase only accepts backups with it
 //   BACKUP_DIR             optional, defaults to ~/renatel-backups
+//   PHOTO_DIR              optional, defaults to ~/renatel-photos (cache of product photos)
 //   PAYSTACK_SECRET_KEY    optional; turns on real online payments in the online shop (store.js)
 const http = require('http');
 const fs = require('fs');
@@ -450,6 +451,19 @@ async function api(req, res, url) {
   if (req.method === 'GET' && url === '/api/mail/status') {
     try { const c = await mailCfg(); return send(res, 200, { ok: !!c, from: c ? c.from : '' }); } catch (e) { return send(res, 200, { ok: false }); }
   }
+  // ---- product photos: the page shrinks the picture first; it is kept in Supabase and cached on the hosting ----
+  if (req.method === 'POST' && url === '/api/photo') {
+    if (!sbOn()) return send(res, 503, { error: 'Photos are not set up on the server yet.' });
+    let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+    const m = String(msg && msg.data || '').match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+    if (!m) return send(res, 400, { error: 'That file is not a photo (use JPG, PNG or WebP).' });
+    const buf = Buffer.from(m[2], 'base64');
+    if (buf.length > 1024 * 1024) return send(res, 413, { error: 'The photo is too big. Try a smaller one.' });
+    const key = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 24);
+    try { await sbCall('shop_photo_put', { p_key: key, p_mime: m[1], p_data: m[2] }); } catch (e) { console.error('photo put', e.message); return send(res, 502, { error: 'Could not save the photo. Try again.' }); }
+    photoCacheSave(key, m[1], buf);
+    return send(res, 200, { ok: true, key });
+  }
   if (req.method === 'GET' && url === '/api/ids') {
     try { return send(res, 200, { ids: await sbCall('shop_ids', { p_n: 50 }) }); }
     catch (e) { console.error('ids', e.message); return send(res, 502, { error: 'Could not reach the shop database.' }); }
@@ -522,6 +536,24 @@ async function api(req, res, url) {
   return send(res, 404, { error: 'Not found.' });
 }
 
+// ---- product photos served at /img/<key> (cached on the hosting, outside the website folder) ----
+const PHOTO_DIR = process.env.PHOTO_DIR || path.join(os.homedir(), 'renatel-photos');
+const PHOTO_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+function photoCacheSave(key, mime, buf) {
+  fsp.mkdir(PHOTO_DIR, { recursive: true }).then(() => fsp.writeFile(path.join(PHOTO_DIR, key + '.' + PHOTO_EXT[mime]), buf)).catch((e) => console.error('photo cache', e.message));
+}
+async function photoServe(req, res, key) {
+  const done = (mime, buf) => { res.writeHead(200, Object.assign({ 'Content-Type': mime, 'Cache-Control': 'public, max-age=31536000, immutable' }, HEADERS)); res.end(req.method === 'HEAD' ? undefined : buf); };
+  for (const [mime, ext] of Object.entries(PHOTO_EXT)) {
+    try { return done(mime, await fsp.readFile(path.join(PHOTO_DIR, key + '.' + ext))); } catch (e) {}
+  }
+  try {
+    const v = sbOn() ? await sbCall('shop_photo_get', { p_key: key }) : null;
+    if (!v || !PHOTO_EXT[v.mime]) { res.writeHead(404); return res.end(); }
+    const buf = Buffer.from(v.data, 'base64'); photoCacheSave(key, v.mime, buf); return done(v.mime, buf);
+  } catch (e) { console.error('photo get', e.message); res.writeHead(502); return res.end(); }
+}
+
 // ---- online shop (renatel.shop/store): see store.js ----
 const shopStore = require('./store')({ sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS });
 
@@ -532,6 +564,8 @@ http.createServer((req, res) => {
     return;
   }
   if ((url === '/store' || url.startsWith('/store/')) && (req.method === 'GET' || req.method === 'HEAD')) return shopStore.page(req, res);
+  const im = url.match(/^\/img\/([a-f0-9]{24})(?:\.(?:jpg|png|webp))?$/);
+  if (im && (req.method === 'GET' || req.method === 'HEAD')) { photoServe(req, res, im[1]).catch(() => { res.writeHead(500); res.end(); }); return; }
   if (url.startsWith('/api/')) {
     api(req, res, url).catch((e) => { console.error(e); send(res, 500, { error: 'Server error.' }); });
     return;

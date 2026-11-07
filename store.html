@@ -30,6 +30,13 @@ a{color:inherit}
 .cartbtn .n{background:var(--y);color:var(--ink);border-radius:999px;min-width:22px;height:22px;display:inline-grid;place-items:center;font-size:12px;padding:0 6px}
 @media (max-width:820px){.links{display:none}}
 @media (max-width:520px){.catbtn span{display:none}.logo b{max-width:42vw;overflow:hidden;text-overflow:ellipsis}}
+.locbar{background:var(--gl);font-size:13px;padding:7px 0;border-bottom:1px solid #d6ebe0}
+.locbar .wrap{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.locbar button{background:none;border:0;color:var(--g);font-weight:600;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:0;font-size:13px}
+.modal{position:fixed;inset:0;background:rgba(10,20,15,.5);z-index:40;display:grid;place-items:center;padding:16px}
+.modal .mbox{background:#fff;border-radius:20px;padding:24px;width:min(440px,100%);box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.modal select{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff;margin-top:6px}
+.pimg img{width:100%;height:100%;object-fit:cover;border-radius:12px;position:absolute;inset:0}
 .test{background:#fff6d6;color:#6b4a00;font-size:13px;padding:8px 0;border-bottom:1px solid #f3df9a}
 
 /* hero */
@@ -150,9 +157,11 @@ input.f:focus,textarea.f:focus{border-color:var(--g);box-shadow:0 0 0 3px var(--
  <span class="sp"></span>
  <button class="cartbtn" id="cartbtn" onclick="openCart()" aria-label="Open cart"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>Cart <span class="n" id="cartn">0</span></button>
 </div></header>
+<div class="locbar" id="locbar" hidden><div class="wrap" id="locwrap"></div></div>
 <div class="test" id="testbar" hidden><div class="wrap">🧪 <b>Test mode:</b> payments are simulated and no money is taken, but orders are recorded in the shop and stock really goes down.</div></div>
 <main id="app"><div class="spin"></div></main>
 <footer><div class="wrap" id="foot"></div></footer>
+<div class="modal" id="locmodal" hidden></div>
 <div class="drawer" id="drawer" onclick="if(event.target==this)closeCart()"><div class="pane" id="pane"></div></div>
 <script>
 'use strict';
@@ -168,11 +177,34 @@ const ICONS=[[/fish|aqua|tank|pet|coral/i,'🐠'],[/medic|drug|pharm|treat|healt
 const icon=c=>{for(const [rx,e] of ICONS)if(rx.test(c||''))return e;return '🛍️'};
 const TINTS=['#eaf6ef','#fff4d4','#e8f1fb','#fdeceb','#f1ecfb','#e9f6f6','#fbefe3'];
 const tint=s=>TINTS[[...String(s||'?')].reduce((a,c)=>a+c.charCodeAt(0),0)%TINTS.length];
+// Ghana regions (capital town coordinates) and the two branches; customers are served by the nearest branch.
+const REGIONS={'Greater Accra':[5.6037,-0.187],'Ashanti':[6.6885,-1.6244],'Eastern':[6.0941,-0.2591],'Central':[5.1053,-1.2466],'Western':[4.934,-1.7137],'Western North':[6.2058,-2.4895],'Volta':[6.6008,0.4713],'Oti':[8.0667,0.1833],'Bono':[7.3349,-2.3123],'Bono East':[7.5833,-1.9333],'Ahafo':[6.8036,-2.5172],'Northern':[9.4008,-0.8393],'Savannah':[9.0833,-1.8167],'North East':[10.5275,-0.3683],'Upper East':[10.7856,-0.8514],'Upper West':[10.0601,-2.5099]};
+const BRPOS={kum:[6.6885,-1.6244],acc:[5.6037,-0.187]};
+const km=(a,b)=>{const r=x=>x*Math.PI/180,d=r(b[0]-a[0]),e=r(b[1]-a[1]),h=Math.sin(d/2)**2+Math.cos(r(a[0]))*Math.cos(r(b[0]))*Math.sin(e/2)**2;return 12742*Math.asin(Math.sqrt(h))};
+const nearest=pt=>Object.keys(BRPOS).sort((x,y)=>km(pt,BRPOS[x])-km(pt,BRPOS[y]))[0];
+const nearRegion=pt=>Object.keys(REGIONS).sort((x,y)=>km(pt,REGIONS[x])-km(pt,REGIONS[y]))[0];
+let LOC=null;try{LOC=JSON.parse(localStorage.getItem('rs-loc')||'null')}catch(e){}
+const BRANCH=()=>(LOC&&BRPOS[LOC.branch])?LOC.branch:'kum';
+const brName=b=>((S.branches||{})[b||BRANCH()]||{}).name||({kum:'Kumasi branch',acc:'Accra branch'})[b||BRANCH()];
+const brCity=b=>((S.branches||{})[b||BRANCH()]||{}).city||({kum:'Kumasi',acc:'Accra'})[b||BRANCH()];
+async function setLoc(l){const before=BRANCH();LOC=l;try{localStorage.setItem('rs-loc',JSON.stringify(l))}catch(e){}$('#locmodal').hidden=true;
+ if(BRANCH()!=before&&Object.keys(cart).length){cart={};keep()}
+ if(l.region&&!ck.city)ck.city='';cat='';await load();badge();if(step!='done')render();locBar()}
+function locBar(){const b=$('#locbar');if(!b)return;b.hidden=false;$('#locwrap').innerHTML=LOC?`📍 <span>${LOC.region?'Your region: <b>'+esc(LOC.region)+'</b> · ':''}Served by our <b>${esc(brName())}</b>${LOC.km?' ('+LOC.km+' km)':''}</span><button onclick="locAsk()">Change</button>`:`📍 <span>Tell us where you are so we send from the nearest branch (Kumasi or Accra).</span><button onclick="locAsk()">Choose location</button>`}
+function locAsk(){const m=$('#locmodal');m.hidden=false;m.innerHTML=`<div class="mbox"><div style="font-size:34px">📍</div><h2 style="font-size:22px;margin:4px 0 6px">Where are you?</h2><p class="mut" style="margin:0 0 14px;font-size:14px">We serve you from our nearest branch, Kumasi or Accra, so your order is faster and comes from the right shop's stock.</p>
+ <button class="pill big" id="gpsb" onclick="useGps()">📍 Use my location</button><p id="gpsm" class="msg" style="text-align:center"></p>
+ <label class="lbl" style="text-align:center;margin-top:4px">or choose your region</label><select id="regsel" onchange="if(this.value)pickRegion(this.value)"><option value="">Select region…</option>${Object.keys(REGIONS).map(r=>`<option ${LOC&&LOC.region==r?'selected':''}>${r}</option>`).join('')}</select>
+ ${LOC?`<button class="btn big" style="margin-top:12px" onclick="$('#locmodal').hidden=true">Keep ${esc(brName())}</button>`:`<button class="ulink" style="display:block;margin:14px auto 0;font-size:13px" onclick="setLoc({branch:'kum',region:''})">Skip for now</button>`}</div>`}
+function pickRegion(r){const pt=REGIONS[r],b=nearest(pt);setLoc({region:r,branch:b,km:Math.round(km(pt,BRPOS[b])),how:'region'})}
+function useGps(){const m=$('#gpsm'),b=$('#gpsb');if(!navigator.geolocation)return m.textContent='Location is not available on this device. Choose your region instead.';b.disabled=true;b.textContent='Finding you…';
+ navigator.geolocation.getCurrentPosition(p=>{const pt=[p.coords.latitude,p.coords.longitude],br=nearest(pt);setLoc({region:nearRegion(pt),branch:br,km:Math.round(km(pt,BRPOS[br])),how:'gps'})},
+  e=>{b.disabled=false;b.textContent='📍 Use my location';m.textContent=e.code==1?'Location permission was refused. Choose your region instead.':'Could not find your location. Choose your region instead.'},{enableHighAccuracy:false,timeout:12000,maximumAge:600000})}
+const pimg=(p,big)=>p.img?`<img src="/img/${p.img}" alt="${esc(p.name)}" loading="lazy">`:icon(p.cat||p.name);
 const lines=()=>Object.entries(cart).map(([id,n])=>({p:P(id),n})).filter(x=>x.p&&x.n>0);
 const total=()=>lines().reduce((t,x)=>t+x.p.price*x.n,0);
 async function call(u,o){const r=await fetch(u,Object.assign({headers:{'Content-Type':'application/json'}},o||{}));let j={};try{j=await r.json()}catch(e){}if(!r.ok)throw new Error(j.error||'Something went wrong. Try again.');return j}
 
-async function info(){for(let i=0;;i++){try{return await call('/api/store/info')}catch(e){if(i>=4)throw e;await new Promise(r=>setTimeout(r,2500))}}}
+async function info(){for(let i=0;;i++){try{return await call('/api/store/info?b='+BRANCH())}catch(e){if(i>=4)throw e;await new Promise(r=>setTimeout(r,2500))}}}
 async function load(){try{const j=await info();S=j;document.title=j.name+' · Shop online';$('#shopname').textContent=j.name;
   $('#testbar').hidden=j.mode!='test';
   if(j.phone)$('#calllink').href='tel:'+j.phone.replace(/[^\d+]/g,'');else $('#calllink').hidden=true;
@@ -185,11 +217,11 @@ function goCats(){if(step!='shop'){step='shop';render()}setTimeout(()=>{const e=
 function pickCat(c){cat=c;$('#catrow').innerHTML=catRow();$('#grid').innerHTML=cards();$('#products').scrollIntoView({behavior:'smooth',block:'start'})}
 function catRow(){const L=catList();return `<button class="cat ${cat?'':'on'}" onclick="pickCat('')"><div class="c">🛒</div><b>All</b><small>${S.products.length} product${S.products.length==1?'':'s'}</small></button>`+L.map(([c,n])=>`<button class="cat ${c==cat?'on':''}" onclick='pickCat(${esc(JSON.stringify(c))})'><div class="c">${icon(c)}</div><b>${esc(c)}</b><small>${n} product${n==1?'':'s'}</small></button>`).join('')}
 
-function shopView(){const city=S.city||'Kumasi',ex=[...new Set(S.products.map(p=>icon(p.cat)))].concat(['🛍️','📦','🚚','💳']).slice(0,4);
+function shopView(){const city=brCity(),ex=[...new Set(S.products.map(p=>icon(p.cat)))].concat(['🛍️','📦','🚚','💳']).slice(0,4);
  return `<section class="hero" style="padding:0"><div class="wrap">
   <div><span class="tag"><i>🏪</i>${esc(S.name)} · Official online store</span>
    <h1>Your One-Stop Shop<br>for <span class="g">Quality Products</span></h1>
-   <p class="lead">Order online, pay safely with Mobile Money or card, then pick up at the shop in ${esc(city)} or have it delivered to you.</p>
+   <p class="lead">Order online, pay safely with Mobile Money or card, then pick up at our ${esc(city)} branch or have it delivered to you. We serve you from our nearest branch.</p>
    <div class="cta"><a class="pill" href="#products">Shop Now <span>→</span></a><button class="ulink" onclick="goCats()">Browse categories</button></div>
    <div class="trust"><span><i>🔒</i><span><b>Secure</b><br>payment</span></span><span><i>📱</i><span><b>MoMo</b><br>& card</span></span><span><i>🚚</i><span><b>Pickup</b><br>or delivery</span></span></div></div>
   <div class="art" aria-hidden="true"><div class="ring"></div><div class="disc"></div><div class="bag">🛍️</div>
@@ -213,7 +245,7 @@ function cards(){const L=S.products.filter(p=>(!cat||(p.cat||'Other')==cat)&&(!q
  if(!S.products.length)return `<div class="empty"><b>Nothing for sale online yet.</b><p class="mut">Check back soon.</p></div>`;
  if(!L.length)return `<div class="empty"><b>No products match.</b><p class="mut"><button class="ulink" onclick="q='';cat='';render()">Show all products</button></p></div>`;
  return L.map(p=>{const n=cart[p.id]||0,out=p.left<=0,low=!out&&p.left<=5;
-  return `<div class="p"><div class="pimg" style="background:${tint(p.cat||p.name)}">${icon(p.cat||p.name)}<span class="badge ${out?'out':low?'low':''}">${out?'Sold out':low?'Only '+p.left+' left':'In stock'}</span></div>
+  return `<div class="p"><div class="pimg" style="background:${p.img?'#fff':tint(p.cat||p.name)}">${pimg(p)}<span class="badge ${out?'out':low?'low':''}">${out?'Sold out':low?'Only '+p.left+' left':'In stock'}</span></div>
   <span class="pcat">${esc(p.cat||'General')}</span><span class="pn">${esc(p.name)}</span><span class="pu">Per ${esc(p.unit||'pcs')}</span>
   <div class="pfoot"><span class="price">${money(p.price)}</span>${out?'':n?`<div class="qty"><button onclick="add(${p.id},-1)" aria-label="One less">−</button><span>${n}</span><button onclick="add(${p.id},1)" aria-label="One more" ${n>=p.left?'disabled':''}>+</button></div>`:`<button class="add" onclick="add(${p.id},1)">${BAG}Add</button>`}</div></div>`}).join('')}
 function add(id,d){const p=P(id);if(!p)return;const n=Math.max(0,Math.min(p.left,(cart[id]||0)+d));if(n)cart[id]=n;else delete cart[id];keep();badge();if(step=='shop'){const g=$('#grid');if(g)g.innerHTML=cards()}if($('#drawer').classList.contains('on'))cartPane();if(step=='checkout')render()}
@@ -221,18 +253,18 @@ function badge(){$('#cartn').textContent=Object.values(cart).reduce((a,b)=>a+b,0
 function openCart(){cartPane();$('#drawer').classList.add('on')}
 function closeCart(){$('#drawer').classList.remove('on')}
 function cartPane(){const L=lines();$('#pane').innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:20px">Your cart</b><button class="btn" onclick="closeCart()">Close</button></div>
- ${L.length?`<div>${L.map(x=>`<div class="row"><div style="display:flex;gap:10px;align-items:center"><div class="pimg" style="width:52px;aspect-ratio:1;font-size:26px;background:${tint(x.p.cat||x.p.name)}">${icon(x.p.cat||x.p.name)}</div><div><b style="font-size:14px">${esc(x.p.name)}</b><br><small class="mut">${money(x.p.price)} each</small></div></div><div style="text-align:right"><div class="qty"><button onclick="add(${x.p.id},-1)">−</button><span>${x.n}</span><button onclick="add(${x.p.id},1)" ${x.n>=x.p.left?'disabled':''}>+</button></div><small>${money(x.p.price*x.n)}</small></div></div>`).join('')}
+ ${L.length?`<div>${L.map(x=>`<div class="row"><div style="display:flex;gap:10px;align-items:center"><div class="pimg" style="width:52px;aspect-ratio:1;font-size:26px;background:${x.p.img?'#fff':tint(x.p.cat||x.p.name)}">${pimg(x.p)}</div><div><b style="font-size:14px">${esc(x.p.name)}</b><br><small class="mut">${money(x.p.price)} each</small></div></div><div style="text-align:right"><div class="qty"><button onclick="add(${x.p.id},-1)">−</button><span>${x.n}</span><button onclick="add(${x.p.id},1)" ${x.n>=x.p.left?'disabled':''}>+</button></div><small>${money(x.p.price*x.n)}</small></div></div>`).join('')}
  <div class="tot"><span>Total</span><span>${money(total())}</span></div></div><button class="pill big" onclick="closeCart();step='checkout';render();scrollTo(0,0)">Checkout →</button>`:'<div class="empty" style="background:var(--soft)"><div style="font-size:40px">🛒</div><b>Your cart is empty</b><p class="mut">Add products to get started.</p></div>'}`}
 
 function checkoutView(){const L=lines();if(!L.length){step='shop';return shopView()}
  const V=(k,t,ph,ac)=>`<input class="f" id="f_${k}" type="${t||'text'}" value="${esc(ck[k])}" placeholder="${ph||''}" autocomplete="${ac||'off'}" oninput="ck.${k}=this.value">`;
  return `<div class="page"><div class="wrap"><button class="btn" onclick="step='shop';render()" style="margin-bottom:16px">← Keep shopping</button><h2 style="margin:0 0 16px">Checkout</h2>
- <div class="two"><div class="box"><b style="font-size:18px">Your details</b>
+ <div class="two"><div class="box"><div style="background:var(--gl);border-radius:12px;padding:10px 12px;font-size:14px;margin-bottom:6px">📍 ${LOC&&LOC.region?'<b>'+esc(LOC.region)+'</b> · ':''}Your order comes from our <b>${esc(brName())}</b>. <button class="ulink" style="font-size:13px;color:var(--g)" onclick="locAsk()">Change</button></div><b style="font-size:18px">Your details</b>
   <label class="lbl">Full name *</label>${V('name','text','e.g. Ama Mensah','name')}
   <label class="lbl">Phone number (MoMo) *</label>${V('phone','tel','024 000 0000','tel')}
   <label class="lbl">Email (for your receipt, optional)</label>${V('email','email','you@example.com','email')}
   <label class="lbl">How do you want it?</label>
-  <div class="seg"><label><input type="radio" name="dm" value="pickup" ${ck.mode=='pickup'?'checked':''} onchange="ck.mode='pickup';render()"><span><b>Pick up</b><br><small class="mut">Collect at the shop${S.city?' in '+esc(S.city):''}</small></span></label>
+  <div class="seg"><label><input type="radio" name="dm" value="pickup" ${ck.mode=='pickup'?'checked':''} onchange="ck.mode='pickup';render()"><span><b>Pick up</b><br><small class="mut">Collect at our ${esc(brCity())} branch</small></span></label>
   <label><input type="radio" name="dm" value="delivery" ${ck.mode=='delivery'?'checked':''} onchange="ck.mode='delivery';render()"><span><b>Delivery</b><br><small class="mut">We call you to arrange it</small></span></label></div>
   ${ck.mode=='delivery'?`<label class="lbl">Delivery address or landmark *</label>${V('addr','text','House no., street, landmark','street-address')}<label class="lbl">Town / city</label>${V('city','text','e.g. Kumasi')}<p class="mut" style="font-size:13px;margin:8px 0 0">Any delivery fee is agreed with you on the phone.</p>`:''}
   <label class="lbl">Note (optional)</label><textarea class="f" id="f_note" rows="2" oninput="ck.note=this.value">${esc(ck.note)}</textarea>
@@ -247,7 +279,7 @@ async function placeOrder(){const b=$('#paybtn'),m=$('#cmsg');m.textContent='';
  if(!ck.name.trim())return m.textContent='Enter your name.';if(ck.phone.replace(/\D/g,'').length<10)return m.textContent='Enter a valid phone number.';
  if(ck.mode=='delivery'&&!ck.addr.trim())return m.textContent='Enter the delivery address.';
  b.disabled=true;b.textContent='Please wait…';
- try{const j=await call('/api/store/order',{method:'POST',body:JSON.stringify(Object.assign({},ck,{items:lines().map(x=>({id:x.p.id,qty:x.n}))}))});location.href=j.pay_url}
+ try{const j=await call('/api/store/order',{method:'POST',body:JSON.stringify(Object.assign({},ck,{branch:BRANCH(),region:(LOC&&LOC.region)||'',items:lines().map(x=>({id:x.p.id,qty:x.n}))}))});location.href=j.pay_url}
  catch(e){m.textContent=e.message;b.disabled=false;b.textContent='Pay '+money(total());load().then(()=>{badge()}).catch(()=>{})}}
 
 const shell=h=>`<div class="page"><div class="wrap narrow">${h}</div></div>`;
@@ -269,7 +301,7 @@ async function doneView(ref,o){$('#cartbtn').hidden=false;if(!o){$('#app').inner
  if(o.status=='paid'){cart={};keep();badge()}
  const box=(ic,h,body)=>shell(`<div class="box"><div class="bigic">${ic}</div><h2 style="text-align:center;margin:6px 0 10px">${h}</h2>${body}<a class="pill big" style="margin-top:16px" href="/store">Back to the shop</a></div>`);
  const items=o.items.map(i=>`<div class="row"><span>${i.qty} × ${esc(i.name)}</span><b>${money(i.price*i.qty)}</b></div>`).join('')+`<div class="tot"><span>Paid</span><span>${money(o.total)}</span></div>`;
- if(o.status=='paid')return $('#app').innerHTML=box('✅','Thank you, '+esc(o.name.split(' ')[0])+'!',`<p class="mut" style="text-align:center;margin-top:0">Payment received · Receipt <b style="color:var(--ink)">#${esc(o.saleId)}</b> · Order ${esc(ref)}</p>${items}<p>${o.mode=='delivery'?'🚚 We’ll call you to arrange the delivery.':'📦 Your order is ready to pick up at the shop. Show your order number.'}</p>`);
+ if(o.status=='paid')return $('#app').innerHTML=box('✅','Thank you, '+esc(o.name.split(' ')[0])+'!',`<p class="mut" style="text-align:center;margin-top:0">Payment received · Receipt <b style="color:var(--ink)">#${esc(o.saleId)}</b> · Order ${esc(ref)}</p>${items}<p>${o.mode=='delivery'?'🚚 We’ll call you to arrange the delivery.':'📦 Your order is ready to pick up at our '+esc(o.branchName||'shop')+'. Show your order number.'}</p>`);
  if(o.status=='paid_short')return $('#app').innerHTML=box('⚠️','Payment received',`<p>Sorry, an item sold out while you were paying. The shop has been told and will call you to refund or swap it.</p><p class="mut">Order ${esc(ref)}</p>`);
  $('#app').innerHTML=box('⏳','Payment not finished',`<p>We haven’t received the payment for order ${esc(ref)} yet. If money left your account, it will show up in a few minutes. Refresh this page.</p><button class="btn big" onclick="location.reload()">Refresh</button>`)}
 
@@ -277,7 +309,7 @@ function render(){$('#app').innerHTML=step=='checkout'?checkoutView():shopView()
 (async()=>{const m=location.pathname.match(/^\/store\/(pay|done)\/(RS[A-Z0-9]{10})/);
  try{await load()}catch(e){return}badge();
  if(m){$('#cartbtn').hidden=m[1]=='pay';$('#catbtn').hidden=true;return m[1]=='pay'&&S.mode=='test'?payView(m[2]):doneView(m[2])}
- render();if(location.hash){const e=document.querySelector(location.hash);if(e)setTimeout(()=>e.scrollIntoView(),50)}})();
+ locBar();render();if(!LOC)setTimeout(locAsk,600);if(location.hash){const e=document.querySelector(location.hash);if(e)setTimeout(()=>e.scrollIntoView(),50)}})();
 </script>
 </body>
 </html>
