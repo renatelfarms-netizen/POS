@@ -11,6 +11,7 @@
 //   SUPABASE_KEY           the project's publishable key (not secret)
 //   SUPABASE_BACKUP_TOKEN  secret token; Supabase only accepts backups with it
 //   BACKUP_DIR             optional, defaults to ~/renatel-backups
+//   PAYSTACK_SECRET_KEY    optional; turns on real online payments in the online shop (store.js)
 const http = require('http');
 const fs = require('fs');
 const fsp = require('fs/promises');
@@ -521,8 +522,16 @@ async function api(req, res, url) {
   return send(res, 404, { error: 'Not found.' });
 }
 
+// ---- online shop (renatel.shop/store): see store.js ----
+const shopStore = require('./store')({ sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS });
+
 http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0];
+  if (url.startsWith('/api/store/')) {
+    shopStore.api(req, res, url).catch((e) => { console.error(e); send(res, 500, { error: 'Server error.' }); });
+    return;
+  }
+  if ((url === '/store' || url.startsWith('/store/')) && (req.method === 'GET' || req.method === 'HEAD')) return shopStore.page(req, res);
   if (url.startsWith('/api/')) {
     api(req, res, url).catch((e) => { console.error(e); send(res, 500, { error: 'Server error.' }); });
     return;

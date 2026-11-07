@@ -19,6 +19,11 @@ On the website everything runs centrally from the host: nothing about the shop i
 
 Backups are made by the server only: every 10 minutes, if anything changed, the whole shop is saved on the hosting (outside the website folder) and in Supabase; all backups from the last 2 days are kept, then one a day for 90 days. Owners and managers can press Back up now; only the owner can restore, which signs everyone out. Inside Claude, the page uses Claude's built-in shop database instead, and Gmail for emailed reports and reset codes.
 
+## Online shop
+Customers can buy at https://renatel.shop/store and pay online. Only products the owner ticks **Sell on the online shop** (in the product form, Kumasi branch) are listed. When a payment succeeds, `store.js` records it in the POS like a till sale: stock goes down, a sale is added (seller "Online shop", method "Online"), a stock move and an activity entry are logged, and a delivery job is created if the customer chose delivery. Orders are handled one at a time, so the last item can never be sold twice; if an item sells out while someone is paying, the order is flagged in the activity trail for a refund.
+
+Payments use Paystack (Mobile Money and cards) once `PAYSTACK_SECRET_KEY` is set on the hosting, with the webhook `https://renatel.shop/api/store/paystack`. A `sk_test_` key uses Paystack's test mode. With no key, the shop runs in **test mode**: a practice payment screen replaces Paystack and no money moves, but stock and sales are real.
+
 ## Hosting
 The site is hosted on Hostinger as a small Node.js app: `server.js` serves `index.html` and has no dependencies. Every push to `main` deploys automatically.
 
