@@ -13,6 +13,11 @@
 //   Accounts live in Supabase (web_accounts, token-checked functions), never in the data the tills sync.
 //   Each account is also added to the POS Customers list of the customer's branch, and online sales are linked to it.
 //
+// SMS receipts (USMS-GH, webapp.usmsgh.com): after every purchase the customer gets a thank-you SMS with a link to
+//   their receipt at /r/<code> (code = branch + sale number + a signature, so receipts can't be guessed).
+//   Online: sent when the payment is recorded. POS: the till asks the server after a sale with the buyer's phone.
+//   The owner saves the USMS token and approved sender ID in the POS (kept in Supabase site_secrets).
+//
 // Payments
 //   Paystack secret key set   -> Paystack checkout (MoMo and cards). A sk_test_ key uses Paystack test mode.
 //     The owner pastes it in the POS (Online shop → Settings → Payments); it is checked with Paystack and kept in
@@ -54,13 +59,14 @@ module.exports = function store(d) {
 
   // ---- products ----
   // Product documents of both branches, kept up to date with the same change feed the tills use.
-  const prodDocs = { kum: {}, acc: {} }, custDocs = { kum: {}, acc: {} }, orderDocs = {}; let prodRev = 0, prodAt = 0, prodBusy = null;
+  const prodDocs = { kum: {}, acc: {} }, custDocs = { kum: {}, acc: {} }, orderDocs = {}, saleDocs = { kum: {}, acc: {} }; let prodRev = 0, prodAt = 0, prodBusy = null;
   async function refreshProducts() {
     let more = true;
     while (more) {
       const j = await sbCall('shop_db_pull', { p_since: prodRev });
       for (const x of j.docs || []) {
         if (x.c === 'webOrders') { if (x.x) delete orderDocs[x.id]; else orderDocs[x.id] = x.d; continue; }
+        if (x.c === 'sales' || x.c === 'accra_sales') { const sb = x.c === 'sales' ? 'kum' : 'acc'; if (x.x) delete saleDocs[sb][x.id]; else saleDocs[sb][x.id] = (x.d && x.d.recs) || []; continue; }
         const b = x.c === 'products' || x.c === 'customers' ? 'kum' : x.c === 'accra_products' || x.c === 'accra_customers' ? 'acc' : null;
         const box = b && (x.c.endsWith('products') ? prodDocs : custDocs)[b];
         if (box) { if (x.x) delete box[x.id]; else box[x.id] = x.d; }
@@ -109,6 +115,96 @@ module.exports = function store(d) {
     serverLog('Added customer', a.name + ' · ' + ph + ' (online shop account, ' + BR[b].name + ')', WHO);
     return id;
   }
+
+  // ---- receipts and SMS ----
+  const rsecret = () => crypto.createHash('sha256').update('renatel-receipt:' + (process.env.SUPABASE_BACKUP_TOKEN || '')).digest();
+  const rsig = (b, id) => crypto.createHmac('sha256', rsecret()).update(b + ':' + id).digest('base64url').slice(0, 10);
+  const receiptCode = (b, id) => (b === 'acc' ? 'a' : 'k') + Number(id).toString(36) + '.' + rsig(b === 'acc' ? 'acc' : 'kum', Number(id));
+  function readCode(code) {
+    const m = String(code || '').match(/^([ka])([0-9a-z]{1,12})\.([A-Za-z0-9_-]{10})$/); if (!m) return null;
+    const b = m[1] === 'a' ? 'acc' : 'kum', id = parseInt(m[2], 36);
+    const want = rsig(b, id); if (!crypto.timingSafeEqual(Buffer.from(want), Buffer.from(m[3]))) return null;
+    return { b, id };
+  }
+  const findSale = (b, id) => { for (const recs of Object.values(saleDocs[b])) { const r = recs.find((x) => x.id === id); if (r) return r; } return null; };
+  async function getSale(b, id, waitMs) {
+    const until = Date.now() + (waitMs || 0);
+    for (;;) {
+      if (!prodBusy) prodBusy = refreshProducts().finally(() => { prodBusy = null; }); await prodBusy;
+      const r = findSale(b, id); if (r || Date.now() > until) return r;
+      await new Promise((ok) => setTimeout(ok, 1000));
+    }
+  }
+  const SMS_API = process.env.USMS_API || 'https://webapp.usmsgh.com/api';
+  const SM = { token: '', sender: '', at: 0 };
+  async function smsCfg(fresh) {
+    if (!fresh && SM.at && Date.now() - SM.at < 30000) return SM;
+    try { const [t, sd] = await Promise.all([sbCall('site_secret_get', { p_name: 'usms_token' }), sbCall('site_secret_get', { p_name: 'usms_sender' })]); SM.token = t || ''; SM.sender = sd || ''; SM.at = Date.now(); }
+    catch (e) { console.error('sms config', e.message); }
+    return SM;
+  }
+  const intlPhone = (v) => { const d = normPhone(v); return d ? '233' + d.slice(1) : ''; };
+  async function usms(path, body, token) {
+    const r = await fetch(SMS_API + path, { method: body ? 'POST' : 'GET', headers: { Authorization: 'Bearer ' + token, Accept: 'application/json', 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(20000) });
+    const t = await r.text(); let j = {}; try { j = JSON.parse(t); } catch (e) {}
+    if (!r.ok || (j.status && j.status !== 'success')) throw new Error(j.message || ('USMS-GH answered ' + r.status + (t && !j.message ? ': ' + t.slice(0, 120) : '')));
+    return j;
+  }
+  async function sendSms(to, message) {
+    const c = await smsCfg(false), rc = intlPhone(to);
+    if (!c.token || !c.sender) throw new Error('SMS is not set up yet (Online shop → Settings → SMS receipts).');
+    if (!rc) throw new Error('That phone number is not valid.');
+    return usms('/sms/send', { recipient: rc, sender_id: c.sender, type: 'plain', message: String(message).slice(0, 459) }, c.token);
+  }
+  const DEF_SMS = 'Thank you for shopping at {shop}, {name}! Receipt #{no}, GHS {total}. View it here: {link}';
+  // Thank-you SMS with the receipt link. Returns {sent, to} or throws.
+  async function smsReceipt(b, sale, phone, host, by) {
+    const shop = await shopMain(false), set = (shop && shop.set) || {};
+    const link = host + '/r/' + receiptCode(b, sale.id), first = String(sale.custName || '').trim().split(/\s+/)[0] || 'customer';
+    const msg = String(set.smsMsg || DEF_SMS).replace(/\{shop\}/g, set.name || 'Renatel Shop').replace(/\{name\}/g, first).replace(/\{no\}/g, sale.id).replace(/\{total\}/g, Number(sale.total || 0).toFixed(2)).replace(/\{link\}/g, link)
+      .replace(/₵/g, 'S').replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
+    await sendSms(phone, msg);
+    const ph = normPhone(phone);
+    serverLog('Receipt SMS sent', '#' + sale.id + ' to ' + ph.slice(0, 3) + '•••' + ph.slice(-3) + ' · ' + (b === 'acc' ? 'Accra' : 'Kumasi') + ' branch', by || WHO);
+    return { sent: true, to: ph.slice(0, 3) + '•••' + ph.slice(-3), link };
+  }
+  const hostOf = (req) => 'https://' + String((req && (req.headers['x-forwarded-host'] || req.headers.host)) || 'renatel.shop').split(',')[0].trim().replace(/^localhost.*/, 'renatel.shop');
+
+  // ---- the customer's receipt page: /r/<code> ----
+  async function receiptPage(req, res, code) {
+    const html = (status, body, title) => { res.writeHead(status, Object.assign({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' }, HEADERS)); res.end(req.method === 'HEAD' ? undefined : RPAGE(title || 'Receipt', body)); };
+    const k = readCode(code);
+    if (!k || !sbOn()) return html(404, '<div class="box"><h2>Receipt not found</h2><p class="mut">This receipt link is not valid. Check the SMS, or contact the shop.</p></div>');
+    let sale; try { sale = await getSale(k.b, k.id, 0); } catch (e) { console.error('receipt', e.message); return html(502, '<div class="box"><h2>Please try again</h2><p class="mut">The receipt could not be loaded just now.</p></div>'); }
+    if (!sale) return html(404, '<div class="box"><h2>Receipt not found</h2><p class="mut">This receipt is no longer available. Contact the shop if you need a copy.</p></div>');
+    const shop = await shopMain(false), set = (shop && shop.set) || {}, cur = set.cur || 'GH₵', m = (n) => cur + ' ' + Number(n || 0).toFixed(2);
+    const e = (x) => String(x == null ? '' : x).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const when = new Date(sale.ts).toLocaleString('en-GB', { timeZone: 'Africa/Accra', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const rows = (sale.items || []).map((i) => `<tr><td>${e(i.name)}<br><small>${i.qty} × ${Number(i.price).toFixed(2)}${i.disc ? ' · discount ' + Number(i.disc).toFixed(2) : ''}</small></td><td class="n">${(i.qty * i.price - (i.disc || 0)).toFixed(2)}</td></tr>`).join('');
+    const line = (a, b, cls) => `<div class="r ${cls || ''}"><span>${e(a)}</span><span>${e(b)}</span></div>`;
+    const refunded = (sale.refunds || []).reduce((t, r) => t + (Number(r.amt || r.total || 0)), 0);
+    const pays = (sale.pays || []).filter((p) => p.amt > 0);
+    const bn = (set.brNames || {})[k.b] || (k.b === 'acc' ? 'Accra branch' : 'Kumasi branch');
+    const body = `<div class="box"><div class="head"><img src="/logo-icon.svg" alt="" width="52" height="52"><div><h1>${e(set.name || 'Renatel Shop')}</h1><div class="mut">${e(bn)}${k.b === 'kum' && set.addr ? ' · ' + e(set.addr) : ''}${set.phone ? ' · <a href="tel:' + e(String(set.phone).replace(/[^\d+]/g, '')) + '">' + e(set.phone) + '</a>' : ''}</div></div></div>
+      <div class="meta"><div><b>Receipt #${e(sale.id)}</b><br><span class="mut">${e(when)}</span></div>${sale.custName ? `<div style="text-align:right"><span class="mut">Customer</span><br><b>${e(sale.custName)}</b></div>` : ''}</div>
+      <table>${rows}</table>
+      ${sale.disc ? line('Discount', '−' + m(sale.disc)) : ''}${sale.dfee ? line('Delivery fee', m(sale.dfee)) : ''}${line('Total', m(sale.total), 'b')}
+      ${pays.map((p) => line('Paid by ' + (p.m === 'Online' ? 'Mobile Money / card (online)' : p.m), m(p.amt))).join('')}
+      ${refunded ? line('Refunded', '−' + m(refunded)) : ''}${sale.tax ? line('Includes tax (' + (sale.taxRate || '') + '%)', m(sale.tax), 'mut') : ''}
+      ${line('Served by', sale.byName || '—', 'mut')}
+      <div class="paid">${refunded >= sale.total ? 'Refunded' : (sale.online ? '✓ Paid online' : '✓ Paid')}</div>
+      <p class="thanks">${e(set.footer || 'Thank you!')}</p></div>
+      <p class="shopon"><a href="/">🛍️ Shop online at ${e(String(hostOf(req)).replace(/^https:\/\//, ''))}</a></p>`;
+    return html(200, body, 'Receipt #' + sale.id + ' · ' + (set.name || 'Renatel Shop'));
+  }
+  const RPAGE = (title, body) => `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${title.replace(/</g, '&lt;')}</title><link rel="icon" href="/logo-icon.svg">
+<style>:root{--g:#0b7a4b;--ink:#1b1f1d;--mut:#6e7571;--line:#ebedeb}*{box-sizing:border-box}body{margin:0;background:#f4f5f3;color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:20px 14px 40px}
+.box{max-width:460px;margin:0 auto;background:#fff;border-radius:18px;padding:22px;box-shadow:0 4px 18px rgba(0,0,0,.06)}.head{display:flex;gap:12px;align-items:center;padding-bottom:14px;border-bottom:2px dashed var(--line)}.head img{border-radius:12px;flex:none}
+h1{font-size:19px;margin:0}h2{margin:0 0 6px}.mut,small{color:var(--mut)}a{color:var(--g)}.meta{display:flex;justify-content:space-between;gap:10px;margin:14px 0 4px}
+table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-bottom:1px solid var(--line);vertical-align:top}.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.r{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-variant-numeric:tabular-nums}.r.b{font-weight:700;font-size:19px;border-top:2px solid var(--ink);margin-top:6px;padding-top:9px}.r.mut{font-size:13px}
+.paid{display:inline-block;margin-top:14px;padding:5px 12px;border-radius:99px;background:#e7f4ee;color:var(--g);font-weight:700}.thanks{text-align:center;color:var(--mut);margin:18px 0 0}.shopon{text-align:center;margin-top:16px;font-weight:600}
+@media print{body{background:#fff;padding:0}.box{box-shadow:none}.shopon{display:none}}</style></head><body>${body}</body></html>`;
 
   // ---- orders (kept in their own collection; the tills ignore it) ----
   const ORD = 'webOrders';
@@ -190,6 +286,7 @@ module.exports = function store(d) {
     await putOrder(ref, o);
     prodAt = 0;
     serverLog('Sale', '#' + saleId + ' · ' + money(o.total) + ' · Online (' + via + ') · ' + BR[b].name + ' · ' + o.name + ' ' + o.phone + (o.region ? ' (' + o.region + ')' : '') + ' · ' + (o.mode === 'delivery' ? 'delivery' : 'pickup') + ' · order ' + ref, WHO);
+    if (o.phone) smsReceipt(b, sale, o.phone, o.host || 'https://renatel.shop').then((r) => { o.sms = r.to; }).catch((e) => console.log('order sms: ' + e.message));
     if (o.email) {
       const lines = items.map((i) => i.qty + ' × ' + i.name + '  ' + money(i.price * i.qty)).join('\n');
       sendEmail({ to: [o.email], subject: (set.name || 'Renatel Shop') + ' - order ' + ref + ' confirmed',
@@ -244,8 +341,41 @@ module.exports = function store(d) {
       if (url.startsWith('/api/store/admin/')) {
         const who = await caller(req);
         if (who.err) return send(res, who.err[0], { error: who.err[1] });
-        const st = who.staff, need = url.includes('/order') ? 'orders' : url.includes('/customer') ? 'customers' : url.endsWith('/pay') ? 'pay' : '';
-        if (!st || (need === 'pay' ? st.role !== 'owner' || st.locked : !webCan(st, need))) return send(res, 403, { error: need === 'pay' ? 'Only the owner can change payment settings.' : 'You don’t have access to this part of the online shop. Ask the owner.' });
+        const st = who.staff;
+        // Any logged-in staff member can text a customer their receipt after a sale.
+        if (req.method === 'POST' && url === '/api/store/admin/sms/receipt') {
+          if (!st || st.locked) return send(res, 403, { error: 'Please log in again.' });
+          if (!allow(req, 120, 'smsr')) return send(res, 429, { error: 'Too many SMS from this device. Try again later.' });
+          const m = await json(req), b = brOf(m && m.b), id = Number(m && m.id), phone = normPhone(m && m.phone);
+          if (!id || !phone) return send(res, 400, { error: 'A sale number and a valid phone number are needed.' });
+          const sale = await getSale(b, id, 12000);
+          if (!sale) return send(res, 404, { error: 'The sale is not saved online yet. Try again in a moment.' });
+          try { return send(res, 200, await smsReceipt(b, sale, phone, hostOf(req), st)); }
+          catch (e) { console.log('sms receipt: ' + e.message); return send(res, 502, { error: e.message }); }
+        }
+        const need = url.includes('/order') ? 'orders' : url.includes('/customer') ? 'customers' : url.endsWith('/pay') || url.includes('/sms') ? 'pay' : '';
+        if (!st || (need === 'pay' ? st.role !== 'owner' || st.locked : !webCan(st, need))) return send(res, 403, { error: need === 'pay' ? 'Only the owner can change payment and SMS settings.' : 'You don’t have access to this part of the online shop. Ask the owner.' });
+        if (url === '/api/store/admin/sms' || url === '/api/store/admin/sms/test') {
+          const info = async () => { const c = await smsCfg(true); let balance = null, err = ''; if (c.token) { try { const j = await usms('/balance', null, c.token); balance = j.data && (j.data.remaining_balance ?? j.data.balance ?? null); } catch (e) { err = e.message; } }
+            return { configured: !!(c.token && c.sender), sender: c.sender, hint: c.token ? c.token.split('|')[0] + '|…' + c.token.slice(-4) : '', balance, error: err }; };
+          if (req.method === 'GET') return send(res, 200, await info());
+          const m = await json(req) || {};
+          if (url.endsWith('/test')) {
+            try { await sendSms(m.to, 'Test from ' + (((await shopMain(false)) || {}).set || {}).name + ': SMS receipts are working. Customers will get a thank-you SMS with a link to their receipt.'); serverLog('Test SMS sent', 'to ' + normPhone(m.to), st); return send(res, 200, { ok: true }); }
+            catch (e) { return send(res, 400, { error: e.message }); }
+          }
+          const token = m.token === undefined ? null : String(m.token).replace(/\s+/g, ''), sender = m.sender === undefined ? null : String(m.sender).trim();
+          console.log('sms: settings change by ' + st.name + (token ? ' (new token ' + token.split('|')[0] + '|…, ' + token.length + ' chars)' : '') + (sender !== null ? ' sender "' + sender + '"' : ''));
+          if (token && !/^[0-9]+\|[A-Za-z0-9]{20,120}$/.test(token)) return send(res, 400, { error: 'That doesn’t look like a USMS-GH API token. It looks like 1234|AbCd… : copy it with the copy icon on the USMS-GH Developers page.' });
+          if (sender !== null && sender && !/^[A-Za-z0-9 ]{2,11}$/.test(sender)) return send(res, 400, { error: 'The sender ID must be 2–11 letters or numbers (for example Renatelshop), exactly as approved in USMS-GH.' });
+          if (token) { try { await usms('/balance', null, token); } catch (e) { return send(res, 400, { error: 'USMS-GH did not accept this token (' + e.message + '). Regenerate it in USMS-GH → Developers and copy it again.' }); } }
+          try {
+            if (token !== null) await sbCall('site_secret_set', { p_name: 'usms_token', p_value: token });
+            if (sender !== null) await sbCall('site_secret_set', { p_name: 'usms_sender', p_value: sender });
+          } catch (e) { console.error('sms save', e.message); return send(res, 502, { error: 'Could not save. Try again.' }); }
+          serverLog('SMS settings changed', (token ? 'USMS-GH token saved · ' : token === '' ? 'token removed · ' : '') + (sender !== null ? 'sender ID “' + sender + '”' : ''), st);
+          return send(res, 200, await info());
+        }
         if (url === '/api/store/admin/pay') {
           const host = 'https://' + String(req.headers['x-forwarded-host'] || req.headers.host || 'renatel.shop').split(',')[0].trim();
           const info = () => ({ mode: mode(), source: PK.src, hint: KEY() ? KEY().slice(0, 8) + '…' + KEY().slice(-4) : '', webhook: host + '/api/store/paystack', callback: host + '/store/done/' });
@@ -407,7 +537,7 @@ module.exports = function store(d) {
         }
         total = r2(total);
         const ref = 'RS' + crypto.randomBytes(8).toString('hex').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10).padEnd(10, '0');
-        const o = { status: 'pending', created: Date.now(), branch, region, items, total, name, phone, email, acct: phone, mode: dmode, addr, city, note, pay: mode(), ip: clientIp(req) };
+        const o = { status: 'pending', created: Date.now(), host: hostOf(req), branch, region, items, total, name, phone, email, acct: phone, mode: dmode, addr, city, note, pay: mode(), ip: clientIp(req) };
         await putOrder(ref, o);
         cust.a.orders = (cust.a.orders || []).concat(ref).slice(-50); if (region && !cust.a.region) cust.a.region = region;
         await acctPut(phone, cust.a, false);
@@ -459,5 +589,5 @@ module.exports = function store(d) {
     } catch (e) { res.writeHead(500, { 'Content-Type': 'text/plain' }); res.end('The online shop page is missing.'); }
   }
 
-  return { api, page, isLive: () => mode() === 'paystack' };
+  return { api, page, receiptPage, isLive: () => mode() === 'paystack' };
 };

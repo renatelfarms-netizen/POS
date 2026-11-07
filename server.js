@@ -565,6 +565,8 @@ http.createServer((req, res) => {
   }
   // renatel.shop is the online shop; the staff POS is at /pos. Old /store links keep working.
   if ((url === '/' || url === '/store' || url.startsWith('/store/')) && (req.method === 'GET' || req.method === 'HEAD')) return shopStore.page(req, res);
+  const rm = url.match(/^\/r\/([A-Za-z0-9._-]{4,40})$/);
+  if (rm && (req.method === 'GET' || req.method === 'HEAD')) { shopStore.receiptPage(req, res, rm[1]).catch((e) => { console.error(e); res.writeHead(500); res.end(); }); return; }
   const im = url.match(/^\/img\/([a-f0-9]{24})(?:\.(?:jpg|png|webp))?$/);
   if (im && (req.method === 'GET' || req.method === 'HEAD')) { photoServe(req, res, im[1]).catch(() => { res.writeHead(500); res.end(); }); return; }
   if (url.startsWith('/api/')) {

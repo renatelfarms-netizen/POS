@@ -405,7 +405,7 @@ function checkout(){
  const s={id:id(),ts:Date.now(),items,sub:c.sub,disc:c.disc,sdisc:c.sd,total,method:pays.length>1?'Split':pays[0].m,pays,tend:tv,change:chg,cust:cust?+cust:null,custName:cust?cu(cust).name:'',by:me.id,byName:me.name,tax:db.set.tax?total*db.set.tax/(100+db.set.tax):0,taxRate:db.set.tax,refunds:[],dfee:fee};db.sales.push(s);
  if(dlv.on){const d={id:id(),ts:Date.now(),sale:s.id,name:bn,phone:buyer.phone.trim(),addr:dlv.addr.trim(),region:dlv.region,city:dlv.city,gps:dlv.gps.trim(),note:dlv.note.trim(),items:items.map(i=>i.qty+' × '+i.name).join(', '),fee,rider:+dlv.rider||null,status:'Pending',by:me.name,byId:me.id,when:dlv.when||'',cod:cod?total:0,codPaid:false};db.deliveries.push(d);s.dlv=d.id;logit('New delivery','#'+d.id+' for sale #'+s.id+' · '+bn+(cod?' · pay on delivery '+money(total):'')+(d.rider?' · rider '+stf(d.rider):''))}
  logit('Sale','#'+s.id+' · '+money(total)+' · '+pays.map(x=>x.m+(pays.length>1?' '+money(x.amt):'')).join(' + ')+(c.disc?' · discount '+money(c.disc):''));save();
- cart=[];sdisc='';split=null;tend='';buyer={phone:'',name:''};cust='';dlv={on:false,addr:'',region:'',city:'',gps:'',fee:'',rider:'',when:'',note:'',cod:false};showReceipt(s);if(ONWEB&&db.set.autoPrint)setTimeout(printRcpt,300);render()}
+ cart=[];sdisc='';split=null;tend='';buyer={phone:'',name:''};cust='';dlv={on:false,addr:'',region:'',city:'',gps:'',fee:'',rider:'',when:'',note:'',cod:false};showReceipt(s);if(ONWEB&&db.set.autoPrint)setTimeout(printRcpt,300);if(ONWEB&&bp&&db.set.smsAuto!==false)smsRcpt(s.id,bp,false);render()}
 function buyerLookup(fill){const m=$('#bmatch'),bp=normPh(buyer.phone);pwClear('bph','berr');pwClear('bnm','berr');if(!m)return;
  const c=bp.length>=10?db.customers.find(x=>normPh(x.phone)==bp):null;
  if(c&&!can('cust')){m.textContent='✓ Returning customer';m.className='ln';m.style.color='var(--ac)'}
@@ -427,12 +427,17 @@ function showReceipt(s){
  $('#rbtns').innerHTML=`${ONWEB?'<button class="btn pri" onclick="printRcpt()">🖨️ Print</button>':`<button class="btn pri" onclick="rcptPdf(${s.id})">Save PDF</button>`}<button class="btn" onclick="$('#modal').classList.remove('on')">Close</button>`;
  $('#modal').classList.add('on')}
 const sale=i=>db.sales.find(x=>x.id==i);
+async function smsAsk(i,ph){const v=await uiPrompt('Send the receipt by SMS to this phone number:',ph||'');if(v===null)return;if(normPh(v).length<10)return uiAlert('That phone number doesn’t look right.');smsRcpt(i,v,true)}
+async function smsRcpt(id,phone,manual){if(!ONWEB)return manual&&uiAlert('SMS receipts work on renatel.shop.');if(manual)toast('📱 Sending the receipt…','');
+ try{const r=await fetch('/api/store/admin/sms/receipt',{method:'POST',headers:Object.assign(authH(),{'Content-Type':'application/json'}),body:JSON.stringify({b:curB,id,phone})}),j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('The server answered '+r.status));toast('📱 Receipt sent by SMS','to '+j.to)}
+ catch(e){if(manual)uiAlert('The SMS was not sent: '+e.message);else if(!/not set up/i.test(e.message))toast('📱 SMS receipt not sent',e.message)}}
 function saleMenu(i){const s=sale(i);if(!s)return;const c=s.cust&&cu(s.cust),ph=c?c.phone:'',t=rcptText(s),close="$('#dlg').classList.remove('on');",A=[];
  const row=(ic,l,sub,js,cls)=>`<button class="smrow ${cls||''}" onclick="${close}${js}"><span class="smic">${ic}</span><span><b>${l}</b>${sub?`<small class="mut">${sub}</small>`:''}</span></button>`;
  A.push(row('🧾','View receipt','',`showReceipt(sale(${i}))`));
  if(ONWEB)A.push(row('🖨️','Print receipt','',`showReceipt(sale(${i}));setTimeout(printRcpt,150)`));
  A.push(row('📄','Save PDF','Download the receipt as a PDF',`rcptPdf(${i})`));
  A.push(row('📃','Invoice','A4 invoice to print, save or send',`showInvoice(${i})`));
+ if(ONWEB)A.push(row('📱','Send receipt by SMS',ph?'Thank-you text with a receipt link to '+esc(ph):'Thank-you text with a receipt link',`smsAsk(${i},'${esc(ph)}')`));
  A.push(`<a class="smrow" href="${esc(waLink(ph,t))}" target="_blank" rel="noopener" onclick="${close}"><span class="smic">🟢</span><span><b>Send by WhatsApp</b><small class="mut">${ph?'To '+esc(ph):'Pick the contact in WhatsApp'}</small></span></a>`);
  if(canEditSale()&&!(s.refunds||[]).length)A.push(row('✏️','Edit sale','Change items, prices or payment; stock and balances follow',`editDlg(${i})`));
  if(canRefund()&&refundable(s))A.push(row('↩️','Refund','Give money back for some or all items',`refundDlg(${i})`,'warn'));
@@ -1516,7 +1521,30 @@ function webSettings(ss){const F=(l,x)=>`<label class="fl" style="margin-top:10p
  ${F('Announcement shown at the top of the shop (optional)',`<input id="ws_msg" maxlength="160" value="${esc(ss.msg)}" placeholder="e.g. Free delivery in Kumasi this week!">`)}
  ${F('Delivery note shown at checkout (optional)',`<input id="ws_dnote" maxlength="160" value="${esc(ss.dnote)}" placeholder="e.g. Delivery fee is agreed on the phone. Same-day in Accra and Kumasi.">`)}
  <div class="form" style="margin-top:12px"><button class="btn pri" onclick="webSaveSet()">Save settings</button></div>
- </div>${me.role=='owner'?payCard():`<p class="mut ln" style="margin:12px 0 0">💳 Payment settings are managed by the owner.</p>`}`}
+ </div>${me.role=='owner'?payCard()+smsCard():`<p class="mut ln" style="margin:12px 0 0">💳 Payment and 📱 SMS settings are managed by the owner.</p>`}`}
+let SMS=null;
+function smsCard(){if(!SMS){SMS={busy:true};webApi('/api/store/admin/sms').then(j=>{SMS=j}).catch(e=>{SMS={err:e.message}}).finally(()=>{if(tab=='web'&&webTab=='settings'&&!busy())render()})}
+ if(SMS.busy)return `<div class="card" style="margin-top:12px"><b>📱 SMS receipts</b><div class="rbig">${RING()}</div></div>`;
+ if(SMS.err)return `<div class="card" style="margin-top:12px"><b>📱 SMS receipts</b><p class="bad">${esc(SMS.err)}</p><button class="btn" onclick="SMS=null;render()">Try again</button></div>`;
+ const auto=db.set.smsAuto!==false,F=(l,x)=>`<label class="fl" style="margin-top:8px"><span class="mut">${l}</span>${x}</label>`,msg=db.set.smsMsg||'Thank you for shopping at {shop}, {name}! Receipt #{no}, GHS {total}. View it here: {link}';
+ return `<div class="card" style="margin-top:12px"><b>📱 SMS receipts · USMS-GH</b>
+ <p class="ln" style="margin:8px 0">${SMS.configured?`<span class="pill ok">✔ Connected</span> Sender <b>${esc(SMS.sender)}</b>${SMS.balance!=null?` · balance <b>${esc(SMS.balance)}</b>`:''}${SMS.error?` <span class="bad">· ${esc(SMS.error)}</span>`:''}`:'<span class="pill low">Not connected</span> After every purchase, customers get a thank-you SMS with a link to their receipt.'}</p>
+ <div class="aclist"><label class="acrow"><span><b>Send automatically after every sale</b><br><small class="mut">At the till when the buyer’s phone is entered, and for every paid online order.</small></span><input type="checkbox" class="sw" ${auto?'checked':''} onchange="db.set.smsAuto=this.checked;logit('Settings changed','SMS receipts '+(this.checked?'on':'off'));save()"></label></div>
+ ${F('USMS-GH <b>API Token</b> (USMS-GH → Developers)',`<input id="smstok" type="password" autocomplete="off" spellcheck="false" placeholder="${SMS.hint?esc(SMS.hint)+' (saved)':'1234|AbCd…'}">`)}
+ ${F('Sender ID (approved in USMS-GH, max 11 letters)',`<input id="smssnd" maxlength="11" value="${esc(SMS.sender||'')}" placeholder="Renatelshop">`)}
+ ${F('Message (use {shop} {name} {no} {total} {link})',`<textarea id="smsmsg" rows="3" maxlength="300">${esc(msg)}</textarea>`)}
+ <p id="smsm" class="msg" style="margin-top:6px"></p>
+ <div class="form" style="margin-top:8px"><button class="btn pri" onclick="smsSave(this)">Check &amp; save</button>${SMS.configured?`<button class="btn" onclick="smsTest(this)">Send test SMS</button>`:''}</div></div>`}
+async function smsSave(b){const m=$('#smsm'),say=(t,ok)=>{m.style.color=ok?'var(--ac)':'';m.textContent=t};
+ try{const tok=($('#smstok').value||'').replace(/\s+/g,''),snd=$('#smssnd').value.trim(),msg=$('#smsmsg').value.trim();
+  if(!msg.includes('{link}'))return say('✖ The message must include {link} so customers can open their receipt.');
+  if(msg!==(db.set.smsMsg||'')){db.set.smsMsg=msg;logit('Settings changed','SMS receipt message');save()}
+  const body={};if(tok)body.token=tok;if(snd!==(SMS.sender||''))body.sender=snd;
+  if(!Object.keys(body).length){say('✔ Saved.',true);return}
+  b.disabled=true;say('⏳ Checking with USMS-GH…',true);SMS=await webApi('/api/store/admin/sms',{method:'POST',body:JSON.stringify(body)});render();const m2=$('#smsm');if(m2){m2.style.color='var(--ac)';m2.textContent=SMS.configured?'✔ Saved. SMS receipts are connected.':'✔ Saved. Add the '+(SMS.sender?'token':'sender ID')+' to finish.'}}
+ catch(e){say('✖ '+e.message+' Nothing was changed.');b.disabled=false}}
+async function smsTest(b){const to=await uiPrompt('Send a test SMS to which phone number?',(me.phone||''));if(!to)return;b.disabled=true;
+ try{await webApi('/api/store/admin/sms/test',{method:'POST',body:JSON.stringify({to})});toast('📱 Test SMS sent','to '+to)}catch(e){uiAlert('The test SMS was not sent: '+e.message)}b.disabled=false}
 let PAY=null;
 function payCard(){if(!PAY){PAY={busy:true};webApi('/api/store/admin/pay').then(j=>{PAY=j}).catch(e=>{PAY={err:e.message}}).finally(()=>{if(tab=='web'&&webTab=='settings'&&!busy())render()})}
  if(PAY.busy)return `<div class="card" style="margin-top:12px"><b>💳 Payments</b><div class="rbig">${RING()}</div></div>`;
