@@ -172,7 +172,8 @@ const lines=()=>Object.entries(cart).map(([id,n])=>({p:P(id),n})).filter(x=>x.p&
 const total=()=>lines().reduce((t,x)=>t+x.p.price*x.n,0);
 async function call(u,o){const r=await fetch(u,Object.assign({headers:{'Content-Type':'application/json'}},o||{}));let j={};try{j=await r.json()}catch(e){}if(!r.ok)throw new Error(j.error||'Something went wrong. Try again.');return j}
 
-async function load(){try{const j=await call('/api/store/info');S=j;document.title=j.name+' · Shop online';$('#shopname').textContent=j.name;
+async function info(){for(let i=0;;i++){try{return await call('/api/store/info')}catch(e){if(i>=4)throw e;await new Promise(r=>setTimeout(r,2500))}}}
+async function load(){try{const j=await info();S=j;document.title=j.name+' · Shop online';$('#shopname').textContent=j.name;
   $('#testbar').hidden=j.mode!='test';
   if(j.phone)$('#calllink').href='tel:'+j.phone.replace(/[^\d+]/g,'');else $('#calllink').hidden=true;
   $('#foot').innerHTML=`<b>${esc(j.name)}</b>${j.addr||j.city?' · '+esc([j.addr,j.city].filter(Boolean).join(', ')):''}${j.phone?' · <a href="tel:'+esc(j.phone.replace(/[^\d+]/g,''))+'">'+esc(j.phone)+'</a>':''}<br><span style="opacity:.75">Pay securely with Mobile Money or card${j.mode=='paystack-test'?' · Paystack test mode':''}.</span>`;
