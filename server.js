@@ -769,6 +769,22 @@ async function platformApi(req, res, url) {
       await adminHash(true); console.log('admin password changed');
       return send(res, 200, { ok: true, token: adminToken() });
     }
+    // Shared SMS account: on/off for all shops, and per shop.
+    if (url === '/api/platform/admin/sms') {
+      let v = await sharedCfg(true); if (!v) return send(res, 502, { error: 'Could not read the SMS settings.' });
+      if (req.method === 'POST') {
+        let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+        const cfg = { on: !!v.on, off: Array.isArray(v.off) ? v.off.filter((x) => typeof x === 'string') : [] };
+        if (typeof m.on === 'boolean') cfg.on = m.on;
+        if (m.id && typeof m.shopOn === 'boolean') { cfg.off = cfg.off.filter((x) => x !== m.id); if (!m.shopOn) cfg.off.push(String(m.id).slice(0, 40)); }
+        try { await sbCall('mt_kv_set', { p_k: 'shared_sms', p_v: JSON.stringify(cfg) }); } catch (e) { console.error('shared sms save', e.message); return send(res, 502, { error: 'Could not save.' }); }
+        console.log('shared sms: ' + (cfg.on ? 'on' : 'off') + ', off for ' + cfg.off.length + ' shop(s)');
+        v = await sharedCfg(true); for (const st of stores.values()) st.smsReset && st.smsReset();
+      }
+      let balance = null;
+      if (v.token) { try { const r = await fetch((process.env.USMS_API || 'https://webapp.usmsgh.com/api') + '/balance', { headers: { Authorization: 'Bearer ' + v.token, Accept: 'application/json' }, signal: AbortSignal.timeout(10000) }); const j = await r.json(); balance = j.data && (j.data.remaining_balance ?? j.data.balance ?? null); } catch (e) {} }
+      return send(res, 200, { ok: true, on: !!v.on, off: v.off || [], sender: v.sender || '', ready: !!v.ready, balance });
+    }
     if (req.method === 'GET' && url === '/api/platform/admin/view') {
       const r = ((await sbCall('mt_shop_list', {})) || []).find((x) => x.id === q.get('id')); if (!r) return send(res, 404, { error: 'Shop not found.' });
       try { return send(res, 200, Object.assign({ ok: true }, await shopView(r))); } catch (e) { console.error('view', e.message); return send(res, 502, { error: 'Could not load the shop.' }); }
@@ -830,11 +846,18 @@ async function photoServe(req, res, key) {
 // ---- online shop, receipts, invoices, SMS (store.js): one instance per shop, each with its own caches and keys ----
 const makeStore = require('./store');
 const stores = new Map(); // shop id -> store instance (created inside the shop's context)
+// Shared SMS account: the platform owner's USMS-GH account, lent to shops without their own while the admin switch is on.
+let shSms = { at: 0, v: null };
+async function sharedCfg(fresh) {
+  if (fresh || Date.now() - shSms.at > 30000) { try { shSms = { at: Date.now(), v: await sbCall('mt_shared_sms', {}) }; } catch (e) { console.error('shared sms', e.message); shSms = { at: Date.now(), v: null }; } }
+  return shSms.v;
+}
+async function sharedSms() { const v = await sharedCfg(false); return v && v.on && v.token && !(v.off || []).includes(SID()) ? { token: v.token, sender: v.sender } : null; }
 const hostName = () => String(process.env.PLATFORM_HOST || 'lavenderblush-gull-669222.hostingersite.com').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 function store() {
   const id = SID(); if (id === '-') throw new Error('No shop');
   if (!stores.has(id)) stores.set(id, makeStore({ sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS, caller,
-    multi: true, noTimers: true, host: hostName(), base: () => '/' + T().shop.slug, scope: () => 'shop:' + SID() + ':', siteUrl: () => 'https://' + hostName() }));
+    multi: true, noTimers: true, sharedSms, host: hostName(), base: () => '/' + T().shop.slug, scope: () => 'shop:' + SID() + ':', siteUrl: () => 'https://' + hostName() }));
   return stores.get(id);
 }
 // Credit reminders: every 10 minutes, for every open shop (each shop's own SMS account; sent once a day per customer).

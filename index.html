@@ -1629,10 +1629,10 @@ function smsCard(){if(!SMS){SMS={busy:true};webApi('/api/store/admin/sms').then(
  if(SMS.err)return `<div class="card" style="margin-top:12px"><b>📱 SMS receipts</b><p class="bad">${esc(SMS.err)}</p><button class="btn" onclick="SMS=null;render()">Try again</button></div>`;
  const auto=db.set.smsAuto!==false,F=(l,x)=>`<label class="fl" style="margin-top:8px"><span class="mut">${l}</span>${x}</label>`,msg=db.set.smsMsg||'Thank you for shopping at {shop}, {name}! Receipt #{no}, GHS {total}. View it here: {link}';
  return `<div class="card" style="margin-top:12px"><b>📱 SMS receipts · USMS-GH</b>
- <p class="ln" style="margin:8px 0">${SMS.configured?`<span class="pill ok">✔ Connected</span> Sender <b>${esc(SMS.sender)}</b>${SMS.balance!=null?` · balance <b>${esc(SMS.balance)}</b>`:''}${SMS.error?` <span class="bad">· ${esc(SMS.error)}</span>`:''}`:'<span class="pill low">Not connected</span> After every purchase, customers get a thank-you SMS with a link to their receipt.'}</p>
+ <p class="ln" style="margin:8px 0">${SMS.shared?`<span class="pill ok">✔ Connected</span> Using the platform’s shared SMS account · sender <b>${esc(SMS.sender)}</b><br><small class="mut">To send from your own name, paste your own USMS-GH token and sender ID below.</small>`:SMS.configured?`<span class="pill ok">✔ Connected</span> Sender <b>${esc(SMS.sender)}</b>${SMS.balance!=null?` · balance <b>${esc(SMS.balance)}</b>`:''}${SMS.error?` <span class="bad">· ${esc(SMS.error)}</span>`:''}`:'<span class="pill low">Not connected</span> After every purchase, customers get a thank-you SMS with a link to their receipt.'}</p>
  <div class="aclist"><label class="acrow"><span><b>Send automatically after every sale</b><br><small class="mut">At the till when the buyer’s phone is entered, and for every paid online order.</small></span><input type="checkbox" class="sw" ${auto?'checked':''} onchange="db.set.smsAuto=this.checked;logit('Settings changed','SMS receipts '+(this.checked?'on':'off'));save()"></label></div>
  ${F('USMS-GH <b>API Token</b> (USMS-GH → Developers)',`<input id="smstok" type="password" autocomplete="off" spellcheck="false" placeholder="${SMS.hint?esc(SMS.hint)+' (saved)':'1234|AbCd…'}">`)}
- ${F('Sender ID (approved in USMS-GH, max 11 letters)',`<input id="smssnd" maxlength="11" value="${esc(SMS.sender||'')}" placeholder="Renatelshop">`)}
+ ${F('Sender ID (approved in USMS-GH, max 11 letters)',`<input id="smssnd" maxlength="11" value="${SMS.shared?'':esc(SMS.sender||'')}" placeholder="${window.SHOP?'YourShop':'Renatelshop'}">`)}
  ${F('Message (use {shop} {name} {no} {total} {link})',`<textarea id="smsmsg" rows="3" maxlength="300">${esc(msg)}</textarea>`)}
  <p id="smsm" class="msg" style="margin-top:6px"></p>
  <div class="form" style="margin-top:8px"><button class="btn pri" onclick="smsSave(this)">Check &amp; save</button>${SMS.configured?`<button class="btn" onclick="smsTest(this)">Send test SMS</button>`:''}</div></div>`}
@@ -1640,7 +1640,7 @@ async function smsSave(b){const m=$('#smsm'),say=(t,ok)=>{m.style.color=ok?'var(
  try{const tok=($('#smstok').value||'').replace(/\s+/g,''),snd=$('#smssnd').value.trim(),msg=$('#smsmsg').value.trim();
   if(!msg.includes('{link}'))return say('✖ The message must include {link} so customers can open their receipt.');
   if(msg!==(db.set.smsMsg||'')){db.set.smsMsg=msg;logit('Settings changed','SMS receipt message');save()}
-  const body={};if(tok)body.token=tok;if(snd!==(SMS.sender||''))body.sender=snd;
+  const body={};if(tok)body.token=tok;if(snd!==(SMS.shared?'':SMS.sender||''))body.sender=snd;
   if(!Object.keys(body).length){say('✔ Saved.',true);return}
   b.disabled=true;say('⏳ Checking with USMS-GH…',true);SMS=await webApi('/api/store/admin/sms',{method:'POST',body:JSON.stringify(body)});render();const m2=$('#smsm');if(m2){m2.style.color='var(--ac)';m2.textContent=SMS.configured?'✔ Saved. SMS receipts are connected.':'✔ Saved. Add the '+(SMS.sender?'token':'sender ID')+' to finish.'}}
  catch(e){say('✖ '+e.message+' Nothing was changed.');b.disabled=false}}

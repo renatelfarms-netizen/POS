@@ -92,3 +92,22 @@ begin perform _mt_check(p_token);
 
 revoke all on function mt_photo_put, mt_photo_get, mt_acct_get, mt_acct_put, mt_acct_list, mt_ssecret_get, mt_ssecret_set, mt_otp_set, mt_otp_get, mt_otp_mark, mt_order_claim, mt_stock_take, mt_job_once from public, anon, authenticated;
 grant execute on function mt_photo_put, mt_photo_get, mt_acct_get, mt_acct_put, mt_acct_list, mt_ssecret_get, mt_ssecret_set, mt_otp_set, mt_otp_get, mt_otp_mark, mt_order_claim, mt_stock_take, mt_job_once to anon;
+
+-- Shared SMS account (platform owner's USMS-GH, from site_secrets) for shops without their own; switch kept in mt_kv 'shared_sms'.
+create or replace function mt_kv_get(p_token text, p_k text) returns text language plpgsql security definer set search_path = public, extensions as $$
+begin perform _mt_check(p_token); if p_k not in ('admin_pw','shared_sms') then return null; end if; return (select v from mt_kv where k = p_k); end $$;
+create or replace function mt_kv_set(p_token text, p_k text, p_v text) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+begin perform _mt_check(p_token); if p_k not in ('admin_pw','shared_sms') then raise exception 'unknown key'; end if;
+  insert into mt_kv (k, v) values (p_k, p_v) on conflict (k) do update set v = excluded.v, updated_at = now();
+  return jsonb_build_object('ok', true); end $$;
+create or replace function mt_shared_sms(p_token text) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare cfg jsonb; tok text; snd text;
+begin perform _mt_check(p_token);
+  cfg := coalesce((select v::jsonb from mt_kv where k = 'shared_sms'), '{"on":false,"off":[]}'::jsonb);
+  select value into tok from site_secrets where name = 'usms_token';
+  select value into snd from site_secrets where name = 'usms_sender';
+  return jsonb_build_object('on', coalesce((cfg->>'on')::boolean, false), 'off', coalesce(cfg->'off', '[]'::jsonb), 'sender', coalesce(snd, ''), 'ready', tok is not null and snd is not null,
+    'token', case when coalesce((cfg->>'on')::boolean, false) then tok else null end);
+end $$;
+revoke all on function mt_shared_sms from public, anon, authenticated;
+grant execute on function mt_shared_sms to anon;
