@@ -1,6 +1,6 @@
 'use strict';
 // Web server for renatel.shop.
-// - Serves the shop page (index.html).
+// - renatel.shop/ is the online shop (store.html, store.js); the staff POS (index.html) is at /pos.
 // - Shared shop database: devices that joined with the shop code read and write one
 //   live copy of the shop in Supabase through /api/db.
 // - Online backup: the shop sends its data here; the server keeps a copy on the
@@ -563,7 +563,8 @@ http.createServer((req, res) => {
     shopStore.api(req, res, url).catch((e) => { console.error(e); send(res, 500, { error: 'Server error.' }); });
     return;
   }
-  if ((url === '/store' || url.startsWith('/store/')) && (req.method === 'GET' || req.method === 'HEAD')) return shopStore.page(req, res);
+  // renatel.shop is the online shop; the staff POS is at /pos. Old /store links keep working.
+  if ((url === '/' || url === '/store' || url.startsWith('/store/')) && (req.method === 'GET' || req.method === 'HEAD')) return shopStore.page(req, res);
   const im = url.match(/^\/img\/([a-f0-9]{24})(?:\.(?:jpg|png|webp))?$/);
   if (im && (req.method === 'GET' || req.method === 'HEAD')) { photoServe(req, res, im[1]).catch(() => { res.writeHead(500); res.end(); }); return; }
   if (url.startsWith('/api/')) {
@@ -575,8 +576,9 @@ http.createServer((req, res) => {
     return res.end();
   }
   if (url === '/robots.txt') {
+    // Search engines may list the shop once real payments are on; the POS and the API are never listed.
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    return res.end('User-agent: *\nDisallow: /\n');
+    return res.end(shopStore.isLive() ? 'User-agent: *\nAllow: /$\nDisallow: /pos\nDisallow: /api/\nDisallow: /store/\n' : 'User-agent: *\nDisallow: /\n');
   }
   // App icon and "Add to Home screen" details
   const ICONS = { '/icon-192.png': 'icon-192.png', '/icon-512.png': 'icon-512.png', '/apple-touch-icon.png': 'apple-touch-icon.png', '/apple-touch-icon-precomposed.png': 'apple-touch-icon.png', '/favicon.ico': 'icon-192.png' };
@@ -591,7 +593,7 @@ http.createServer((req, res) => {
   if (url === '/manifest.webmanifest') {
     res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'public, max-age=86400' });
     return res.end(JSON.stringify({
-      name: 'Renatel Shop', short_name: 'Renatel Shop', start_url: '/', scope: '/', display: 'standalone',
+      name: 'Renatel Shop POS', short_name: 'Renatel POS', start_url: '/pos', scope: '/', display: 'standalone',
       background_color: '#f6f5f1', theme_color: '#0f6e56',
       icons: [
         { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
@@ -599,7 +601,8 @@ http.createServer((req, res) => {
       ]
     }));
   }
-  // Every other address shows the shop page (it is a single-page app).
+  // The staff POS (a single-page app) at /pos; any other address goes to the shop.
+  if (!(url === '/pos' || url.startsWith('/pos/'))) { res.writeHead(302, { Location: '/' }); return res.end(); }
   try {
     const body = page();
     res.writeHead(200, Object.assign({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }, HEADERS));

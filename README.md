@@ -13,14 +13,14 @@ A point-of-sale system for a small retail shop, in a single file (`index.html`).
 - Ghana regions and towns for customers, deliveries and the shop address
 
 ## Using it
-The shop runs online at https://renatel.shop. Open it in any browser on a phone, tablet or computer. There is no app to install.
+The POS runs online at https://renatel.shop/pos (renatel.shop itself is the customers' online shop). Open it in any browser on a phone, tablet or computer. There is no app to install.
 
 On the website everything runs centrally from the host: nothing about the shop is stored on phones or computers, and devices are not registered or named. Staff open the shop with their own name and password (full name, either name, or the names in any order). `server.js` checks the login against the shop's staff list (`POST /api/login`) and gives that browser tab a signed session for one day; "Sign out every device" ends all sessions, and `POST /api/reset` resets a password with the shop recovery code. The shop lives in Supabase (`shop_docs`), reached only through locked-down database functions that accept the server's `SUPABASE_BACKUP_TOKEN`; record numbers come from a central sequence (`shop_ids`). Each person opens on their own branch (set on their staff record; the owner can use both).
 
 Backups are made by the server only: every 10 minutes, if anything changed, the whole shop is saved on the hosting (outside the website folder) and in Supabase; all backups from the last 2 days are kept, then one a day for 90 days. Owners and managers can press Back up now; only the owner can restore, which signs everyone out. Inside Claude, the page uses Claude's built-in shop database instead, and Gmail for emailed reports and reset codes.
 
 ## Online shop
-Customers buy at https://renatel.shop/store and pay online. **Every product in the POS is on the shop** (with its photo, price and live stock) unless the owner ticks **Hide from the online shop** in the product form.
+Customers buy at **https://renatel.shop** and pay online (old `/store` links still work). The staff POS is at **https://renatel.shop/pos** (a 🔐 POS button appears on the shop on staff devices). **Every product in the POS is on the shop** (with its photo, price and live stock) unless the owner ticks **Hide from the online shop** in the product form.
 
 Each customer is served by the **nearest branch**: on their first visit they choose their region or tap *Use my location*, and the shop picks Kumasi or Accra by distance (Greater Accra, Eastern, Central, Western and Volta → Accra; the rest → Kumasi). They see that branch's products and stock, and when the payment succeeds `store.js` records it in that branch like a till sale: stock goes down, a sale is added (seller "Online shop", method "Online"), a stock move and an activity entry are logged, and a delivery job is created if they chose delivery. Orders are handled one at a time, so the last item can never be sold twice; if an item sells out while someone is paying, the order is flagged in the activity trail for a refund.
 

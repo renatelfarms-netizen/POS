@@ -161,10 +161,11 @@ input.f:focus,textarea.f:focus{border-color:var(--g);box-shadow:0 0 0 3px var(--
 </head>
 <body>
 <header class="nav"><div class="wrap">
- <a class="logo" href="/store"><i>🛍️</i><b id="shopname">Shop online</b></a>
+ <a class="logo" href="/"><i>🛍️</i><b id="shopname">Shop online</b></a>
  <button class="catbtn" id="catbtn" onclick="goCats()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>Browse All Categories</span></button>
- <nav class="links" id="links"><a href="/store">Home</a><a href="/store#products">Shop</a><a href="/store#how">How it works</a><a id="calllink" href="#">Contact</a></nav>
+ <nav class="links" id="links"><a href="/">Home</a><a href="/#products">Shop</a><a href="/#how">How it works</a><a id="calllink" href="#">Contact</a></nav>
  <span class="sp"></span>
+ <a class="cartbtn" id="posbtn" href="/pos" hidden style="text-decoration:none;background:var(--y);color:var(--ink);border:0" title="Back to the staff POS">🔐 <span id="posl">POS</span></a>
  <button class="cartbtn" id="acctbtn" onclick="goAccount()" aria-label="My account"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg><span id="acctname">Sign in</span></button>
  <button class="cartbtn" id="cartbtn" onclick="openCart()" aria-label="Open cart"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>Cart <span class="n" id="cartn">0</span></button>
 </div></header>
@@ -217,6 +218,7 @@ const total=()=>lines().reduce((t,x)=>t+x.p.price*x.n,0);
 let ME=null;try{ME=JSON.parse(localStorage.getItem('rs-cust')||'null')}catch(e){}
 const saveMe=(t,me)=>{ME=t?{t,me}:(ME?{t:ME.t,me}:null);try{if(ME)localStorage.setItem('rs-cust',JSON.stringify(ME));else localStorage.removeItem('rs-cust')}catch(e){}acctUI()};
 const signOut=()=>{ME=null;try{localStorage.removeItem('rs-cust')}catch(e){}acctUI()};
+try{if(localStorage.getItem('rs-pos-device')){const b=document.getElementById('posbtn');if(b)b.hidden=false}}catch(e){}
 function acctUI(){const n=$('#acctname');if(n)n.textContent=ME?ME.me.name.split(' ')[0]:'Sign in'}
 async function call(u,o){o=o||{};const h={'Content-Type':'application/json'};if(ME)h.Authorization='Bearer '+ME.t;const r=await fetch(u,Object.assign({},o,{headers:h}));let j={};try{j=await r.json()}catch(e){}if(!r.ok){if(r.status==401&&ME&&/\/api\/store\/(me|order)/.test(u))signOut();const e=new Error(j.error||'Something went wrong. Try again.');e.j=j;e.status=r.status;throw e}return j}
 
@@ -224,7 +226,7 @@ async function info(){for(let i=0;;i++){try{return await call('/api/store/info?b
 async function load(){try{const j=await info();S=j;document.title=j.name+' · Shop online';$('#shopname').textContent=j.name;
   $('#testbar').hidden=j.mode!='test';const st=j.store||{};$('#annbar').hidden=!st.msg&&st.open!==false;$('#annwrap').innerHTML=(st.open===false?'⛔ <b>We’re not taking online orders right now.</b> You can still look around. ':'')+(st.msg?'📣 '+esc(st.msg):'');
   if(j.phone)$('#calllink').href='tel:'+j.phone.replace(/[^\d+]/g,'');else $('#calllink').hidden=true;
-  $('#foot').innerHTML=`<b>${esc(j.name)}</b>${j.addr||j.city?' · '+esc([j.addr,j.city].filter(Boolean).join(', ')):''}${j.phone?' · <a href="tel:'+esc(j.phone.replace(/[^\d+]/g,''))+'">'+esc(j.phone)+'</a>':''}<br><span style="opacity:.75">Pay securely with Mobile Money or card${j.mode=='paystack-test'?' · Paystack test mode':''}.</span>`;
+  $('#foot').innerHTML=`<b>${esc(j.name)}</b>${j.addr||j.city?' · '+esc([j.addr,j.city].filter(Boolean).join(', ')):''}${j.phone?' · <a href="tel:'+esc(j.phone.replace(/[^\d+]/g,''))+'">'+esc(j.phone)+'</a>':''}<br><span style="opacity:.75">Pay securely with Mobile Money or card${j.mode=='paystack-test'?' · Paystack test mode':''}.</span><br><a href="/pos" style="opacity:.6;font-size:12px">Staff login</a>`;
   Object.keys(cart).forEach(id=>{const p=P(id);if(!p)delete cart[id];else cart[id]=Math.min(cart[id],p.left)});keep()}
  catch(e){$('#app').innerHTML=`<div class="page"><div class="wrap narrow box"><b>The shop can’t be reached</b><p class="mut">${esc(e.message)}</p><button class="pill" onclick="location.reload()">Try again</button></div></div>`;throw e}}
 
@@ -297,7 +299,7 @@ async function placeOrder(){const b=$('#paybtn'),m=$('#cmsg');m.textContent='';
  catch(e){if(e.j&&e.j.auth){signOut();step='auth';nextStep='checkout';return render()}m.textContent=e.message;b.disabled=false;b.textContent='Pay '+money(total());load().then(()=>{badge()}).catch(()=>{})}}
 
 const shell=h=>`<div class="page"><div class="wrap narrow">${h}</div></div>`;
-async function payView(ref){$('#app').innerHTML='<div class="spin"></div>';let o;try{o=await call('/api/store/order/'+ref)}catch(e){return $('#app').innerHTML=shell(`<div class="box"><b>Order not found</b><p class="mut">${esc(e.message)}</p><a class="pill" href="/store">Back to the shop</a></div>`)}
+async function payView(ref){$('#app').innerHTML='<div class="spin"></div>';let o;try{o=await call('/api/store/order/'+ref)}catch(e){return $('#app').innerHTML=shell(`<div class="box"><b>Order not found</b><p class="mut">${esc(e.message)}</p><a class="pill" href="/">Back to the shop</a></div>`)}
  if(o.status!='pending')return doneView(ref,o);
  $('#app').innerHTML=shell(`<div class="box paybox"><b style="font-size:19px">🧪 Test payment</b><p class="mut" style="margin:4px 0 12px">This screen stands in for Paystack while the shop is in test mode. No money is taken.</p>
   ${o.items.map(i=>`<div class="row"><span>${i.qty} × ${esc(i.name)}</span><b>${money(i.price*i.qty)}</b></div>`).join('')}<div class="tot"><span>Amount</span><span>${money(o.total)}</span></div>
@@ -311,9 +313,9 @@ async function testPay(ref,ok){const b=$('#okb');b.disabled=true;b.textContent='
 
 async function doneView(ref,o){$('#cartbtn').hidden=false;if(!o){$('#app').innerHTML='<div class="spin"></div><p class="mut" style="text-align:center">Checking your payment…</p>';
   for(let i=0;i<6;i++){try{o=await call('/api/store/order/'+ref)}catch(e){}if(o&&o.status!='pending')break;await new Promise(r=>setTimeout(r,2500))}}
- if(!o)return $('#app').innerHTML=shell(`<div class="box"><b>Order not found</b><p><a class="pill" href="/store">Back to the shop</a></p></div>`);
+ if(!o)return $('#app').innerHTML=shell(`<div class="box"><b>Order not found</b><p><a class="pill" href="/">Back to the shop</a></p></div>`);
  if(o.status=='paid'){cart={};keep();badge()}
- const box=(ic,h,body)=>shell(`<div class="box"><div class="bigic">${ic}</div><h2 style="text-align:center;margin:6px 0 10px">${h}</h2>${body}<a class="pill big" style="margin-top:16px" href="/store">Back to the shop</a></div>`);
+ const box=(ic,h,body)=>shell(`<div class="box"><div class="bigic">${ic}</div><h2 style="text-align:center;margin:6px 0 10px">${h}</h2>${body}<a class="pill big" style="margin-top:16px" href="/">Back to the shop</a></div>`);
  const items=o.items.map(i=>`<div class="row"><span>${i.qty} × ${esc(i.name)}</span><b>${money(i.price*i.qty)}</b></div>`).join('')+`<div class="tot"><span>Paid</span><span>${money(o.total)}</span></div>`;
  if(o.status=='paid')return $('#app').innerHTML=box('✅','Thank you, '+esc(o.name.split(' ')[0])+'!',`<p class="mut" style="text-align:center;margin-top:0">Payment received · Receipt <b style="color:var(--ink)">#${esc(o.saleId)}</b> · Order ${esc(ref)}</p>${items}<p>${o.mode=='delivery'?'🚚 We’ll call you to arrange the delivery.':'📦 Your order is ready to pick up at our '+esc(o.branchName||'shop')+'. Show your order number.'}</p>`);
  if(o.status=='paid_short')return $('#app').innerHTML=box('⚠️','Payment received',`<p>Sorry, an item sold out while you were paying. The shop has been told and will call you to refund or swap it.</p><p class="mut">Order ${esc(ref)}</p>`);
@@ -322,7 +324,7 @@ async function doneView(ref,o){$('#cartbtn').hidden=false;if(!o){$('#app').inner
 // ---- customer accounts ----
 let nextStep='shop',authMode='signup',au={name:'',phone:'',email:'',password:'',password2:'',code:'',sent:''};
 function goCheckout(){closeCart();if(!lines().length)return;step=ME?'checkout':'auth';nextStep='checkout';if(!ME)authMode='signup';render();scrollTo(0,0)}
-function goAccount(){closeCart();step=ME?'account':'auth';nextStep='account';if(!ME)authMode='signin';if(location.pathname!='/store'&&location.pathname!='/store/'){location.href='/store#account';return}render();scrollTo(0,0)}
+function goAccount(){closeCart();step=ME?'account':'auth';nextStep='account';if(!ME)authMode='signin';if(/^\/store\/(pay|done)\//.test(location.pathname)){location.href='/#account';return}render();scrollTo(0,0)}
 function authView(){const A=(k,t,ph,ac,lbl)=>`<label class="lbl">${lbl}</label><input class="f" id="a_${k}" type="${t}" value="${esc(au[k])}" placeholder="${ph}" autocomplete="${ac}" oninput="au.${k}=this.value" onkeydown="if(event.key=='Enter')authGo()">`;
  const why=nextStep=='checkout'?`<div style="background:var(--gl);border-radius:12px;padding:10px 12px;font-size:14px;margin-bottom:8px">🛒 Your cart is saved (${lines().reduce((t,x)=>t+x.n,0)} item${lines().reduce((t,x)=>t+x.n,0)==1?'':'s'}, ${money(total())}). ${authMode=='signin'?'Sign in':'Create a free account'} to check out.</div>`:'';
  let body;
@@ -363,7 +365,7 @@ function render(){if(step!='account')acc={orders:null,err:''};$('#app').innerHTM
 (async()=>{const m=location.pathname.match(/^\/store\/(pay|done)\/(RS[A-Z0-9]{10})/);
  try{await load()}catch(e){return}badge();
  acctUI();if(m){$('#cartbtn').hidden=m[1]=='pay';$('#catbtn').hidden=true;return m[1]=='pay'&&S.mode=='test'?payView(m[2]):doneView(m[2])}
- locBar();acctUI();if(location.hash=='#account'){step=ME?'account':'auth';nextStep='account';authMode='signin';history.replaceState(null,'','/store')}render();if(!LOC)setTimeout(locAsk,600);if(location.hash){const e=document.querySelector(location.hash);if(e)setTimeout(()=>e.scrollIntoView(),50)}})();
+ locBar();acctUI();if(location.hash=='#account'){step=ME?'account':'auth';nextStep='account';authMode='signin';history.replaceState(null,'','/')}render();if(!LOC)setTimeout(locAsk,600);if(location.hash){const e=document.querySelector(location.hash);if(e)setTimeout(()=>e.scrollIntoView(),50)}})();
 </script>
 </body>
 </html>

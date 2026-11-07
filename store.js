@@ -1,5 +1,5 @@
 'use strict';
-// Online shop for renatel.shop/store.
+// Online shop at renatel.shop (also /store).
 // Customers pick products, pay online, and the server records the sale in the POS exactly like a till sale:
 //   - stock is deducted from the product (same `stock` field the tills use)
 //   - a sale record is added (seller: "Online shop", method: "Online")
@@ -408,5 +408,5 @@ module.exports = function store(d) {
     } catch (e) { res.writeHead(500, { 'Content-Type': 'text/plain' }); res.end('The online shop page is missing.'); }
   }
 
-  return { api, page };
+  return { api, page, isLive: () => mode() === 'paystack' };
 };
