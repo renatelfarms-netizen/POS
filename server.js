@@ -140,7 +140,10 @@ async function hostGet(id) {
 // ---- copies in Supabase (through locked-down database functions) ----
 const sbOn = () => !!(process.env.SUPABASE_URL && process.env.SUPABASE_KEY && process.env.SUPABASE_BACKUP_TOKEN);
 // Per-shop database functions (schema.sql). Called inside a shop, the shop id is added automatically.
-const MT = { shop_db_pull: 'mt_db_pull', shop_db_get: 'mt_db_get', shop_db_put: 'mt_db_put', shop_db_del: 'mt_db_del', shop_ids: 'mt_ids', site_backup_save: 'mt_backup_save', site_backup_list: 'mt_backup_list', site_backup_get: 'mt_backup_get' };
+const MT = { shop_db_pull: 'mt_db_pull', shop_db_get: 'mt_db_get', shop_db_put: 'mt_db_put', shop_db_del: 'mt_db_del', shop_ids: 'mt_ids', site_backup_save: 'mt_backup_save', site_backup_list: 'mt_backup_list', site_backup_get: 'mt_backup_get',
+  shop_photo_put: 'mt_photo_put', shop_photo_get: 'mt_photo_get', web_acct_get: 'mt_acct_get', web_acct_put: 'mt_acct_put', web_acct_list: 'mt_acct_list',
+  site_secret_get: 'mt_ssecret_get', site_secret_set: 'mt_ssecret_set', otp_set: 'mt_otp_set', otp_get: 'mt_otp_get', otp_mark: 'mt_otp_mark',
+  web_order_claim: 'mt_order_claim', web_stock_take: 'mt_stock_take', job_once: 'mt_job_once' };
 async function sbCall(fn, args, bodyRaw) {
   if (MT[fn]) {
     if (!T().shop) throw new Error('No shop for ' + fn);
@@ -244,7 +247,7 @@ function serverLog(a, d, who) {
   const rec = { ts: Date.now(), sid: who && who.id != null ? who.id : null, who: (who && who.name) || '—', a, d: String(d || '').slice(0, 300) };
   logQueue = logQueue.then(async () => {
     for (let n = 0; n < 20; n++) {
-      const id = day + '_server_' + n, cur = await sbCall('shop_db_get', { p_col: 'log', p_id: id });
+      const id = day + '_server' + process.pid + '_' + n, cur = await sbCall('shop_db_get', { p_col: 'log', p_id: id }); // one document per process
       const recs = (cur && Array.isArray(cur.recs)) ? cur.recs : [];
       if (recs.length >= 300) continue;
       recs.push(Object.assign({ _c: id }, rec));
@@ -393,8 +396,8 @@ async function setPin(shop, sid, pw) {
   t.pin = await mkHash(pw); t.fails = 0; t.nextTry = 0; t.locked = false; t.mustChange = false; delete t.rst;
   await sbCall('shop_db_put', { p_col: 'shop', p_id: 'main', p_data: main }); scClear();
 }
-// Forgot password by email: a 6-digit code is emailed to the address saved on the staff record.
-const resetCodes = new Map(); // staff id -> {h, exp, tries}
+// Forgot password: a 6-digit code is sent by SMS to the phone on the staff record (or by email if chosen / no SMS).
+// Codes are kept as hashes in Supabase (one-time codes of this shop) so every server process can check them.
 async function resetCode(req, res) {
   if (!sbOn()) return send(res, 503, { error: 'The shop database is not set up on the server yet.' });
   const ip = 'em:' + clientIp(req), wait = tooMany(ip);
@@ -403,32 +406,34 @@ async function resetCode(req, res) {
   let shop; try { shop = await shopMain(true); } catch (e) { return send(res, 502, { error: 'Could not reach the shop database. Try again in a moment.' }); }
   const s = shop && findStaff(shop.staff || [], String(msg.name || '').slice(0, 80));
   if (!s) { failed(ip, 10); return send(res, 400, { error: 'No staff member with that name. Type your name as the owner added it.' }); }
-  if (!emailOK(s.email)) return send(res, 400, { error: 'No email is saved for ' + s.name + '. Use the recovery code, or ask the owner or a manager.' });
-  if (s.locked && s.role !== 'owner') { /* still allowed: the reset unlocks the account */ }
-  const prev = resetCodes.get(SID() + ':' + s.id);
-  if (prev && prev.sent && Date.now() - prev.sent < 60000) return send(res, 429, { error: 'A code was sent less than a minute ago. Check your email (and spam).' });
-  const code = String(100000 + crypto.randomInt(900000));
-  resetCodes.set(SID() + ':' + s.id, { h: sha('rst:' + code), exp: Date.now() + 15 * 60000, tries: 0, sent: Date.now() });
+  const st = store(), nm = (shop.set && shop.set.name) || PLATFORM, ph = st.normPhone(s.phone), smsOk = !!ph && await st.smsReady().catch(() => false);
+  const via = msg.via === 'email' ? 'email' : msg.via === 'sms' ? 'sms' : (smsOk ? 'sms' : 'email');
+  if (via === 'sms' && !smsOk) return send(res, 400, { error: ph ? 'SMS codes are not set up for this shop yet. Choose “Email me a code” or the recovery code.' : 'No phone number is saved for ' + s.name + '. Choose “Email me a code”, or ask the owner.' });
+  if (via === 'email' && !emailOK(s.email)) return send(res, 400, { error: 'No email is saved for ' + s.name + '.' + (smsOk ? ' Choose “Text me a code” instead.' : ' Use the recovery code, or ask the owner or a manager.') });
+  let code; try { code = await st.otpIssue('staff:' + s.id); } catch (e) { return send(res, e.code || 502, { error: e.message }); }
   failed(ip, 10);
   try {
-    await sendEmail({ to: [s.email], subject: (shop.set && shop.set.name || PLATFORM) + ' - password reset code: ' + code,
-      text: 'Hello ' + s.name + ',\n\nSomeone asked to reset your password for ' + (shop.set && shop.set.name || PLATFORM) + '. Your reset code is:\n\n    ' + code + '\n\nIt expires in 15 minutes. If this wasn’t you, ignore this email and tell the shop owner.\n\n-- \n' + PLATFORM });
-  } catch (e) { resetCodes.delete(SID() + ':' + s.id); return send(res, 502, { error: 'The code email could not be sent. Try again, or use the recovery code.' }); }
-  serverLog('Reset code emailed', 'to ' + maskEmail(s.email) + ' from the shop email', s);
-  return send(res, 200, { ok: true, to: maskEmail(s.email) });
+    if (via === 'sms') await st.sendSms(ph, st.otpSms(nm, code));
+    else await sendEmail({ to: [s.email], subject: nm + ' - password reset code: ' + code,
+      text: 'Hello ' + s.name + ',\n\nSomeone asked to reset your password for ' + nm + '. Your reset code is:\n\n    ' + code + '\n\nIt expires in 15 minutes. If this wasn’t you, ignore this email and tell the shop owner.\n\n-- \n' + PLATFORM });
+  } catch (e) { await sbCall('otp_mark', { p_k: 'staff:' + s.id, p_try: false }).catch(() => {}); console.log('reset code ' + via + ': ' + e.message); return send(res, 502, { error: 'The code could not be sent' + (via === 'sms' ? ' by SMS' : ' by email') + '. Try again, or use the recovery code.' }); }
+  const to = via === 'sms' ? ph.slice(0, 3) + '•••' + ph.slice(-3) : maskEmail(s.email);
+  serverLog('Reset code ' + (via === 'sms' ? 'sent by SMS' : 'emailed'), 'to ' + to, s);
+  return send(res, 200, { ok: true, via, to });
 }
 async function resetByEmail(req, res) {
   let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
   let shop; try { shop = await shopMain(true); } catch (e) { return send(res, 502, { error: 'Could not reach the shop database. Try again in a moment.' }); }
   const s = shop && findStaff(shop.staff || [], String(msg.name || '').slice(0, 80));
-  const rc = s && resetCodes.get(SID() + ':' + s.id);
-  if (!s || !rc || rc.exp < Date.now()) return send(res, 400, { error: 'That code has expired or was never sent. Send a new code.' });
-  if (rc.tries >= 5) { resetCodes.delete(SID() + ':' + s.id); return send(res, 429, { error: 'Too many wrong codes. Send a new code.' }); }
-  if (sha('rst:' + String(msg.code || '').replace(/\D/g, '')) !== rc.h) { rc.tries++; serverLog('Failed reset code', (5 - rc.tries) + ' tries left · on ' + SITE, s); return send(res, 401, { error: 'That code is not right. ' + (5 - rc.tries) + ' tries left.' }); }
+  if (!s) return send(res, 400, { error: 'That code has expired or was never sent. Send a new code.' });
   const pw = String(msg.password || '').slice(0, 200), rule = pwRule(pw, shop.set);
   if (rule) return send(res, 400, { error: rule });
-  await setPin(shop, s.id, pw); resetCodes.delete(SID() + ':' + s.id);
-  console.log('password reset by email code: ' + s.name); serverLog('Password reset', 'with a code emailed to ' + maskEmail(s.email) + ' · on ' + SITE, s);
+  const r = await store().otpCheck('staff:' + s.id, msg.code);
+  if (r === 'expired') return send(res, 400, { error: 'That code has expired or was never sent. Send a new code.' });
+  if (r === 'locked') return send(res, 429, { error: 'Too many wrong codes. Send a new code.' });
+  if (r !== 'ok') { serverLog('Failed reset code', r + ' tries left · on ' + SITE, s); return send(res, 401, { error: r > 0 ? 'That code is not right. ' + r + (r === 1 ? ' try' : ' tries') + ' left.' : 'That code is not right, and that was the last try. Send a new code.' }); }
+  await setPin(shop, s.id, pw);
+  console.log('password reset by code: ' + s.name); serverLog('Password reset', 'with a one-time code · on ' + SITE, s);
   return send(res, 200, { ok: true, token: makeToken(s.id, cleanDev(msg.dev)), sid: s.id, name: s.name, exp: Date.now() + SESSION_DAYS * 864e5 });
 }
 // Who is calling: a logged-in staff member (session token) or a device with the shop code.
@@ -454,6 +459,20 @@ async function caller(req) {
 
 // ---- API ----
 async function api(req, res, url) {
+  if (url.startsWith('/api/store/')) { const c = url === '/api/store/paystack' ? null : shopClosed(); if (c) return send(res, c[0], { error: c[1] }); return store().api(req, res, url); }
+  // ---- product photos: the page shrinks the picture first; it is kept in Supabase and cached on the hosting ----
+  if (req.method === 'POST' && url === '/api/photo') {
+    const who = await caller(req); if (who.err) return send(res, who.err[0], { error: who.err[1] });
+    let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+    const m = String(msg && msg.data || '').match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+    if (!m) return send(res, 400, { error: 'That file is not a photo (use JPG, PNG or WebP).' });
+    const buf = Buffer.from(m[2], 'base64');
+    if (buf.length > 1024 * 1024) return send(res, 413, { error: 'The photo is too big. Try a smaller one.' });
+    const key = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 24);
+    try { await sbCall('shop_photo_put', { p_key: key, p_mime: m[1], p_data: m[2] }); } catch (e) { console.error('photo put', e.message); return send(res, 502, { error: 'Could not save the photo. Try again.' }); }
+    photoCacheSave(key, m[1], buf);
+    return send(res, 200, { ok: true, key });
+  }
   if (req.method === 'POST' && url === '/api/login') return login(req, res);
   if (req.method === 'POST' && url === '/api/reset') return resetPw(req, res);
   if (req.method === 'POST' && url === '/api/reset/code') return resetCode(req, res);
@@ -791,12 +810,50 @@ function html(res, req, body, code) {
 const platInfo = (extra) => '<script>window.PLAT=' + jsonScript(Object.assign({ name: PLATFORM }, extra || {})) + '</script>';
 function landing(req, res, extra, code, f) { return html(res, req, file(f || LANDING).replace('<!--PLAT-->', platInfo(extra)), code); }
 const notFound = (req, res, slug) => landing(req, res, { notFound: String(slug).slice(0, 40) }, 404, LOGIN);
+// ---- product photos at /<shop>/img/<key> (cached on the hosting per shop, outside the website folder) ----
+const PHOTO_DIR = process.env.PHOTO_DIR || path.join(os.homedir(), 'tessa-photos');
+const PHOTO_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+const pdir = () => path.join(PHOTO_DIR, SID().replace(/[^A-Za-z0-9-]/g, ''));
+function photoCacheSave(key, mime, buf) {
+  const dir = pdir(); fsp.mkdir(dir, { recursive: true }).then(() => fsp.writeFile(path.join(dir, key + '.' + PHOTO_EXT[mime]), buf)).catch((e) => console.error('photo cache', e.message));
+}
+async function photoServe(req, res, key) {
+  const done = (mime, buf) => { res.writeHead(200, Object.assign({ 'Content-Type': mime, 'Cache-Control': 'public, max-age=31536000, immutable' }, HEADERS)); res.end(req.method === 'HEAD' ? undefined : buf); };
+  for (const [mime, ext] of Object.entries(PHOTO_EXT)) { try { return done(mime, await fsp.readFile(path.join(pdir(), key + '.' + ext))); } catch (e) {} }
+  try {
+    const v = await sbCall('shop_photo_get', { p_key: key });
+    if (!v || !PHOTO_EXT[v.mime]) { res.writeHead(404); return res.end(); }
+    const buf = Buffer.from(v.data, 'base64'); photoCacheSave(key, v.mime, buf); return done(v.mime, buf);
+  } catch (e) { console.error('photo get', e.message); res.writeHead(502); return res.end(); }
+}
+
+// ---- online shop, receipts, invoices, SMS (store.js): one instance per shop, each with its own caches and keys ----
+const makeStore = require('./store');
+const stores = new Map(); // shop id -> store instance (created inside the shop's context)
+const hostName = () => String(process.env.PLATFORM_HOST || 'lavenderblush-gull-669222.hostingersite.com').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+function store() {
+  const id = SID(); if (id === '-') throw new Error('No shop');
+  if (!stores.has(id)) stores.set(id, makeStore({ sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS, caller,
+    multi: true, noTimers: true, host: hostName(), base: () => '/' + T().shop.slug, scope: () => 'shop:' + SID() + ':', siteUrl: () => 'https://' + hostName() }));
+  return stores.get(id);
+}
+// Credit reminders: every 10 minutes, for every open shop (each shop's own SMS account; sent once a day per customer).
+async function remindAll() {
+  let list; try { list = await allShops(true); } catch (e) { return console.error('reminders: shop list', e.message); }
+  for (const r of list || []) {
+    if (r.status !== 'active') continue;
+    try { await ctx.run({ shop: r }, () => store().remindRun()); } catch (e) { console.error('reminders ' + r.slug, e.message); }
+  }
+}
+if (sbOn()) { setTimeout(remindAll, 30000).unref(); setInterval(remindAll, +process.env.REMIND_EVERY_MS || 600000).unref(); }
+
 function shopPage(req, res, rec) {
   const info = { slug: rec.slug, name: rec.name, plan: planState(rec), platform: PLATFORM };
   const b = file(PAGE).replace('<head>', '<head><script>window.SHOP=' + jsonScript(info) + '</script>')
     .replace('href="/manifest.webmanifest"', 'href="/' + rec.slug + '/manifest.webmanifest"')
     .replace(/<title>[^<]*<\/title>/, '<title>' + rec.name.replace(/[<&]/g, '') + ' · ' + PLATFORM + '</title>')
-    .replace('content="Renatel Shop"', 'content="' + rec.name.replace(/["<&]/g, '') + '"');
+    .replace('content="Renatel Shop"', 'content="' + rec.name.replace(/["<&]/g, '') + '"')
+    .replace(/\/logo-icon\.svg/g, '/icon-192.png').replace(/src="\/img\//g, 'src="/' + rec.slug + '/img/').replace(/on renatel\.shop/g, 'on the website').replace(/website, renatel\.shop/g, 'website').replace(/renatel\.shop/g, 'the website');
   return html(res, req, b);
 }
 const ICONS = { '/icon-192.png': 'icon-192.png', '/icon-512.png': 'icon-512.png', '/apple-touch-icon.png': 'apple-touch-icon.png', '/apple-touch-icon-precomposed.png': 'apple-touch-icon.png', '/favicon.ico': 'icon-192.png' };
@@ -826,7 +883,18 @@ http.createServer(async (req, res) => {
     if (parts[0] !== slug) { res.writeHead(301, { Location: '/' + slug + url.slice(slug.length + 1) }); return res.end(); }
     const rest = '/' + parts.slice(1).join('/');
     if (rest.startsWith('/api/')) return await ctx.run({ shop: rec }, () => api(req, res, rest));
+    // Customer pages of the shop: invoice (with "I have paid"), receipt, photos and the online shop.
+    const iv = rest.match(/^\/i\/([A-Za-z0-9._-]{4,40})$/);
+    if (iv && ['GET', 'HEAD', 'POST'].includes(req.method)) return await ctx.run({ shop: rec }, () => store().invoicePage(req, res, iv[1]));
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }); return res.end(); }
+    const rm = rest.match(/^\/r\/([A-Za-z0-9._-]{4,40})$/);
+    if (rm) return await ctx.run({ shop: rec }, () => store().receiptPage(req, res, rm[1]));
+    const im = rest.match(/^\/img\/([a-f0-9]{24})(?:\.(?:jpg|png|webp))?$/);
+    if (im) return await ctx.run({ shop: rec }, () => photoServe(req, res, im[1]));
+    if (rest === '/shop' || rest.startsWith('/shop/') || rest === '/store') {
+      if (rec.status !== 'active') { res.writeHead(503, Object.assign({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }, HEADERS)); return res.end('<!DOCTYPE html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + rec.name.replace(/[<&]/g, '') + '</title><body style="font:16px system-ui;text-align:center;padding:60px 20px;color:#333"><h2>' + rec.name.replace(/[<&]/g, '') + '</h2><p>This online shop is closed right now. Please check again later.</p></body>'); }
+      return ctx.run({ shop: rec }, () => store().page(req, res, '<script>window.STORE=' + jsonScript({ base: '/' + rec.slug, slug: rec.slug, name: rec.name }) + '</script>', rec.name + ' · Shop online'));
+    }
     if (rest === '/manifest.webmanifest') {
       res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'public, max-age=86400' });
       return res.end(JSON.stringify({ name: rec.name, short_name: rec.name.slice(0, 12), start_url: '/' + slug, scope: '/' + slug, display: 'standalone', background_color: '#f6f5f1', theme_color: '#0f6e56',
