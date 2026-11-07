@@ -97,9 +97,9 @@ body{overflow-x:hidden}
 @keyframes fu{to{opacity:1;transform:none}}
 /* ticker */
 .ticker{background:var(--g);color:#fff;overflow:hidden;white-space:nowrap;font-size:14px;font-weight:500;padding:11px 0}
-.ticker .run{display:inline-block;animation:tick 32s linear infinite;padding-left:100%}
+.ticker .run{display:inline-block;animation:tick 40s linear infinite}
 .ticker .run span{margin:0 22px;opacity:.95}
-@keyframes tick{to{transform:translateX(-100%)}}
+@keyframes tick{to{transform:translateX(-50%)}}
 /* product toolbar */
 section{padding:44px 0;scroll-margin-top:62px}
 .eyebrow{font-size:13px;color:var(--mut);margin:0}
@@ -280,7 +280,7 @@ function shopView(){const city=brCity(),n=S.products.length;
    <p class="lead fadeup" style="animation-delay:.16s">${n?n+' product'+(n==1?'':'s')+' in stock now. ':''}Pay with Mobile Money or card, then pick up in ${esc(city)} or get it delivered.</p>
    <a class="pill fadeup" style="animation-delay:.24s" href="#products">Shop now <span>↓</span></a>
  </div></div></section>
- <div class="ticker" aria-hidden="true"><div class="run">${['🔒 Secure Paystack checkout','📱 MTN MoMo · Telecel Cash · AirtelTigo Money','💳 Visa & Mastercard','🏪 Pickup in Kumasi & Accra','🚚 Delivery across Ghana','📍 Served from your nearest branch','🧾 Instant receipt'].map(t=>`<span>${t}</span>`).join('·').repeat(2)}</div></div>
+ <div class="ticker" aria-hidden="true"><div class="run">${['🔒 Secure Paystack checkout','📱 MTN MoMo · Telecel Cash · AirtelTigo Money','💳 Visa & Mastercard','🏪 Pickup in Kumasi & Accra','🚚 Delivery across Ghana','📍 Served from your nearest branch','🧾 Instant receipt'].map(t=>`<span>${t}</span>·`).join('').repeat(2)}</div></div>
  <section class="prods" id="products"><div class="wrap"><div class="phead"><div><p class="eyebrow">Shop</p><h2>Our <span class="g">Products</span></h2></div>
   <label class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6e7571" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" placeholder="Search products" value="${esc(q)}" oninput="q=this.value;$('#grid').innerHTML=cards();reveal()" aria-label="Search products"></label></div>
   <div class="tools" id="cats"><div class="chips" id="catrow">${catRow()}</div></div>
