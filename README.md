@@ -36,6 +36,14 @@ Each customer is served by the **nearest branch**: on their first visit they cho
 
 Payments use **Paystack** (Mobile Money and cards). The owner connects it in the POS: 🌐 Online shop → ⚙️ Settings → 💳 Payments → paste the Paystack Secret Key. The server checks the key with Paystack, keeps it privately in Supabase (`site_secrets`, write-only function `site_secret_set`), and the shop switches from practice payments to Paystack at once (a `sk_test_` key uses Paystack's test mode, `sk_live_` takes real money). Set the Paystack webhook to `https://renatel.shop/api/store/paystack`. `PAYSTACK_SECRET_KEY` on the hosting, if set, takes priority. With no key the shop runs in **test mode**: a practice payment screen, no money moves, but stock and sales are real.
 
+### Credit and reminders
+- At the till, a sale paid (fully or partly) by **Credit** needs a pay-by date: 7, 14 or 30 days, or any date.
+- The customer gets an SMS with the amount on credit, the pay-by date and a link to their invoice (`/i/<code>`).
+- From the pay-by date, the server texts every customer whose balance is due, once a day at the time set in Online shop → Settings → Credit reminders (default 9:00, Ghana time), until the balance is paid. Only one server process sends each reminder (`job_once` table).
+- On the invoice (or from My account on the online shop) the customer taps **I have paid** with the amount, method and transaction ID. Staff who manage customers see it in **Customers → Payments to approve**; approving records the payment (lowers the balance) and texts a thank-you; rejecting texts the customer. Reminders pause while a claim waits (up to 3 days).
+- In a customer's profile: change the pay-by date, pause/resume reminders, text a reminder now, copy the invoice link.
+- Older credit sales made before this feature have no pay-by date, so they are not reminded until you set one in the profile.
+
 ## Hosting
 The site is hosted on Hostinger as a small Node.js app: `server.js` serves `index.html` and has no dependencies. Every push to `main` deploys automatically.
 
