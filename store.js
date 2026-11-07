@@ -14,8 +14,10 @@
 //   Each account is also added to the POS Customers list of the customer's branch, and online sales are linked to it.
 //
 // Payments
-//   PAYSTACK_SECRET_KEY set   -> Paystack checkout (MoMo and cards). A sk_test_ key uses Paystack test mode.
-//   not set                   -> built-in TEST payment screen: no money moves, but stock and sales are real.
+//   Paystack secret key set   -> Paystack checkout (MoMo and cards). A sk_test_ key uses Paystack test mode.
+//     The owner pastes it in the POS (Online shop → Settings → Payments); it is checked with Paystack and kept in
+//     Supabase site_secrets ('paystack_secret'). PAYSTACK_SECRET_KEY on the hosting, if set, takes priority.
+//   no key                    -> built-in TEST payment screen: no money moves, but stock and sales are real.
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -29,7 +31,17 @@ module.exports = function store(d) {
   const webCan = (st, k) => !!st && !st.locked && (st.role === 'owner' || !!(st.perms && st.perms.web && st.perms.web[k]));
   const BR = { kum: { pf: '', name: 'Kumasi branch', city: 'Kumasi' }, acc: { pf: 'accra_', name: 'Accra branch', city: 'Accra' } };
   const brOf = (b) => (BR[b] ? b : 'kum');
-  const KEY = () => process.env.PAYSTACK_SECRET_KEY || '';
+  // The Paystack key: from the hosting environment, or the one the owner saved in the POS (re-read every minute).
+  const PK = { key: '', src: '', at: 0 };
+  async function loadKey() {
+    if (process.env.PAYSTACK_SECRET_KEY) { PK.key = process.env.PAYSTACK_SECRET_KEY; PK.src = 'hosting'; return; }
+    if (!sbOn()) return;
+    try { const v = await sbCall('site_secret_get', { p_name: 'paystack_secret' }); PK.key = v || ''; PK.src = v ? 'pos' : ''; PK.at = Date.now(); }
+    catch (e) { console.error('paystack key', e.message); }
+  }
+  loadKey(); setInterval(loadKey, 60000).unref();
+  const KEY = () => PK.key;
+  const PS_API = process.env.PAYSTACK_API || 'https://api.paystack.co';
   const mode = () => (KEY() ? (KEY().startsWith('sk_test_') ? 'paystack-test' : 'paystack') : 'test');
   const WHO = { id: null, name: 'Online shop' };
   const r2 = (n) => Math.round(n * 100) / 100;
@@ -176,8 +188,8 @@ module.exports = function store(d) {
   const money = (n) => CUR + ' ' + Number(n || 0).toFixed(2);
 
   // ---- Paystack ----
-  async function paystack(pathname, body) {
-    const r = await fetch('https://api.paystack.co' + pathname, { method: body ? 'POST' : 'GET', headers: { Authorization: 'Bearer ' + KEY(), 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(30000) });
+  async function paystack(pathname, body, key) {
+    const r = await fetch(PS_API + pathname, { method: body ? 'POST' : 'GET', headers: { Authorization: 'Bearer ' + (key || KEY()), 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(30000) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.status) throw new Error('Paystack: ' + (j.message || r.status));
     return j.data;
@@ -217,8 +229,26 @@ module.exports = function store(d) {
       if (url.startsWith('/api/store/admin/')) {
         const who = await caller(req);
         if (who.err) return send(res, who.err[0], { error: who.err[1] });
-        const st = who.staff, need = url.includes('/order') ? 'orders' : url.includes('/customer') ? 'customers' : '';
-        if (!st || !webCan(st, need)) return send(res, 403, { error: 'You don’t have access to this part of the online shop. Ask the owner.' });
+        const st = who.staff, need = url.includes('/order') ? 'orders' : url.includes('/customer') ? 'customers' : url.endsWith('/pay') ? 'pay' : '';
+        if (!st || (need === 'pay' ? st.role !== 'owner' || st.locked : !webCan(st, need))) return send(res, 403, { error: need === 'pay' ? 'Only the owner can change payment settings.' : 'You don’t have access to this part of the online shop. Ask the owner.' });
+        if (url === '/api/store/admin/pay') {
+          const host = 'https://' + String(req.headers['x-forwarded-host'] || req.headers.host || 'renatel.shop').split(',')[0].trim();
+          const info = () => ({ mode: mode(), source: PK.src, hint: KEY() ? KEY().slice(0, 8) + '…' + KEY().slice(-4) : '', webhook: host + '/api/store/paystack', callback: host + '/store/done/' });
+          if (req.method === 'GET') return send(res, 200, info());
+          if (req.method === 'POST') {
+            if (process.env.PAYSTACK_SECRET_KEY) return send(res, 409, { error: 'The key is set on the hosting, so it can’t be changed here.' });
+            const m = await json(req), key = String(m && m.key || '').trim();
+            if (key && !/^sk_(test|live)_[A-Za-z0-9]{20,100}$/.test(key)) return send(res, 400, { error: 'That doesn’t look like a Paystack secret key. It starts with sk_live_ or sk_test_. (The public key pk_… is not needed.)' });
+            if (key) {
+              try { await paystack('/transaction?perPage=1', null, key); }
+              catch (e) { return send(res, 400, { error: 'Paystack did not accept this key (' + e.message.replace(/^Paystack: /, '') + '). Copy the Secret Key again from Paystack → Settings → API Keys & Webhooks.' }); }
+            }
+            try { await sbCall('site_secret_set', { p_name: 'paystack_secret', p_value: key }); } catch (e) { console.error('save key', e.message); return send(res, 502, { error: 'Could not save the key. Try again.' }); }
+            await loadKey();
+            serverLog(key ? 'Payments switched on' : 'Payments switched off', key ? 'Paystack ' + (key.startsWith('sk_live_') ? 'LIVE (real money)' : 'test mode') + ' key saved · ' + key.slice(0, 8) + '…' + key.slice(-4) : 'Paystack key removed · online shop back to test payments', st);
+            return send(res, 200, info());
+          }
+        }
         if (req.method === 'GET' && url === '/api/store/admin/orders') {
           await listed('kum', true);
           const list = Object.entries(orderDocs).map(([ref, o]) => Object.assign(publicOrder(o, ref), { phone: o.phone, email: o.email || '', addr: o.addr || '', city: o.city || '', note: o.note || '', region: o.region || '',

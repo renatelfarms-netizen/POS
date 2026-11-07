@@ -30,7 +30,7 @@ Each customer is served by the **nearest branch**: on their first visit they cho
 
 **Product photos**: add one in the product form (take a picture or choose a file; it is shrunk on the device first). Photos are kept in Supabase (`shop_photos`, through token-checked functions) and cached on the hosting in `~/renatel-photos`, and served at `/img/<code>`. Product records only hold the photo code, so the tills stay fast.
 
-Payments use Paystack (Mobile Money and cards) once `PAYSTACK_SECRET_KEY` is set on the hosting, with the webhook `https://renatel.shop/api/store/paystack`. A `sk_test_` key uses Paystack's test mode. With no key, the shop runs in **test mode**: a practice payment screen replaces Paystack and no money moves, but stock and sales are real.
+Payments use **Paystack** (Mobile Money and cards). The owner connects it in the POS: 🌐 Online shop → ⚙️ Settings → 💳 Payments → paste the Paystack Secret Key. The server checks the key with Paystack, keeps it privately in Supabase (`site_secrets`, write-only function `site_secret_set`), and the shop switches from practice payments to Paystack at once (a `sk_test_` key uses Paystack's test mode, `sk_live_` takes real money). Set the Paystack webhook to `https://renatel.shop/api/store/paystack`. `PAYSTACK_SECRET_KEY` on the hosting, if set, takes priority. With no key the shop runs in **test mode**: a practice payment screen, no money moves, but stock and sales are real.
 
 ## Hosting
 The site is hosted on Hostinger as a small Node.js app: `server.js` serves `index.html` and has no dependencies. Every push to `main` deploys automatically.
