@@ -35,7 +35,9 @@ a{color:inherit}
 body{overflow-x:hidden}
 @media (max-width:520px){.logo b{max-width:42vw;overflow:hidden;text-overflow:ellipsis}}
 .locbar{background:var(--gl);font-size:13px;padding:7px 0;border-bottom:1px solid #d6ebe0}
-.locbar .wrap{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.locbar .wrap{display:flex;gap:8px;align-items:center;white-space:nowrap;overflow:hidden}
+.locbar .wrap>span{overflow:hidden;text-overflow:ellipsis}
+@media (max-width:640px){.locbar .lreg{display:none}}
 .locbar button{background:none;border:0;color:var(--g);font-weight:600;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:0;font-size:13px}
 .modal{position:fixed;inset:0;background:rgba(10,20,15,.5);z-index:40;display:grid;place-items:center;padding:16px}
 .modal .mbox{background:#fff;border-radius:20px;padding:24px;width:min(440px,100%);box-shadow:0 20px 60px rgba(0,0,0,.25)}
@@ -49,54 +51,75 @@ body{overflow-x:hidden}
 .ostat.p{background:#fff4d4;color:#7a5600}.ostat.x{background:#fdeceb;color:var(--bad)}
 .test{background:#fff6d6;color:#6b4a00;font-size:13px;padding:8px 0;border-bottom:1px solid #f3df9a}
 
-/* hero */
-.hero{background:linear-gradient(180deg,#f6f7f4,#eef1ec);overflow:hidden}
-.hero .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:30px;align-items:center;padding-top:46px;padding-bottom:46px}
-.tag{display:inline-flex;align-items:center;gap:8px;background:#fff;border-radius:999px;padding:6px 14px 6px 6px;font-size:13px;font-weight:500;box-shadow:var(--sh)}
-.tag i{width:24px;height:24px;border-radius:50%;background:var(--gl);display:grid;place-items:center;font-style:normal;font-size:13px}
-h1{font-size:clamp(30px,4.6vw,48px);line-height:1.15;margin:18px 0 12px;font-weight:700;letter-spacing:-.5px}
-.lead{color:var(--mut);max-width:460px;margin:0 0 22px}
-.cta{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+/* shared buttons */
 .pill{background:var(--g);color:#fff;border:0;border-radius:999px;padding:12px 22px;font-weight:600;font-size:14px;cursor:pointer;text-decoration:none;display:inline-flex;gap:8px;align-items:center}
 .pill:hover{background:var(--g2)}
 .pill.sm{padding:9px 18px;font-size:13px}
 .ulink{font-weight:600;font-size:14px;text-decoration:underline;text-underline-offset:4px;cursor:pointer;background:none;border:0;padding:0}
-.trust{display:flex;gap:18px;flex-wrap:wrap;margin-top:28px;font-size:13px;color:var(--mut)}
-.trust>span{display:flex;gap:8px;align-items:center}.trust>span>span{display:block;line-height:1.3}.trust b{color:var(--ink);font-weight:600}
-.trust i{width:30px;height:30px;border-radius:50%;background:#fff;display:grid;place-items:center;font-style:normal;box-shadow:var(--sh)}
-.art{position:relative;aspect-ratio:1;max-width:420px;justify-self:center;width:100%}
-.art .disc{position:absolute;inset:6%;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff 0,#e3f2ea 55%,#cfe8db 100%)}
-.art .ring{position:absolute;inset:0;border-radius:50%;border:2px dashed #cfe0d6}
-.art .bag{position:absolute;inset:24%;border-radius:32px;background:var(--g);display:grid;place-items:center;font-size:clamp(64px,10vw,104px);box-shadow:0 24px 40px rgba(11,122,75,.25);transform:rotate(-6deg)}
-.art .bub{position:absolute;width:64px;height:64px;border-radius:50%;background:#fff;display:grid;place-items:center;font-size:28px;box-shadow:0 8px 20px rgba(0,0,0,.08)}
-.chipf{position:absolute;background:#fff;border-radius:12px;padding:8px 12px;font-size:12px;font-weight:600;display:flex;gap:8px;align-items:center;box-shadow:0 10px 24px rgba(0,0,0,.09)}
-.chipf i{width:24px;height:24px;border-radius:7px;background:var(--g);color:#fff;display:grid;place-items:center;font-style:normal;font-size:12px}
-@media (max-width:820px){.hero .wrap{grid-template-columns:1fr;padding-top:30px}.art{max-width:300px;order:-1}}
-
-/* sections */
-section{padding:56px 0;scroll-margin-top:62px}
+/* ---------- live aquarium hero ---------- */
+.reef{position:relative;overflow:hidden;color:#fff;min-height:440px;display:flex;align-items:center;
+ background:radial-gradient(120% 90% at 70% -10%,#3fd0c9 0,#0e8c8a 32%,#06505f 70%,#03303d 100%)}
+@media (max-width:640px){.reef{min-height:400px}}
+.reef .rays{position:absolute;inset:-40% -10% 0;background:repeating-linear-gradient(100deg,rgba(255,255,255,.10) 0 40px,rgba(255,255,255,0) 40px 120px);
+ transform-origin:50% 0;animation:sway 9s ease-in-out infinite alternate;mix-blend-mode:screen;opacity:.55;filter:blur(6px)}
+@keyframes sway{from{transform:rotate(-4deg) translateX(-3%)}to{transform:rotate(4deg) translateX(3%)}}
+.reef .caust{position:absolute;inset:0;background:radial-gradient(circle at 20% 30%,rgba(255,255,255,.12) 0 6%,transparent 7%),radial-gradient(circle at 70% 20%,rgba(255,255,255,.10) 0 5%,transparent 6%),radial-gradient(circle at 45% 60%,rgba(255,255,255,.08) 0 7%,transparent 8%);
+ background-size:260px 260px;animation:caust 14s linear infinite;opacity:.6}
+@keyframes caust{to{background-position:260px 130px,-260px 260px,130px -260px}}
+.reef .sand{position:absolute;left:0;right:0;bottom:0;height:70px;background:linear-gradient(180deg,#e9d6a3,#cdb47c);border-radius:50% 50% 0 0/24px 24px 0 0}
+.bub{position:absolute;bottom:-20px;border-radius:50%;border:1.5px solid rgba(255,255,255,.75);background:radial-gradient(circle at 30% 30%,rgba(255,255,255,.7),rgba(255,255,255,.08) 60%);animation:rise linear infinite}
+@keyframes rise{0%{transform:translate(0,0);opacity:0}10%{opacity:.9}50%{transform:translate(12px,-230px)}100%{transform:translate(-6px,-500px);opacity:0}}
+.fishlane{position:absolute;left:0;right:0;height:60px}
+.fish{position:absolute;left:-140px;width:96px;animation:swim linear infinite}
+.fish.rev{animation-name:swimrev;left:auto;right:-140px}
+.fish.rev svg{transform:scaleX(-1)}
+.fish svg{display:block;width:100%;height:auto;animation:bob 2.6s ease-in-out infinite;filter:drop-shadow(0 6px 8px rgba(0,0,0,.25))}
+@keyframes swim{to{transform:translateX(calc(100vw + 280px))}}
+@keyframes swimrev{to{transform:translateX(calc(-100vw - 280px))}}
+@keyframes bob{50%{transform:translateY(-10px) rotate(-3deg)}}
+.fish.rev svg{animation-name:bobrev}@keyframes bobrev{0%,100%{transform:scaleX(-1)}50%{transform:scaleX(-1) translateY(-10px) rotate(-3deg)}}
+.tailw{transform-origin:22px 30px;animation:tail .45s ease-in-out infinite alternate}@keyframes tail{to{transform:scaleY(.6)}}
+.weed{position:absolute;bottom:40px;transform-origin:50% 100%;animation:weed 4.5s ease-in-out infinite alternate}
+@keyframes weed{from{transform:rotate(-7deg)}to{transform:rotate(7deg)}}
+.reef>.wrap{width:100%;position:relative;z-index:3}
+.fishlane{z-index:1}.bub{z-index:1}
+.reef .copy{position:relative;z-index:3;padding:56px 0 92px;max-width:620px}
+.reef .open{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);backdrop-filter:blur(6px);border-radius:999px;padding:6px 14px;font-size:13px;font-weight:500}
+.reef .open i{width:8px;height:8px;border-radius:50%;background:#5ef08f;box-shadow:0 0 0 0 rgba(94,240,143,.7);animation:ping 1.8s infinite}
+@keyframes ping{70%{box-shadow:0 0 0 9px rgba(94,240,143,0)}100%{box-shadow:0 0 0 0 rgba(94,240,143,0)}}
+.reef h1{font-size:clamp(34px,5.6vw,58px);line-height:1.06;margin:16px 0 12px;font-weight:700;letter-spacing:-.8px;text-shadow:0 2px 2px rgba(0,0,0,.25),0 6px 28px rgba(0,30,40,.45)}
+.reef .lead{text-shadow:0 1px 10px rgba(0,30,40,.6)}
+@media (max-width:640px){.fish{opacity:.75}.reef .copy{padding:40px 0 86px}}
+.reef h1 span{color:var(--y)}
+.reef .lead{color:rgba(255,255,255,.88);font-size:16px;margin:0 0 24px;max-width:480px}
+.reef .pill{background:var(--y);color:var(--ink);box-shadow:0 10px 24px rgba(0,0,0,.2)}.reef .pill:hover{background:#ffd54d}
+.fadeup{opacity:0;transform:translateY(18px);animation:fu .8s cubic-bezier(.2,.7,.2,1) forwards}
+@keyframes fu{to{opacity:1;transform:none}}
+/* ticker */
+.ticker{background:var(--g);color:#fff;overflow:hidden;white-space:nowrap;font-size:14px;font-weight:500;padding:11px 0}
+.ticker .run{display:inline-block;animation:tick 32s linear infinite;padding-left:100%}
+.ticker .run span{margin:0 22px;opacity:.95}
+@keyframes tick{to{transform:translateX(-100%)}}
+/* product toolbar */
+section{padding:44px 0;scroll-margin-top:62px}
 .eyebrow{font-size:13px;color:var(--mut);margin:0}
 h2{font-size:clamp(24px,3vw,32px);margin:2px 0 0;font-weight:700;letter-spacing:-.3px}
 .center{text-align:center}
-.cats{display:flex;gap:22px;overflow-x:auto;padding:28px 2px 6px;justify-content:center;scrollbar-width:none}
-.cats::-webkit-scrollbar{display:none}
-@media (max-width:820px){.cats{justify-content:flex-start}}
-.cat{flex:0 0 auto;width:92px;text-align:center;cursor:pointer;background:none;border:0;padding:0}
-.cat .c{width:84px;height:84px;margin:0 auto 8px;border-radius:50%;background:var(--soft);display:grid;place-items:center;font-size:34px;transition:.15s;border:2px solid transparent}
-.cat:hover .c{transform:translateY(-3px)}
-.cat.on .c{background:var(--gl);border-color:var(--g)}
-.cat b{display:block;font-size:13px;font-weight:600;line-height:1.25}.cat small{color:var(--mut);font-size:11px}
-.promos{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:40px}
-@media (max-width:820px){.promos{grid-template-columns:1fr}}
-@media (max-width:560px){.promo .pbig{font-size:84px;right:-4px;bottom:-8px;opacity:.9}.promo h3,.promo p{max-width:72%}}
-.promo{border-radius:var(--r);padding:28px;position:relative;overflow:hidden;min-height:190px;display:flex;flex-direction:column;align-items:flex-start;background:var(--soft)}
-.promo.y{background:var(--y)}
-.promo .bdg{background:var(--y);border-radius:999px;font-size:12px;font-weight:600;padding:4px 12px}
-.promo.y .bdg{background:#fff}
-.promo h3{font-size:24px;line-height:1.2;margin:12px 0 6px;max-width:62%;font-weight:700}
-.promo p{margin:0 0 16px;font-size:13px;color:#4d5450;max-width:58%}
-.promo.y p{color:#5a4700}
-.promo .pbig{position:absolute;right:-6px;bottom:-14px;font-size:120px;pointer-events:none;line-height:1;filter:drop-shadow(0 12px 18px rgba(0,0,0,.12))}
+.tools{display:flex;flex-direction:column;gap:12px;margin-bottom:22px}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none}.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;display:inline-flex;align-items:center;gap:7px;border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:8px 14px;font-weight:600;font-size:13px;cursor:pointer;transition:.2s}
+.chip:hover{border-color:var(--g);transform:translateY(-1px)}
+.chip.on{background:var(--g);border-color:var(--g);color:#fff}
+.chip small{opacity:.7;font-weight:500}
+/* reveal on scroll */
+.rv{opacity:0;transform:translateY(22px) scale(.98);transition:opacity .6s ease,transform .6s cubic-bezier(.2,.7,.2,1)}
+.rv.in{opacity:1;transform:none}
+.trustrow{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media (max-width:720px){.trustrow{grid-template-columns:1fr}}
+.tr{display:flex;gap:12px;align-items:center;background:var(--soft);border-radius:var(--r);padding:16px}
+.tr i{width:44px;height:44px;border-radius:12px;background:var(--g);color:#fff;display:grid;place-items:center;font-style:normal;font-size:20px;flex:none}
+.tr b{display:block}.tr span{color:var(--mut);font-size:13px}
+@media (prefers-reduced-motion:reduce){.reef *,.ticker .run,.rv,.fadeup{animation:none!important;transition:none!important}.rv,.fadeup{opacity:1;transform:none}.fish,.bub{display:none}.ticker .run{padding-left:0}}
 .prods{background:var(--soft)}
 .phead{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:24px}
 .search{display:flex;align-items:center;gap:8px;background:#fff;border-radius:999px;padding:4px 6px 4px 16px;box-shadow:var(--sh);min-width:260px}
@@ -104,7 +127,12 @@ h2{font-size:clamp(24px,3vw,32px);margin:2px 0 0;font-weight:700;letter-spacing:
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:18px}
 @media (max-width:520px){.grid{grid-template-columns:1fr 1fr;gap:12px}}
 .p{background:var(--card);border-radius:var(--r);padding:12px;display:flex;flex-direction:column;box-shadow:var(--sh);transition:.15s}
-.p:hover{box-shadow:0 10px 26px rgba(16,24,20,.09)}
+.p{transition:transform .25s ease,box-shadow .25s ease}
+.p:hover{box-shadow:0 16px 34px rgba(16,24,20,.12);transform:translateY(-4px)}
+.p .pimg{overflow:hidden}.p .pimg>img,.p .pimg>.ico{transition:transform .5s ease}.p:hover .pimg>img,.p:hover .pimg>.ico{transform:scale(1.07)}
+.ico{display:inline-block}
+.p.pop{animation:pop .45s ease}@keyframes pop{40%{transform:scale(1.035);box-shadow:0 0 0 3px var(--g)}}
+.cartbtn.bump .n{animation:bump .5s ease}@keyframes bump{30%{transform:scale(1.5)}60%{transform:scale(.9)}}
 .pimg{position:relative;aspect-ratio:1.15;border-radius:12px;display:grid;place-items:center;font-size:clamp(48px,7vw,66px)}
 .badge{position:absolute;top:8px;left:8px;background:var(--g);color:#fff;font-size:11px;font-weight:600;border-radius:999px;padding:3px 10px}
 .badge.low{background:var(--y);color:var(--ink)}.badge.out{background:#9aa19d}
@@ -112,7 +140,8 @@ h2{font-size:clamp(24px,3vw,32px);margin:2px 0 0;font-weight:700;letter-spacing:
 .pn{font-weight:600;font-size:15px;line-height:1.3;margin:1px 0}
 .pu{color:var(--mut);font-size:12px}
 .pfoot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;padding-top:10px}
-.price{font-weight:700;font-size:16px}
+.price{font-weight:700;font-size:16px;white-space:nowrap}
+.pfoot{flex-wrap:wrap;row-gap:8px}
 .add{background:var(--gl);color:var(--g);border:0;border-radius:999px;padding:6px 12px;font-size:12px;font-weight:600;display:inline-flex;gap:6px;align-items:center;cursor:pointer;white-space:nowrap}
 .add:hover{background:var(--g);color:#fff}
 .add svg{width:14px;height:14px}
@@ -163,7 +192,7 @@ input.f:focus,textarea.f:focus{border-color:var(--g);box-shadow:0 0 0 3px var(--
 <header class="nav"><div class="wrap">
  <a class="logo" href="/"><i>🛍️</i><b id="shopname">Shop online</b></a>
  <button class="catbtn" id="catbtn" onclick="goCats()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>Browse All Categories</span></button>
- <nav class="links" id="links"><a href="/">Home</a><a href="/#products">Shop</a><a href="/#how">How it works</a><a id="calllink" href="#">Contact</a></nav>
+ <nav class="links" id="links"><a href="/">Home</a><a href="/#products">Shop</a><a id="calllink" href="#">Contact</a></nav>
  <span class="sp"></span>
  <a class="cartbtn" id="posbtn" href="/pos" hidden style="text-decoration:none;background:var(--y);color:var(--ink);border:0" title="Back to the staff POS">🔐 <span id="posl">POS</span></a>
  <button class="cartbtn" id="acctbtn" onclick="goAccount()" aria-label="My account"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg><span id="acctname">Sign in</span></button>
@@ -203,7 +232,7 @@ const brCity=b=>((S.branches||{})[b||BRANCH()]||{}).city||({kum:'Kumasi',acc:'Ac
 async function setLoc(l){const before=BRANCH();LOC=l;try{localStorage.setItem('rs-loc',JSON.stringify(l))}catch(e){}$('#locmodal').hidden=true;
  if(BRANCH()!=before&&Object.keys(cart).length){cart={};keep()}
  if(l.region&&!ck.city)ck.city='';cat='';await load();badge();if(step!='done')render();locBar()}
-function locBar(){const b=$('#locbar');if(!b)return;b.hidden=false;$('#locwrap').innerHTML=LOC?`📍 <span>${LOC.region?'Your region: <b>'+esc(LOC.region)+'</b> · ':''}Served by our <b>${esc(brName())}</b>${LOC.km?' ('+LOC.km+' km)':''}</span><button onclick="locAsk()">Change</button>`:`📍 <span>Tell us where you are so we send from the nearest branch (Kumasi or Accra).</span><button onclick="locAsk()">Choose location</button>`}
+function locBar(){const b=$('#locbar');if(!b)return;b.hidden=false;$('#locwrap').innerHTML=LOC?`<span>📍 <span class="lreg">${LOC.region?esc(LOC.region)+' · ':''}</span>Served by our <b>${esc(brName())}</b></span><button onclick="locAsk()">Change</button>`:`<span>📍 Where are you? We serve you from our nearest branch.</span><button onclick="locAsk()">Choose</button>`}
 function locAsk(){const m=$('#locmodal');m.hidden=false;m.innerHTML=`<div class="mbox"><div style="font-size:34px">📍</div><h2 style="font-size:22px;margin:4px 0 6px">Where are you?</h2><p class="mut" style="margin:0 0 14px;font-size:14px">We serve you from our nearest branch, Kumasi or Accra, so your order is faster and comes from the right shop's stock.</p>
  <button class="pill big" id="gpsb" onclick="useGps()">📍 Use my location</button><p id="gpsm" class="msg" style="text-align:center"></p>
  <label class="lbl" style="text-align:center;margin-top:4px">or choose your region</label><select id="regsel" onchange="if(this.value)pickRegion(this.value)"><option value="">Select region…</option>${Object.keys(REGIONS).map(r=>`<option ${LOC&&LOC.region==r?'selected':''}>${r}</option>`).join('')}</select>
@@ -212,7 +241,7 @@ function pickRegion(r){const pt=REGIONS[r],b=nearest(pt);setLoc({region:r,branch
 function useGps(){const m=$('#gpsm'),b=$('#gpsb');if(!navigator.geolocation)return m.textContent='Location is not available on this device. Choose your region instead.';b.disabled=true;b.textContent='Finding you…';
  navigator.geolocation.getCurrentPosition(p=>{const pt=[p.coords.latitude,p.coords.longitude],br=nearest(pt);setLoc({region:nearRegion(pt),branch:br,km:Math.round(km(pt,BRPOS[br])),how:'gps'})},
   e=>{b.disabled=false;b.textContent='📍 Use my location';m.textContent=e.code==1?'Location permission was refused. Choose your region instead.':'Could not find your location. Choose your region instead.'},{enableHighAccuracy:false,timeout:12000,maximumAge:600000})}
-const pimg=(p,big)=>p.img?`<img src="/img/${p.img}" alt="${esc(p.name)}" loading="lazy">`:icon(p.cat||p.name);
+const pimg=(p,big)=>p.img?`<img src="/img/${p.img}" alt="${esc(p.name)}" loading="lazy">`:`<span class="ico">${icon(p.cat||p.name)}</span>`;
 const lines=()=>Object.entries(cart).map(([id,n])=>({p:P(id),n})).filter(x=>x.p&&x.n>0);
 const total=()=>lines().reduce((t,x)=>t+x.p.price*x.n,0);
 let ME=null;try{ME=JSON.parse(localStorage.getItem('rs-cust')||'null')}catch(e){}
@@ -232,41 +261,48 @@ async function load(){try{const j=await info();S=j;document.title=j.name+' · Sh
 
 function catList(){const m={};S.products.forEach(p=>{const c=p.cat||'Other';m[c]=(m[c]||0)+1});return Object.entries(m).sort((a,b)=>a[0].localeCompare(b[0]))}
 function goCats(){if(step!='shop'){step='shop';render()}setTimeout(()=>{const e=$('#cats');if(e)e.scrollIntoView({behavior:'smooth',block:'start'})},30)}
-function pickCat(c){cat=c;$('#catrow').innerHTML=catRow();$('#grid').innerHTML=cards();$('#products').scrollIntoView({behavior:'smooth',block:'start'})}
-function catRow(){const L=catList();return `<button class="cat ${cat?'':'on'}" onclick="pickCat('')"><div class="c">🛒</div><b>All</b><small>${S.products.length} product${S.products.length==1?'':'s'}</small></button>`+L.map(([c,n])=>`<button class="cat ${c==cat?'on':''}" onclick='pickCat(${esc(JSON.stringify(c))})'><div class="c">${icon(c)}</div><b>${esc(c)}</b><small>${n} product${n==1?'':'s'}</small></button>`).join('')}
+function pickCat(c){cat=c;$('#catrow').innerHTML=catRow();$('#grid').innerHTML=cards();reveal();$('#products').scrollIntoView({behavior:'smooth',block:'start'})}
+function catRow(){const L=catList();return `<button class="chip ${cat?'':'on'}" onclick="pickCat('')">🛒 All <small>${S.products.length}</small></button>`+L.map(([c,n])=>`<button class="chip ${c==cat?'on':''}" onclick='pickCat(${esc(JSON.stringify(c))})'>${icon(c)} ${esc(c)} <small>${n}</small></button>`).join('')}
 
-function shopView(){const city=brCity(),ex=[...new Set(S.products.map(p=>icon(p.cat)))].concat(['🛍️','📦','🚚','💳']).slice(0,4);
- return `<section class="hero" style="padding:0"><div class="wrap">
-  <div><span class="tag"><i>🏪</i>${esc(S.name)} · Official online store</span>
-   <h1>Your One-Stop Shop<br>for <span class="g">Quality Products</span></h1>
-   <p class="lead">Order online, pay safely with Mobile Money or card, then pick up at our ${esc(city)} branch or have it delivered to you. We serve you from our nearest branch.</p>
-   <div class="cta"><a class="pill" href="#products">Shop Now <span>→</span></a><button class="ulink" onclick="goCats()">Browse categories</button></div>
-   <div class="trust"><span><i>🔒</i><span><b>Secure</b><br>payment</span></span><span><i>📱</i><span><b>MoMo</b><br>& card</span></span><span><i>🚚</i><span><b>Pickup</b><br>or delivery</span></span></div></div>
-  <div class="art" aria-hidden="true"><div class="ring"></div><div class="disc"></div><div class="bag">🛍️</div>
-   <div class="bub" style="top:4%;left:14%">${ex[0]}</div><div class="bub" style="top:16%;right:2%">${ex[1]}</div><div class="bub" style="bottom:8%;left:4%">${ex[2]}</div><div class="bub" style="bottom:2%;right:22%">${ex[3]}</div>
-   <div class="chipf" style="top:40%;right:-2%"><i>✓</i>Secure Payment</div><div class="chipf" style="bottom:26%;left:-4%"><i>🚚</i>Fast Delivery</div></div>
- </div></section>
- <section id="cats"><div class="wrap"><p class="eyebrow center">Categories</p><h2 class="center">Featured <span class="g">Categories</span></h2>
-  <div class="cats" id="catrow">${catRow()}</div>
-  <div class="promos">
-   <div class="promo"><span class="bdg">Pay your way</span><h3>Mobile Money or Card</h3><p>MTN MoMo, Telecel Cash, AirtelTigo Money and bank cards. Paid instantly and safely.</p><a class="pill sm" href="#products">Shop Now →</a><span class="pbig">📱</span></div>
-   <div class="promo y"><span class="bdg">Pickup or delivery</span><h3>Collect in ${esc(city)} or Get it Delivered</h3><p>Choose at checkout. For delivery we call you to arrange the time.</p><a class="pill sm" href="#products">Shop Now →</a><span class="pbig">🚚</span></div>
-  </div></div></section>
- <section class="prods" id="products"><div class="wrap"><div class="phead"><div><p class="eyebrow">Products</p><h2>Featured <span class="g">Products</span></h2></div>
-  <label class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6e7571" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" placeholder="Search products" value="${esc(q)}" oninput="q=this.value;$('#grid').innerHTML=cards()" aria-label="Search products"></label></div>
+// A swimming fish (colours vary), drawn in SVG.
+const FISH=(a,b)=>`<svg viewBox="0 0 100 60" aria-hidden="true"><g class="tailw"><path d="M22 30 L2 12 Q8 30 2 48 Z" fill="${b}"/></g><ellipse cx="55" cy="30" rx="36" ry="21" fill="${a}"/><path d="M42 12 Q55 0 68 12" fill="${b}"/><path d="M48 46 Q56 58 64 46" fill="${b}"/><path d="M36 14 Q30 30 36 46" stroke="rgba(255,255,255,.55)" stroke-width="4" fill="none"/><path d="M52 11 Q46 30 52 49" stroke="rgba(255,255,255,.35)" stroke-width="3" fill="none"/><circle cx="76" cy="25" r="5.5" fill="#fff"/><circle cx="77.5" cy="25" r="3" fill="#13222a"/></svg>`;
+const WEED=(h,c)=>`<svg width="40" height="${h}" viewBox="0 0 40 ${h}" aria-hidden="true"><path d="M20 ${h} C6 ${h*.7} 34 ${h*.45} 20 ${h*.2} C12 ${h*.08} 22 0 22 0" stroke="${c}" stroke-width="7" fill="none" stroke-linecap="round"/><path d="M20 ${h} C30 ${h*.75} 8 ${h*.5} 26 ${h*.3}" stroke="${c}" stroke-width="5" fill="none" stroke-linecap="round" opacity=".8"/></svg>`;
+function reefScene(){const r=(a,b)=>a+Math.random()*(b-a);
+ const bubbles=Array.from({length:18},()=>{const z=r(6,18);return `<span class="bub" style="left:${r(2,98)}%;width:${z}px;height:${z}px;animation-duration:${r(7,15)}s;animation-delay:-${r(0,15)}s"></span>`}).join('');
+ const fish=[['#ffc61a','#f59e0b',22,26,0,0],['#ff7a59','#e2553a',46,34,-12,1],['#7dd3fc','#38bdf8',64,30,-5,0],['#a3e635','#65a30d',34,42,-22,1],['#f9a8d4','#ec4899',78,38,-28,0]]
+  .map(([a,b,top,dur,del,rev],k)=>`<div class="fishlane" style="top:${top}%"><div class="fish ${rev?'rev':''}" style="animation-duration:${dur}s;animation-delay:${del}s;width:${[96,70,84,60,54][k]}px">${FISH(a,b)}</div></div>`).join('');
+ const weeds=[[4,120,'#1f9d55',0],[9,80,'#2fb36a',.8],[86,130,'#1f9d55',.4],[92,90,'#36c275',1.3],[78,70,'#2fb36a',2]].map(([l,h,c,d])=>`<div class="weed" style="left:${l}%;animation-delay:-${d}s">${WEED(h,c)}</div>`).join('');
+ return `<div class="rays"></div><div class="caust"></div>${fish}${bubbles}${weeds}<div class="sand"></div>`}
+function shopView(){const city=brCity(),n=S.products.length;
+ return `<section class="reef" style="padding:0">${reefScene()}<div class="wrap"><div class="copy">
+   <span class="open fadeup"><i></i>${S.store&&S.store.open===false?'Orders paused':'Open for orders'} · ${esc(brName())}</span>
+   <h1 class="fadeup" style="animation-delay:.08s">Quality supplies,<br><span>delivered fresh.</span></h1>
+   <p class="lead fadeup" style="animation-delay:.16s">${n?n+' product'+(n==1?'':'s')+' in stock now. ':''}Pay with Mobile Money or card, then pick up in ${esc(city)} or get it delivered.</p>
+   <a class="pill fadeup" style="animation-delay:.24s" href="#products">Shop now <span>↓</span></a>
+ </div></div></section>
+ <div class="ticker" aria-hidden="true"><div class="run">${['🔒 Secure Paystack checkout','📱 MTN MoMo · Telecel Cash · AirtelTigo Money','💳 Visa & Mastercard','🏪 Pickup in Kumasi & Accra','🚚 Delivery across Ghana','📍 Served from your nearest branch','🧾 Instant receipt'].map(t=>`<span>${t}</span>`).join('·').repeat(2)}</div></div>
+ <section class="prods" id="products"><div class="wrap"><div class="phead"><div><p class="eyebrow">Shop</p><h2>Our <span class="g">Products</span></h2></div>
+  <label class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6e7571" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" placeholder="Search products" value="${esc(q)}" oninput="q=this.value;$('#grid').innerHTML=cards();reveal()" aria-label="Search products"></label></div>
+  <div class="tools" id="cats"><div class="chips" id="catrow">${catRow()}</div></div>
   <div class="grid" id="grid">${cards()}</div></div></section>
- <section id="how"><div class="wrap"><p class="eyebrow center">Simple & safe</p><h2 class="center">How it <span class="g">works</span></h2>
-  <div class="how"><div class="step"><i>🛒</i><b>1. Pick your products</b><p>Add what you need to the cart. Stock is live from the shop.</p></div>
-  <div class="step"><i>💳</i><b>2. Pay online</b><p>Pay with Mobile Money or card. You get a receipt number straight away.</p></div>
-  <div class="step"><i>📦</i><b>3. Pick up or receive</b><p>Collect at the shop with your order number, or we deliver to you.</p></div></div></div></section>`}
+ <section><div class="wrap"><div class="trustrow">
+  <div class="tr rv"><i>🔒</i><div><b>Safe payment</b><span>Paystack checkout with MoMo or card</span></div></div>
+  <div class="tr rv"><i>⚡</i><div><b>Live stock</b><span>What you see is on our shelves now</span></div></div>
+  <div class="tr rv"><i>🚚</i><div><b>Pickup or delivery</b><span>From our ${esc(city)} branch</span></div></div></div></div></section>`}
+// Fade cards in as they scroll into view.
+let RVO=null;function reveal(){const els=[...document.querySelectorAll('.rv:not(.in)')];if(!('IntersectionObserver' in window)){els.forEach(e=>e.classList.add('in'));return}
+ if(!RVO)RVO=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');RVO.unobserve(e.target)}}),{rootMargin:'0px 0px -40px 0px'});
+ els.forEach((e,k)=>{e.style.transitionDelay=Math.min(k%4,3)*70+'ms';RVO.observe(e)})}
 function cards(){const L=S.products.filter(p=>(!cat||(p.cat||'Other')==cat)&&(!q||p.name.toLowerCase().includes(q.toLowerCase())));
  if(!S.products.length)return `<div class="empty"><b>Nothing for sale online yet.</b><p class="mut">Check back soon.</p></div>`;
  if(!L.length)return `<div class="empty"><b>No products match.</b><p class="mut"><button class="ulink" onclick="q='';cat='';render()">Show all products</button></p></div>`;
  return L.map(p=>{const n=cart[p.id]||0,out=p.left<=0,low=!out&&p.left<=5;
-  return `<div class="p"><div class="pimg" style="background:${p.img?'#fff':tint(p.cat||p.name)}">${pimg(p)}<span class="badge ${out?'out':low?'low':''}">${out?'Sold out':low?'Only '+p.left+' left':'In stock'}</span></div>
+  return `<div class="p rv" data-id="${p.id}"><div class="pimg" style="background:${p.img?'#fff':tint(p.cat||p.name)}">${pimg(p)}<span class="badge ${out?'out':low?'low':''}">${out?'Sold out':low?'Only '+p.left+' left':'In stock'}</span></div>
   <span class="pcat">${esc(p.cat||'General')}</span><span class="pn">${esc(p.name)}</span><span class="pu">Per ${esc(p.unit||'pcs')}</span>
   <div class="pfoot"><span class="price">${money(p.price)}</span>${out?'':n?`<div class="qty"><button onclick="add(${p.id},-1)" aria-label="One less">−</button><span>${n}</span><button onclick="add(${p.id},1)" aria-label="One more" ${n>=p.left?'disabled':''}>+</button></div>`:`<button class="add" onclick="add(${p.id},1)">${BAG}Add</button>`}</div></div>`}).join('')}
-function add(id,d){const p=P(id);if(!p)return;const n=Math.max(0,Math.min(p.left,(cart[id]||0)+d));if(n)cart[id]=n;else delete cart[id];keep();badge();if(step=='shop'){const g=$('#grid');if(g)g.innerHTML=cards()}if($('#drawer').classList.contains('on'))cartPane();if(step=='checkout')render()}
+function add(id,d){const p=P(id);if(!p)return;const n=Math.max(0,Math.min(p.left,(cart[id]||0)+d));if(n)cart[id]=n;else delete cart[id];keep();badge();
+ if(d>0){const cb=$('#cartbtn');if(cb){cb.classList.remove('bump');void cb.offsetWidth;cb.classList.add('bump')}}
+ if(step=='shop'){const g=$('#grid');if(g){g.innerHTML=cards();g.querySelectorAll('.rv').forEach(e=>e.classList.add('in'));const c=g.querySelector(`.p[data-id="${id}"]`);if(c&&d>0){c.classList.add('pop')}}}if($('#drawer').classList.contains('on'))cartPane();if(step=='checkout')render()}
 function badge(){$('#cartn').textContent=Object.values(cart).reduce((a,b)=>a+b,0)}
 function openCart(){cartPane();$('#drawer').classList.add('on')}
 function closeCart(){$('#drawer').classList.remove('on')}
@@ -361,7 +397,7 @@ function accountView(){if(!ME){step='auth';return authView()}if(acc.orders==null
   <p id="mmsg" class="msg" role="status"></p><button class="pill big" onclick="saveAcct(this)">Save changes</button></div></div></div></div>`}
 async function saveAcct(b){const m=$('#mmsg'),body={name:$('#m_name').value,email:$('#m_email').value};if($('#m_new').value){body.password=$('#m_new').value;body.oldPassword=$('#m_old').value}
  b.disabled=true;try{const j=await call('/api/store/me',{method:'POST',body:JSON.stringify(body)});saveMe(j.token||null,j.me);m.style.color='var(--g)';m.textContent='✔ Saved.';acctUI()}catch(e){m.style.color='';m.textContent=e.message}b.disabled=false}
-function render(){if(step!='account')acc={orders:null,err:''};$('#app').innerHTML=step=='checkout'?checkoutView():step=='auth'?authView():step=='account'?accountView():shopView();badge();acctUI()}
+function render(){if(step!='account')acc={orders:null,err:''};$('#app').innerHTML=step=='checkout'?checkoutView():step=='auth'?authView():step=='account'?accountView():shopView();badge();acctUI();requestAnimationFrame(reveal)}
 (async()=>{const m=location.pathname.match(/^\/store\/(pay|done)\/(RS[A-Z0-9]{10})/);
  try{await load()}catch(e){return}badge();
  acctUI();if(m){$('#cartbtn').hidden=m[1]=='pay';$('#catbtn').hidden=true;return m[1]=='pay'&&S.mode=='test'?payView(m[2]):doneView(m[2])}
