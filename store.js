@@ -9,6 +9,10 @@
 // Each customer is served by the branch nearest to them (Kumasi or Accra), chosen in the page from their region
 // or their phone's location; that branch's products and stock are shown, and the sale is recorded there.
 //
+// Customer accounts: browsing is open, but placing an order needs an account (phone number + password).
+//   Accounts live in Supabase (web_accounts, token-checked functions), never in the data the tills sync.
+//   Each account is also added to the POS Customers list of the customer's branch, and online sales are linked to it.
+//
 // Payments
 //   PAYSTACK_SECRET_KEY set   -> Paystack checkout (MoMo and cards). A sk_test_ key uses Paystack test mode.
 //   not set                   -> built-in TEST payment screen: no money moves, but stock and sales are real.
@@ -30,14 +34,15 @@ module.exports = function store(d) {
 
   // ---- products ----
   // Product documents of both branches, kept up to date with the same change feed the tills use.
-  const prodDocs = { kum: {}, acc: {} }; let prodRev = 0, prodAt = 0, prodBusy = null;
+  const prodDocs = { kum: {}, acc: {} }, custDocs = { kum: {}, acc: {} }; let prodRev = 0, prodAt = 0, prodBusy = null;
   async function refreshProducts() {
     let more = true;
     while (more) {
       const j = await sbCall('shop_db_pull', { p_since: prodRev });
       for (const x of j.docs || []) {
-        const b = x.c === 'products' ? 'kum' : x.c === 'accra_products' ? 'acc' : null;
-        if (b) { if (x.x) delete prodDocs[b][x.id]; else prodDocs[b][x.id] = x.d; }
+        const b = x.c === 'products' || x.c === 'customers' ? 'kum' : x.c === 'accra_products' || x.c === 'accra_customers' ? 'acc' : null;
+        const box = b && (x.c.endsWith('products') ? prodDocs : custDocs)[b];
+        if (box) { if (x.x) delete box[x.id]; else box[x.id] = x.d; }
       }
       prodRev = j.rev; more = !!j.more;
     }
@@ -49,6 +54,41 @@ module.exports = function store(d) {
     return Object.values(prodDocs[brOf(b)]).filter(forSale);
   }
   const getProd = (b, id) => sbCall('shop_db_get', { p_col: BR[brOf(b)].pf + 'products', p_id: 'p' + id });
+
+  // ---- customer accounts ----
+  const normPhone = (v) => { let d = String(v || '').replace(/\D/g, ''); if (d.startsWith('233') && d.length === 12) d = '0' + d.slice(3); else if (d.length === 9) d = '0' + d; return /^0\d{9}$/.test(d) ? d : ''; };
+  const acctGet = (ph) => sbCall('web_acct_get', { p_phone: ph });
+  const acctPut = (ph, data, isNew) => sbCall('web_acct_put', { p_phone: ph, p_data: data, p_new: !!isNew });
+  const hashPw = (pw) => new Promise((ok, no) => { const salt = crypto.randomBytes(16).toString('hex'); crypto.pbkdf2(String(pw), salt, 150000, 32, 'sha256', (e, k) => e ? no(e) : ok('p2$' + salt + '$' + k.toString('hex'))); });
+  const checkPw = (pw, stored) => new Promise((ok) => { const [, salt, h] = String(stored || '').split('$'); if (!salt || !h) return ok(false); crypto.pbkdf2(String(pw), salt, 150000, 32, 'sha256', (e, k) => ok(!e && crypto.timingSafeEqual(k, Buffer.from(h, 'hex')))); });
+  const pwRule = (pw) => (String(pw).length < 6 ? 'Use a password of at least 6 characters.' : String(pw).length > 100 ? 'That password is too long.' : '');
+  const csecret = () => crypto.createHash('sha256').update('renatel-customer:' + (process.env.SUPABASE_BACKUP_TOKEN || '')).digest();
+  const csign = (body) => crypto.createHmac('sha256', csecret()).update(body).digest('base64url');
+  const ctoken = (ph) => { const body = Buffer.from(JSON.stringify({ ph, iat: Date.now(), exp: Date.now() + 90 * 864e5 })).toString('base64url'); return body + '.' + csign(body); };
+  async function custOf(req) {
+    const h = String(req.headers.authorization || ''); if (!h.startsWith('Bearer ')) return null;
+    const [body, mac] = h.slice(7).split('.'); if (!body || !mac) return null;
+    const want = csign(body); if (mac.length !== want.length || !crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(want))) return null;
+    let t; try { t = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); } catch (e) { return null; }
+    if (!(t.exp > Date.now())) return null;
+    const a = await acctGet(t.ph); if (!a || (a.pwAt && t.iat < a.pwAt)) return null;
+    return { phone: t.ph, a };
+  }
+  const profile = (ph, a) => ({ name: a.name, phone: ph, email: a.email || '', region: a.region || '' });
+  // The account in the POS Customers list of a branch: found by phone, or added.
+  async function posCustomer(b, ph, a) {
+    b = brOf(b);
+    if (!prodAt || Date.now() - prodAt > 5000) { if (!prodBusy) prodBusy = refreshProducts().finally(() => { prodBusy = null; }); await prodBusy; }
+    const found = Object.values(custDocs[b]).find((c) => c && normPhone(c.phone) === ph);
+    if (found) return found.id;
+    const [id] = await sbCall('shop_ids', { p_n: 1 });
+    const c = { id, name: a.name, phone: ph, region: a.region || '', city: '', gps: '', owed: 0, addedBy: 'Online shop', addedTs: Date.now(), email: a.email || '', online: true };
+    await sbCall('shop_db_put', { p_col: BR[b].pf + 'customers', p_id: 'c' + id, p_data: c });
+    custDocs[b]['c' + id] = c;
+    serverLog('Added customer', a.name + ' · ' + ph + ' (online shop account, ' + BR[b].name + ')', WHO);
+    return id;
+  }
+  const resetCodes = new Map(); // phone -> {h, exp, tries, sent}
 
   // ---- orders (kept in their own collection; the tills ignore it) ----
   const ORD = 'webOrders';
@@ -100,9 +140,11 @@ module.exports = function store(d) {
     }
     // 2. the sale, shaped like a till sale
     const items = prods.map(([p, it]) => ({ id: p.id, name: p.name, price: it.price, cost: p.cost || 0, qty: it.qty, disc: 0 }));
+    let custId = null;
+    if (o.acct) { try { const a = await acctGet(o.acct); if (a) custId = await posCustomer(b, o.acct, a); } catch (e) { console.error('order customer', e.message); } }
     const tax = set.tax ? o.total * set.tax / (100 + set.tax) : 0;
     const sale = { id: saleId, ts: now, items, sub: o.total, disc: 0, sdisc: 0, total: o.total, method: 'Online', pays: [{ m: 'Online', amt: o.total }], tend: null, change: null,
-      cust: null, custName: o.name, by: null, byName: 'Online shop', tax, taxRate: set.tax || 0, refunds: [], dfee: 0,
+      cust: custId, custName: o.name, by: null, byName: 'Online shop', tax, taxRate: set.tax || 0, refunds: [], dfee: 0,
       online: { ref, phone: o.phone, email: o.email || '', mode: o.mode, region: o.region || '', provider: pay.provider, payRef: pay.reference || ref } };
     // 3. delivery job if asked
     if (o.mode === 'delivery') {
@@ -148,7 +190,7 @@ module.exports = function store(d) {
 
   // ---- limits: a few orders per visitor per hour ----
   const hits = new Map();
-  function allow(req, max) { const k = clientIp(req), h = hits.get(k) || { n: 0, at: Date.now() }; if (Date.now() - h.at > 3600e3) { h.n = 0; h.at = Date.now(); } h.n++; hits.set(k, h); return h.n <= max; }
+  function allow(req, max, bucket) { const k = (bucket || 'o') + ':' + (bucket && bucket.startsWith('lp') ? '' : clientIp(req)), h = hits.get(k) || { n: 0, at: Date.now() }; if (Date.now() - h.at > 3600e3) { h.n = 0; h.at = Date.now(); } h.n++; hits.set(k, h); return h.n <= max; }
   setInterval(() => { const t = Date.now(); for (const [k, v] of hits) if (t - v.at > 3600e3) hits.delete(k); }, 600000).unref();
   const json = async (req) => { try { return JSON.parse(await readBody(req)); } catch (e) { return null; } };
   const REF_RX = /^RS[A-Z0-9]{10}$/;
@@ -164,10 +206,85 @@ module.exports = function store(d) {
           branch: b, branches: Object.fromEntries(Object.entries(BR).map(([k, v]) => [k, { name: names[k] || v.name, city: v.city }])),
           products: list.map((p) => ({ id: p.id, name: p.name, cat: p.cat || '', unit: p.unit || 'pcs', price: p.price, left: Math.max(0, p.stock || 0), img: /^[a-f0-9]{24}$/.test(p.img || '') ? p.img : '' })).sort((x, y) => x.name.localeCompare(y.name)) });
       }
+      // ---- accounts ----
+      if (req.method === 'POST' && url === '/api/store/signup') {
+        if (!allow(req, 10, 'su')) return send(res, 429, { error: 'Too many new accounts from here. Try again later.' });
+        const m = await json(req); if (!m) return send(res, 400, { error: 'Not valid data.' });
+        const name = String(m.name || '').trim().replace(/\s+/g, ' ').slice(0, 80), ph = normPhone(m.phone), email = String(m.email || '').trim().toLowerCase().slice(0, 120), pw = String(m.password || '');
+        if (name.length < 2) return send(res, 400, { error: 'Enter your full name.', field: 'name' });
+        if (!ph) return send(res, 400, { error: 'Enter a valid Ghana phone number, e.g. 024 000 0000.', field: 'phone' });
+        if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return send(res, 400, { error: 'That email address doesn’t look right.', field: 'email' });
+        if (pwRule(pw)) return send(res, 400, { error: pwRule(pw), field: 'password' });
+        const a = { name, email, region: String(m.region || '').slice(0, 40), branch: brOf(m.branch), pw: await hashPw(pw), created: Date.now(), orders: [] };
+        const r = await acctPut(ph, a, true);
+        if (r && r.exists) return send(res, 409, { error: 'An account already uses this phone number. Sign in instead.', field: 'phone', exists: true });
+        posCustomer(a.branch, ph, a).catch((e) => console.error('signup customer', e.message));
+        console.log('store: new customer account ' + ph.slice(0, 3) + '•••' + ph.slice(-3));
+        return send(res, 200, { token: ctoken(ph), me: profile(ph, a) });
+      }
+      if (req.method === 'POST' && url === '/api/store/login') {
+        const m = await json(req); if (!m) return send(res, 400, { error: 'Not valid data.' });
+        const ph = normPhone(m.phone);
+        if (!allow(req, 20, 'li') || (ph && !allow({ headers: {}, socket: {} }, 15, 'lp' + ph))) return send(res, 429, { error: 'Too many tries. Wait a while, then try again.' });
+        const a = ph ? await acctGet(ph) : null;
+        if (!a || !(await checkPw(String(m.password || ''), a.pw))) return send(res, 401, { error: 'That phone number and password don’t match.' });
+        return send(res, 200, { token: ctoken(ph), me: profile(ph, a) });
+      }
+      if (url === '/api/store/me') {
+        const c = await custOf(req); if (!c) return send(res, 401, { error: 'Please sign in again.' });
+        if (req.method === 'GET') {
+          const orders = [];
+          for (const ref of (c.a.orders || []).slice(-15).reverse()) { const o = await getOrder(ref); if (o) orders.push(publicOrder(o, ref)); }
+          return send(res, 200, { me: profile(c.phone, c.a), orders });
+        }
+        if (req.method === 'POST') {
+          const m = await json(req); if (!m) return send(res, 400, { error: 'Not valid data.' });
+          const a = c.a, name = String(m.name || a.name).trim().slice(0, 80), email = String(m.email ?? a.email ?? '').trim().toLowerCase().slice(0, 120);
+          if (name.length < 2) return send(res, 400, { error: 'Enter your full name.' });
+          if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return send(res, 400, { error: 'That email address doesn’t look right.' });
+          Object.assign(a, { name, email }); if (m.region !== undefined) a.region = String(m.region).slice(0, 40);
+          let token;
+          if (m.password) {
+            if (!(await checkPw(String(m.oldPassword || ''), a.pw))) return send(res, 401, { error: 'Your current password is not right.' });
+            if (pwRule(m.password)) return send(res, 400, { error: pwRule(m.password) });
+            a.pw = await hashPw(m.password); a.pwAt = Date.now(); token = ctoken(c.phone);
+          }
+          await acctPut(c.phone, a, false);
+          return send(res, 200, { me: profile(c.phone, a), token });
+        }
+      }
+      if (req.method === 'POST' && url === '/api/store/reset/code') {
+        const m = await json(req); const ph = m && normPhone(m.phone);
+        if (!ph) return send(res, 400, { error: 'Enter the phone number of your account.' });
+        if (!allow(req, 10, 'rc')) return send(res, 429, { error: 'Too many tries. Try again later.' });
+        const a = await acctGet(ph), shop = await shopMain(false), sp = (shop && shop.set && shop.set.phone) || '';
+        if (!a) return send(res, 404, { error: 'No account uses that phone number. Create an account instead.' });
+        if (!a.email) return send(res, 400, { error: 'This account has no email for a reset code.' + (sp ? ' Call the shop on ' + sp + ' for help.' : ' Call the shop for help.') });
+        const prev = resetCodes.get(ph); if (prev && Date.now() - prev.sent < 60000) return send(res, 429, { error: 'A code was sent less than a minute ago. Check your email (and spam).' });
+        const code = String(100000 + crypto.randomInt(900000));
+        resetCodes.set(ph, { h: crypto.createHash('sha256').update('c:' + code).digest('hex'), exp: Date.now() + 15 * 60000, tries: 0, sent: Date.now() });
+        const nm = (shop && shop.set && shop.set.name) || 'Renatel Shop';
+        try { await sendEmail({ to: [a.email], subject: nm + ' - your password reset code: ' + code, text: 'Hello ' + a.name + ',\n\nYour code to reset your ' + nm + ' online shop password is:\n\n    ' + code + '\n\nIt expires in 15 minutes. If you did not ask for this, ignore this email.' }); }
+        catch (e) { resetCodes.delete(ph); return send(res, 502, { error: 'The code email could not be sent. Try again later.' }); }
+        const [u, d] = a.email.split('@');
+        return send(res, 200, { ok: true, to: u.slice(0, 2) + '•••@' + d });
+      }
+      if (req.method === 'POST' && url === '/api/store/reset') {
+        const m = await json(req); const ph = m && normPhone(m.phone), rc = ph && resetCodes.get(ph);
+        if (!rc || rc.exp < Date.now()) return send(res, 400, { error: 'That code has expired. Send a new code.' });
+        if (rc.tries >= 5) { resetCodes.delete(ph); return send(res, 429, { error: 'Too many wrong codes. Send a new code.' }); }
+        if (crypto.createHash('sha256').update('c:' + String(m.code || '').replace(/\D/g, '')).digest('hex') !== rc.h) { rc.tries++; return send(res, 401, { error: 'That code is not right.' }); }
+        if (pwRule(m.password)) return send(res, 400, { error: pwRule(m.password) });
+        const a = await acctGet(ph); if (!a) return send(res, 404, { error: 'Account not found.' });
+        a.pw = await hashPw(m.password); a.pwAt = Date.now(); await acctPut(ph, a, false); resetCodes.delete(ph);
+        return send(res, 200, { token: ctoken(ph), me: profile(ph, a) });
+      }
       if (req.method === 'POST' && url === '/api/store/order') {
         if (!allow(req, 15)) return send(res, 429, { error: 'Too many orders from here. Try again in an hour.' });
+        const cust = await custOf(req);
+        if (!cust) return send(res, 401, { error: 'Please create an account or sign in to check out.', auth: true });
         const m = await json(req); if (!m) return send(res, 400, { error: 'Not valid data.' });
-        const name = String(m.name || '').trim().slice(0, 80), phone = String(m.phone || '').replace(/[^\d+]/g, '').slice(0, 16), email = String(m.email || '').trim().toLowerCase().slice(0, 120);
+        const name = cust.a.name, phone = cust.phone, email = String(m.email || cust.a.email || '').trim().toLowerCase().slice(0, 120);
         const branch = brOf(m.branch), region = String(m.region || '').trim().slice(0, 40);
         const dmode = m.mode === 'delivery' ? 'delivery' : 'pickup', addr = String(m.addr || '').trim().slice(0, 200), city = String(m.city || '').trim().slice(0, 60), note = String(m.note || '').trim().slice(0, 300);
         if (!name) return send(res, 400, { error: 'Enter your name.' });
@@ -187,8 +304,10 @@ module.exports = function store(d) {
         }
         total = r2(total);
         const ref = 'RS' + crypto.randomBytes(8).toString('hex').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10).padEnd(10, '0');
-        const o = { status: 'pending', created: Date.now(), branch, region, items, total, name, phone, email, mode: dmode, addr, city, note, pay: mode(), ip: clientIp(req) };
+        const o = { status: 'pending', created: Date.now(), branch, region, items, total, name, phone, email, acct: phone, mode: dmode, addr, city, note, pay: mode(), ip: clientIp(req) };
         await putOrder(ref, o);
+        cust.a.orders = (cust.a.orders || []).concat(ref).slice(-50); if (region && !cust.a.region) cust.a.region = region;
+        await acctPut(phone, cust.a, false);
         if (mode() === 'test') return send(res, 200, { ref, pay_url: '/store/pay/' + ref });
         const host = 'https://' + String(req.headers['x-forwarded-host'] || req.headers.host || 'renatel.shop').split(',')[0].trim();
         const t = await paystack('/transaction/initialize', { email: email || phone.replace(/\D/g, '') + '@customers.renatel.shop', amount: Math.round(total * 100), currency: 'GHS', reference: ref,
