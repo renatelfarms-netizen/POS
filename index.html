@@ -424,13 +424,13 @@ function rcptText(s){const x=RX(),S=x.show,Lb=x.lb,c=s.cust&&cu(s.cust),nm=S.bra
 function showReceipt(s){
  $('#receipt').className='';const c=s.cust&&cu(s.cust),ph=c?c.phone:'',t=rcptText(s);
  $('#receipt').innerHTML=rcptHtml(s);
- $('#rbtns').innerHTML=`${ONWEB?'<button class="btn pri" onclick="printRcpt()">🖨️ Print</button>':`<button class="btn pri" onclick="rcptPdf(${s.id})">Save PDF</button>`}<button class="btn" onclick="$('#modal').classList.remove('on')">Close</button>`;
+ $('#rbtns').innerHTML=`<p id="smsst" class="mut ln" style="width:100%;margin:0 0 6px;text-align:center"></p>${ONWEB?'<button class="btn pri" onclick="printRcpt()">🖨️ Print</button>':`<button class="btn pri" onclick="rcptPdf(${s.id})">Save PDF</button>`}${ONWEB?`<button class="btn" onclick="smsAsk(${s.id},'${esc(ph)}')">📱 SMS</button>`:''}<button class="btn" onclick="$('#modal').classList.remove('on')">Close</button>`;
  $('#modal').classList.add('on')}
 const sale=i=>db.sales.find(x=>x.id==i);
 async function smsAsk(i,ph){const v=await uiPrompt('Send the receipt by SMS to this phone number:',ph||'');if(v===null)return;if(normPh(v).length<10)return uiAlert('That phone number doesn’t look right.');smsRcpt(i,v,true)}
-async function smsRcpt(id,phone,manual){if(!ONWEB)return manual&&uiAlert('SMS receipts work on renatel.shop.');if(manual)toast('📱 Sending the receipt…','');
- try{const r=await fetch('/api/store/admin/sms/receipt',{method:'POST',headers:Object.assign(authH(),{'Content-Type':'application/json'}),body:JSON.stringify({b:curB,id,phone})}),j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('The server answered '+r.status));toast('📱 Receipt sent by SMS','to '+j.to)}
- catch(e){if(manual)uiAlert('The SMS was not sent: '+e.message);else if(!/not set up/i.test(e.message))toast('📱 SMS receipt not sent',e.message)}}
+async function smsRcpt(id,phone,manual){if(!ONWEB)return manual&&uiAlert('SMS receipts work on renatel.shop.');const st=t=>{const e=$('#smsst');if(e)e.innerHTML=t?'<span style="background:#fff;color:#1b1f1d;padding:5px 14px;border-radius:99px;display:inline-block;box-shadow:0 2px 8px rgba(0,0,0,.15)">'+t+'</span>':''};st('📱 Sending the receipt by SMS to '+esc(phone)+'…');
+ try{const r=await fetch('/api/store/admin/sms/receipt',{method:'POST',headers:Object.assign(authH(),{'Content-Type':'application/json'}),body:JSON.stringify({b:curB,id,phone})}),j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('The server answered '+r.status));st('<span style="color:var(--ac)">✔ Receipt sent by SMS to '+esc(j.to)+'</span>');toast('📱 Receipt sent by SMS','to '+j.to)}
+ catch(e){if(/not set up/i.test(e.message)&&!manual){st('');return}st('<span class="bad">✖ SMS not sent: '+esc(e.message)+'</span>');if(manual)uiAlert('The SMS was not sent: '+e.message)}}
 function saleMenu(i){const s=sale(i);if(!s)return;const c=s.cust&&cu(s.cust),ph=c?c.phone:'',t=rcptText(s),close="$('#dlg').classList.remove('on');",A=[];
  const row=(ic,l,sub,js,cls)=>`<button class="smrow ${cls||''}" onclick="${close}${js}"><span class="smic">${ic}</span><span><b>${l}</b>${sub?`<small class="mut">${sub}</small>`:''}</span></button>`;
  A.push(row('🧾','View receipt','',`showReceipt(sale(${i}))`));
