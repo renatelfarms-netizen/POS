@@ -74,7 +74,7 @@ footer{max-width:1040px;margin:10px auto 40px;padding:0 16px;font-size:13px;colo
 <script>
 'use strict';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let S={products:[],cur:'GH₵',mode:'test'},cart={},cat='',q='',step='shop',form={name:'',phone:'',email:'',mode:'pickup',addr:'',city:'',note:''};
+let S={products:[],cur:'GH₵',mode:'test'},cart={},cat='',q='',step='shop',ck={name:'',phone:'',email:'',mode:'pickup',addr:'',city:'',note:''};
 try{cart=JSON.parse(sessionStorage.getItem('rs-cart')||'{}')||{}}catch(e){cart={}}
 const keep=()=>{try{sessionStorage.setItem('rs-cart',JSON.stringify(cart))}catch(e){}};
 const money=n=>S.cur+' '+Number(n||0).toFixed(2);
@@ -113,17 +113,17 @@ function cartPane(){const L=lines();$('#pane').innerHTML=`<div style="display:fl
  <div class="tot"><span>Total</span><span>${money(total())}</span></div></div><button class="btn pri big" onclick="closeCart();step='checkout';render();scrollTo(0,0)">Checkout</button>`:'<p class="mut">Your cart is empty.</p>'}`}
 
 function checkoutView(){const L=lines();if(!L.length){step='shop';return shopView()}
- const V=(k,t,ph,ac)=>`<input id="f_${k}" type="${t||'text'}" value="${esc(form[k])}" placeholder="${ph||''}" autocomplete="${ac||'off'}" oninput="form.${k}=this.value">`;
+ const V=(k,t,ph,ac)=>`<input id="f_${k}" type="${t||'text'}" value="${esc(ck[k])}" placeholder="${ph||''}" autocomplete="${ac||'off'}" oninput="ck.${k}=this.value">`;
  return `<button class="btn" onclick="step='shop';render()" style="margin-bottom:12px">← Keep shopping</button>
  <div class="two"><div class="card"><b style="font-size:19px">Your details</b>
   <label class="lbl">Full name *</label>${V('name','text','e.g. Ama Mensah','name')}
   <label class="lbl">Phone number (MoMo) *</label>${V('phone','tel','024 000 0000','tel')}
   <label class="lbl">Email (for your receipt, optional)</label>${V('email','email','you@example.com','email')}
   <label class="lbl">How do you want it?</label>
-  <div class="seg"><label><input type="radio" name="dm" value="pickup" ${form.mode=='pickup'?'checked':''} onchange="form.mode='pickup';render()"><span><b>Pick up</b><br><small class="mut">Collect at the shop${S.city?' in '+esc(S.city):''}</small></span></label>
-  <label><input type="radio" name="dm" value="delivery" ${form.mode=='delivery'?'checked':''} onchange="form.mode='delivery';render()"><span><b>Delivery</b><br><small class="mut">We call you to arrange it</small></span></label></div>
-  ${form.mode=='delivery'?`<label class="lbl">Delivery address or landmark *</label>${V('addr','text','House no., street, landmark','street-address')}<label class="lbl">Town / city</label>${V('city','text','e.g. Kumasi')}<p class="mut" style="font-size:14px;margin:6px 0 0">Any delivery fee is agreed with you on the phone.</p>`:''}
-  <label class="lbl">Note (optional)</label><textarea id="f_note" rows="2" oninput="form.note=this.value">${esc(form.note)}</textarea>
+  <div class="seg"><label><input type="radio" name="dm" value="pickup" ${ck.mode=='pickup'?'checked':''} onchange="ck.mode='pickup';render()"><span><b>Pick up</b><br><small class="mut">Collect at the shop${S.city?' in '+esc(S.city):''}</small></span></label>
+  <label><input type="radio" name="dm" value="delivery" ${ck.mode=='delivery'?'checked':''} onchange="ck.mode='delivery';render()"><span><b>Delivery</b><br><small class="mut">We call you to arrange it</small></span></label></div>
+  ${ck.mode=='delivery'?`<label class="lbl">Delivery address or landmark *</label>${V('addr','text','House no., street, landmark','street-address')}<label class="lbl">Town / city</label>${V('city','text','e.g. Kumasi')}<p class="mut" style="font-size:14px;margin:6px 0 0">Any delivery fee is agreed with you on the phone.</p>`:''}
+  <label class="lbl">Note (optional)</label><textarea id="f_note" rows="2" oninput="ck.note=this.value">${esc(ck.note)}</textarea>
  </div>
  <div class="card"><b style="font-size:19px">Order summary</b>${L.map(x=>`<div class="row"><span>${x.n} × ${esc(x.p.name)}</span><b>${money(x.p.price*x.n)}</b></div>`).join('')}
   <div class="tot"><span>Total</span><span>${money(total())}</span></div>
@@ -131,10 +131,11 @@ function checkoutView(){const L=lines();if(!L.length){step='shop';return shopVie
   <button class="btn pri big" id="paybtn" onclick="placeOrder()">Pay ${money(total())}</button>
   <p class="mut" style="font-size:13px;margin:10px 0 0">${S.mode=='test'?'Test mode: you’ll see a practice payment screen. No money is taken.':'You’ll be taken to Paystack to pay securely with Mobile Money or card.'}</p></div></div>`}
 async function placeOrder(){const b=$('#paybtn'),m=$('#cmsg');m.textContent='';
- if(!form.name.trim())return m.textContent='Enter your name.';if(form.phone.replace(/\D/g,'').length<10)return m.textContent='Enter a valid phone number.';
- if(form.mode=='delivery'&&!form.addr.trim())return m.textContent='Enter the delivery address.';
+ ['name','phone','email','addr','city','note'].forEach(k=>{const e=$('#f_'+k);if(e)ck[k]=e.value});
+ if(!ck.name.trim())return m.textContent='Enter your name.';if(ck.phone.replace(/\D/g,'').length<10)return m.textContent='Enter a valid phone number.';
+ if(ck.mode=='delivery'&&!ck.addr.trim())return m.textContent='Enter the delivery address.';
  b.disabled=true;b.textContent='Please wait…';
- try{const j=await call('/api/store/order',{method:'POST',body:JSON.stringify(Object.assign({},form,{items:lines().map(x=>({id:x.p.id,qty:x.n}))}))});location.href=j.pay_url}
+ try{const j=await call('/api/store/order',{method:'POST',body:JSON.stringify(Object.assign({},ck,{items:lines().map(x=>({id:x.p.id,qty:x.n}))}))});location.href=j.pay_url}
  catch(e){m.textContent=e.message;b.disabled=false;b.textContent='Pay '+money(total());load().then(()=>{badge()}).catch(()=>{})}}
 
 async function payView(ref){$('#app').innerHTML='<div class="spin"></div>';let o;try{o=await call('/api/store/order/'+ref)}catch(e){return $('#app').innerHTML=`<div class="card center"><b>Order not found</b><p class="mut">${esc(e.message)}</p><a class="btn" href="/store">Back to the shop</a></div>`}
