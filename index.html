@@ -1288,7 +1288,9 @@ function ask(o){const run=()=>new Promise(res=>{const el=$('#ask'),inp=o.input!=
  <div class="form" style="margin:12px 0 0;justify-content:flex-end">${o.cancel?`<button class="btn" id="ask_no">${esc(o.cancel)}</button>`:''}<button class="btn ${o.danger?'del':o.good?'okb':'pri'}" id="ask_ok">${esc(o.ok||'OK')}</button></div></div>`;
  el.classList.add('on');const done=v=>{el.classList.remove('on');el.innerHTML='';document.removeEventListener('keydown',kd,true);res(v)},kd=e=>{if(e.key=='Escape'){e.preventDefault();done(inp?null:false)}else if(e.key=='Enter'&&(inp||document.activeElement==$('#ask_ok'))){e.preventDefault();done(inp?$('#ask_in').value:true)}};
  document.addEventListener('keydown',kd,true);$('#ask_ok').onclick=()=>done(inp?$('#ask_in').value:true);if($('#ask_no'))$('#ask_no').onclick=()=>done(inp?null:false);
- setTimeout(()=>{const f=inp?$('#ask_in'):$('#ask_ok');if(f)f.focus()},20)});const p=askQ.then(run);askQ=p.catch(()=>{});return p}
+ setTimeout(()=>{const f=inp?$('#ask_in'):$('#ask_ok');if(f)f.focus()},20)});
+ // Wait for a box that is still open; but if an earlier box was lost (not on screen any more), don't wait for it forever.
+ const p=Promise.race([askQ,new Promise(r=>setTimeout(r,400))]).then(()=>$('#ask').classList.contains('on')?askQ.then(run):run());askQ=p.catch(()=>{});return p}
 const OKRX=/^✔|^(saved|done)\.?$|was added|updated|changed|reset\.|copied|created|recorded|moved|received|sent/i;
 /* ---------- Look & feel: colour themes, fonts, text size (owner decides who may change them) ---------- */
 const PAL={
@@ -1522,24 +1524,25 @@ function payCard(){if(!PAY){PAY={busy:true};webApi('/api/store/admin/pay').then(
  const live=PAY.mode=='paystack',ptest=PAY.mode=='paystack-test',cp=t=>`<span style="display:flex;gap:6px;align-items:center;margin-top:4px"><code style="flex:1;min-width:0;overflow:auto;white-space:nowrap;background:var(--bd);padding:6px 8px;border-radius:8px;font-size:12px">${esc(t)}</code><button class="btn sm" onclick="navigator.clipboard&&navigator.clipboard.writeText('${esc(t)}').then(()=>toast('Copied'))">Copy</button></span>`;
  return `<div class="card" style="margin-top:12px"><b>💳 Payments · Paystack (Mobile Money &amp; cards)</b>
  <p class="ln" style="margin:8px 0">${live?'<span class="pill ok">✔ LIVE</span> Customers pay with real Mobile Money and cards. Money goes to your Paystack account.':ptest?'<span class="pill low">Paystack test mode</span> Customers see the real Paystack checkout, but with test numbers only. No real money. Paste your <b>live</b> key when you are ready.':'<span class="pill low">🧪 Practice payments</span> No real money. Customers see a practice payment screen. Paste your Paystack key below to take real payments.'}${PAY.hint?` <span class="mut">Key: ${esc(PAY.hint)}${PAY.source=='hosting'?' (set on the hosting)':''}</span>`:''}</p>
- ${PAY.source=='hosting'?'':`<label class="fl"><span class="mut">Paystack <b>Secret Key</b> (starts with sk_live_ or sk_test_)</span><input id="paykey" type="password" autocomplete="off" spellcheck="false" placeholder="sk_live_…"></label>
- <p id="paymsg" class="msg" style="margin-top:6px"></p><div class="form" style="margin-top:8px"><button class="btn pri" onclick="paySave(this)">Check &amp; save key</button>${PAY.hint?`<button class="btn del" onclick="payOff(this)">Switch off (back to practice)</button>`:''}</div>`}
+ ${PAY.source=='hosting'?'':`<label class="fl"><span class="mut">Paystack <b>Secret Key</b> (starts with sk_live_ or sk_test_)</span><input id="paykey" type="password" autocomplete="off" spellcheck="false" placeholder="sk_live_…" oninput="if(payOk){payOk=false;const b=$('#paybtn');if(b){b.textContent='Check & save key';b.classList.remove('okb')}}"></label>
+ <p id="paymsg" class="msg" style="margin-top:6px"></p><div class="form" style="margin-top:8px"><button class="btn pri" id="paybtn" onclick="paySave(this)">Check &amp; save key</button>${PAY.hint?`<button class="btn del" onclick="payOff(this)">Switch off (back to practice)</button>`:''}</div>`}
  <details style="margin-top:12px" ${PAY.hint?'':'open'}><summary style="cursor:pointer;font-weight:600">How to connect Paystack</summary><ol class="ln" style="margin:8px 0 0;padding-left:18px">
   <li>Create a free business account at <a href="https://paystack.com/gh" target="_blank" rel="noopener">paystack.com/gh</a> (choose Ghana). Test keys work straight away; live keys come after Paystack verifies your business (Ghana Card, business registration and a bank or MoMo account for payouts).</li>
   <li>In Paystack go to <b>Settings → API Keys &amp; Webhooks</b>. Copy the <b>Secret Key</b> and paste it above. Never share it with anyone or send it in a chat.</li>
   <li>On the same Paystack page, set the <b>Webhook URL</b> to:${cp(PAY.webhook)}It lets the shop record a payment even if the customer closes their phone before returning.</li>
   <li>Optional: set the <b>Callback URL</b> to:${cp(PAY.callback)}</li>
   <li>Do one small test order on the shop with your own MoMo, then check it in 🧾 Orders and Receipts.</li></ol></details></div>`}
+let payOk=false;
 async function paySave(b){const m=$('#paymsg'),say=(t,ok)=>{m.style.color=ok?'var(--ac)':'';m.textContent=t};
  try{const k=($('#paykey').value||'').replace(/\s+/g,'');if(!k)return say('✖ Paste the Secret Key in the box first.');
   if(/^pk_/.test(k))return say('✖ That is the Public Key (pk_…). Copy the SECRET Key (sk_live_… or sk_test_…) instead.');
   if(!/^sk_(live|test)_/.test(k))return say('✖ That doesn’t look like a Paystack Secret Key. It must start with sk_live_ or sk_test_.');
-  if(k.startsWith('sk_live_')&&!await uiConfirm('Switch on LIVE payments? Customers will pay real money into your Paystack account from now on.'))return say('Not saved: you pressed Cancel.');
-  b.disabled=true;b.textContent='Checking with Paystack…';say('⏳ Checking the key with Paystack…',true);
-  PAY=await webApi('/api/store/admin/pay',{method:'POST',body:JSON.stringify({key:k})});WEB.mode=PAY.mode;render();
+  if(k.startsWith('sk_live_')&&!payOk){say('⚠️ This is a LIVE key: customers will pay real money into your Paystack account. Press the green button again to confirm.',false);b.textContent='✔ Yes, switch on live payments';b.classList.add('okb');payOk=true;return}
+  payOk=false;b.disabled=true;b.textContent='Checking with Paystack…';say('⏳ Checking the key with Paystack…',true);
+  PAY=await webApi('/api/store/admin/pay',{method:'POST',body:JSON.stringify({key:k})});WEB.mode=PAY.mode;render();scrollTo(0,document.body.scrollHeight);
   const ok=PAY.mode=='paystack'?'✔ Saved. LIVE payments are on.':'✔ Saved. Paystack test mode is on.';toast(ok);const m2=$('#paymsg');if(m2){m2.style.color='var(--ac)';m2.textContent=ok}}
  catch(e){say('✖ '+(e.message||'Something went wrong.')+' Nothing was saved.');b.disabled=false;b.textContent='Check & save key'}}
-async function payOff(b){if(!await uiConfirm('Switch off Paystack? The shop goes back to practice payments (no real money).'))return;b.disabled=true;
+async function payOff(b){if(!b.dataset.sure){b.dataset.sure=1;b.textContent='Press again to switch off';return}b.disabled=true;
  try{PAY=await webApi('/api/store/admin/pay',{method:'POST',body:JSON.stringify({key:''})});WEB.mode=PAY.mode;render()}catch(e){b.disabled=false;uiAlert(e.message)}}
 function webSaveSet(){if(!webCan(me,'settings'))return;const o=Object.assign({open:true,msg:'',pickup:true,delivery:true,dnote:''},db.set.store||{}),n={open:$('#ws_open').checked,pickup:$('#ws_pickup').checked,delivery:$('#ws_delivery').checked,msg:$('#ws_msg').value.trim(),dnote:$('#ws_dnote').value.trim()};
  if(!n.pickup&&!n.delivery)return uiAlert('Keep pickup or delivery on, or close the shop instead.');
