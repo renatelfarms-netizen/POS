@@ -156,6 +156,25 @@ module.exports = function store(d) {
     if (!rc) throw new Error('That phone number is not valid.');
     return usms('/sms/send', { recipient: rc, sender_id: c.sender, type: 'plain', message: String(message).slice(0, 459) }, c.token);
   }
+  // One-time codes (password resets), kept as hashes in Supabase so every server process sees them.
+  const otpHash = (key, code) => crypto.createHash('sha256').update('otp:' + key + ':' + String(code)).digest('hex');
+  async function otpIssue(key) {
+    const cur = await sbCall('otp_get', { p_k: key });
+    if (cur && Date.now() - cur.sent < 60000) { const e = new Error('A code was sent less than a minute ago. Wait a moment before asking for another.'); e.code = 429; throw e; }
+    const code = String(100000 + crypto.randomInt(900000));
+    await sbCall('otp_set', { p_k: key, p_h: otpHash(key, code), p_minutes: 15 });
+    return code;
+  }
+  async function otpCheck(key, code) { // 'ok' | 'expired' | 'locked' | number of tries left
+    const cur = await sbCall('otp_get', { p_k: key });
+    if (!cur || cur.exp < Date.now()) return 'expired';
+    if (cur.tries >= 5) { await sbCall('otp_mark', { p_k: key, p_try: false }); return 'locked'; }
+    if (otpHash(key, String(code || '').replace(/\D/g, '')) !== cur.h) { await sbCall('otp_mark', { p_k: key, p_try: true }); return 4 - cur.tries; }
+    await sbCall('otp_mark', { p_k: key, p_try: false });
+    return 'ok';
+  }
+  const otpSms = (shopName, code) => (shopName || 'Renatel Shop') + ': your password reset code is ' + code + '. It expires in 15 minutes. Never share this code with anyone.';
+  const smsReady = async () => { const c = await smsCfg(false); return !!(c.token && c.sender); };
   const DEF_SMS = 'Thank you for shopping at {shop}, {name}! Receipt #{no}, GHS {total}. View it here: {link}';
   // Thank-you SMS with the receipt link. Returns {sent, to} or throws.
   async function smsReceipt(b, sale, phone, host, by) {
@@ -485,26 +504,28 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         const m = await json(req); const ph = m && normPhone(m.phone);
         if (!ph) return send(res, 400, { error: 'Enter the phone number of your account.' });
         if (!allow(req, 10, 'rc')) return send(res, 429, { error: 'Too many tries. Try again later.' });
-        const a = await acctGet(ph), shop = await shopMain(false), sp = (shop && shop.set && shop.set.phone) || '';
+        const a = await acctGet(ph), shop = await shopMain(false), nm = (shop && shop.set && shop.set.name) || 'Renatel Shop', sp = (shop && shop.set && shop.set.phone) || '';
         if (!a) return send(res, 404, { error: 'No account uses that phone number. Create an account instead.' });
-        if (!a.email) return send(res, 400, { error: 'This account has no email for a reset code.' + (sp ? ' Call the shop on ' + sp + ' for help.' : ' Call the shop for help.') });
-        const prev = a.rst; if (prev && Date.now() - prev.sent < 60000) return send(res, 429, { error: 'A code was sent less than a minute ago. Check your email (and spam).' });
-        const code = String(100000 + crypto.randomInt(900000));
-        a.rst = { h: crypto.createHash('sha256').update('c:' + code).digest('hex'), exp: Date.now() + 15 * 60000, tries: 0, sent: Date.now() };
-        await acctPut(ph, a, false);
-        const nm = (shop && shop.set && shop.set.name) || 'Renatel Shop';
-        try { await sendEmail({ to: [a.email], subject: nm + ' - your password reset code: ' + code, text: 'Hello ' + a.name + ',\n\nYour code to reset your ' + nm + ' online shop password is:\n\n    ' + code + '\n\nIt expires in 15 minutes. If you did not ask for this, ignore this email.' }); }
-        catch (e) { delete a.rst; await acctPut(ph, a, false); return send(res, 502, { error: 'The code email could not be sent. Try again later.' }); }
-        const [u, d] = a.email.split('@');
-        return send(res, 200, { ok: true, to: u.slice(0, 2) + '•••@' + d });
+        const sms = await smsReady(), via = m.via === 'email' || !sms ? 'email' : 'sms';
+        if (via === 'email' && !a.email) return send(res, 400, { error: sms ? 'This account has no email. Choose “Text me a code” instead.' : 'This account has no email for a reset code.' + (sp ? ' Call the shop on ' + sp + ' for help.' : ' Call the shop for help.') });
+        let code; try { code = await otpIssue('cust:' + ph); } catch (e) { return send(res, e.code || 502, { error: e.message }); }
+        try {
+          if (via === 'sms') await sendSms(ph, otpSms(nm, code));
+          else await sendEmail({ to: [a.email], subject: nm + ' - your password reset code: ' + code, text: 'Hello ' + a.name + ',\n\nYour code to reset your ' + nm + ' online shop password is:\n\n    ' + code + '\n\nIt expires in 15 minutes. If you did not ask for this, ignore this email.' });
+        } catch (e) { await sbCall('otp_mark', { p_k: 'cust:' + ph, p_try: false }); console.log('reset code ' + via + ': ' + e.message); return send(res, 502, { error: 'The code could not be sent' + (via === 'sms' ? ' by SMS' : ' by email') + '. Try again later.' }); }
+        const [u, d] = String(a.email || '').split('@');
+        return send(res, 200, { ok: true, via, to: via === 'sms' ? ph.slice(0, 3) + '•••' + ph.slice(-3) : u.slice(0, 2) + '•••@' + d, email: !!a.email, sms });
       }
       if (req.method === 'POST' && url === '/api/store/reset') {
-        const m = await json(req); const ph = m && normPhone(m.phone), a = ph ? await acctGet(ph) : null, rc = a && a.rst;
-        if (!rc || rc.exp < Date.now()) return send(res, 400, { error: 'That code has expired. Send a new code.' });
-        if (rc.tries >= 5) { delete a.rst; await acctPut(ph, a, false); return send(res, 429, { error: 'Too many wrong codes. Send a new code.' }); }
-        if (crypto.createHash('sha256').update('c:' + String(m.code || '').replace(/\D/g, '')).digest('hex') !== rc.h) { rc.tries++; await acctPut(ph, a, false); return send(res, 401, { error: 'That code is not right.' }); }
+        const m = await json(req); const ph = m && normPhone(m.phone), a = ph ? await acctGet(ph) : null;
+        if (!a) return send(res, 400, { error: 'That code has expired. Send a new code.' });
         if (pwRule(m.password)) return send(res, 400, { error: pwRule(m.password) });
-        a.pw = await hashPw(m.password); a.pwAt = Date.now(); delete a.rst; await acctPut(ph, a, false);
+        const r = await otpCheck('cust:' + ph, m.code);
+        if (r === 'expired') return send(res, 400, { error: 'That code has expired. Send a new code.' });
+        if (r === 'locked') return send(res, 429, { error: 'Too many wrong codes. Send a new code.' });
+        if (r !== 'ok') return send(res, 401, { error: r > 0 ? 'That code is not right. ' + r + (r === 1 ? ' try' : ' tries') + ' left.' : 'That code is not right, and that was the last try. Send a new code.' });
+        a.pw = await hashPw(m.password); a.pwAt = Date.now(); delete a.rst; if (a.blocked) return send(res, 403, { error: 'This account is blocked. Please call the shop.' });
+        await acctPut(ph, a, false);
         return send(res, 200, { token: ctoken(ph), me: profile(ph, a) });
       }
       if (req.method === 'POST' && url === '/api/store/order') {
@@ -589,5 +610,5 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
     } catch (e) { res.writeHead(500, { 'Content-Type': 'text/plain' }); res.end('The online shop page is missing.'); }
   }
 
-  return { api, page, receiptPage, isLive: () => mode() === 'paystack' };
+  return { api, page, receiptPage, isLive: () => mode() === 'paystack', sendSms, smsReady, otpIssue, otpCheck, otpSms, normPhone };
 };

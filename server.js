@@ -363,8 +363,8 @@ async function setPin(shop, sid, pw) {
   t.pin = await mkHash(pw); t.fails = 0; t.nextTry = 0; t.locked = false; t.mustChange = false; delete t.rst;
   await sbCall('shop_db_put', { p_col: 'shop', p_id: 'main', p_data: main }); shopCache.at = 0;
 }
-// Forgot password by email: a 6-digit code is emailed to the address saved on the staff record.
-const resetCodes = new Map(); // staff id -> {h, exp, tries}
+// Forgot password: a 6-digit code is sent by SMS to the phone on the staff record (or by email if chosen / no SMS).
+// Codes are kept as hashes in Supabase (otp_codes) so every server process can check them.
 async function resetCode(req, res) {
   if (!sbOn()) return send(res, 503, { error: 'The shop database is not set up on the server yet.' });
   const ip = 'em:' + clientIp(req), wait = tooMany(ip);
@@ -373,32 +373,34 @@ async function resetCode(req, res) {
   let shop; try { shop = await shopMain(true); } catch (e) { return send(res, 502, { error: 'Could not reach the shop database. Try again in a moment.' }); }
   const s = shop && findStaff(shop.staff || [], String(msg.name || '').slice(0, 80));
   if (!s) { failed(ip, 10); return send(res, 400, { error: 'No staff member with that name. Type your name as the owner added it.' }); }
-  if (!emailOK(s.email)) return send(res, 400, { error: 'No email is saved for ' + s.name + '. Use the recovery code, or ask the owner or a manager.' });
-  if (s.locked && s.role !== 'owner') { /* still allowed: the reset unlocks the account */ }
-  const prev = resetCodes.get(s.id);
-  if (prev && prev.sent && Date.now() - prev.sent < 60000) return send(res, 429, { error: 'A code was sent less than a minute ago. Check your email (and spam).' });
-  const code = String(100000 + crypto.randomInt(900000));
-  resetCodes.set(s.id, { h: sha('rst:' + code), exp: Date.now() + 15 * 60000, tries: 0, sent: Date.now() });
+  const nm = (shop.set && shop.set.name) || 'Renatel Shop', ph = shopStore.normPhone(s.phone), smsOk = !!ph && await shopStore.smsReady().catch(() => false);
+  const via = msg.via === 'email' ? 'email' : msg.via === 'sms' ? 'sms' : (smsOk ? 'sms' : 'email');
+  if (via === 'sms' && !smsOk) return send(res, 400, { error: ph ? 'SMS codes are not set up yet. Choose “Email me a code” or the recovery code.' : 'No phone number is saved for ' + s.name + '. Choose “Email me a code”, or ask the owner.' });
+  if (via === 'email' && !emailOK(s.email)) return send(res, 400, { error: 'No email is saved for ' + s.name + '.' + (smsOk ? ' Choose “Text me a code” instead.' : ' Use the recovery code, or ask the owner or a manager.') });
+  let code; try { code = await shopStore.otpIssue('staff:' + s.id); } catch (e) { return send(res, e.code || 502, { error: e.message }); }
   failed(ip, 10);
   try {
-    await sendEmail({ to: [s.email], subject: (shop.set && shop.set.name || 'Renatel Shop') + ' - password reset code: ' + code,
-      text: 'Hello ' + s.name + ',\n\nSomeone asked to reset your password for ' + (shop.set && shop.set.name || 'Renatel Shop') + '. Your reset code is:\n\n    ' + code + '\n\nIt expires in 15 minutes. If this wasn’t you, ignore this email and tell the shop owner.\n\n-- \nshop@renatel.shop' });
-  } catch (e) { resetCodes.delete(s.id); return send(res, 502, { error: 'The code email could not be sent. Try again, or use the recovery code.' }); }
-  serverLog('Reset code emailed', 'to ' + maskEmail(s.email) + ' from the shop email', s);
-  return send(res, 200, { ok: true, to: maskEmail(s.email) });
+    if (via === 'sms') await shopStore.sendSms(ph, shopStore.otpSms(nm, code));
+    else await sendEmail({ to: [s.email], subject: nm + ' - password reset code: ' + code,
+      text: 'Hello ' + s.name + ',\n\nSomeone asked to reset your password for ' + nm + '. Your reset code is:\n\n    ' + code + '\n\nIt expires in 15 minutes. If this wasn’t you, ignore this email and tell the shop owner.\n\n-- \nshop@renatel.shop' });
+  } catch (e) { await sbCall('otp_mark', { p_k: 'staff:' + s.id, p_try: false }).catch(() => {}); console.log('reset code ' + via + ': ' + e.message); return send(res, 502, { error: 'The code could not be sent' + (via === 'sms' ? ' by SMS' : ' by email') + '. Try again, or use the recovery code.' }); }
+  const to = via === 'sms' ? ph.slice(0, 3) + '•••' + ph.slice(-3) : maskEmail(s.email);
+  serverLog('Reset code ' + (via === 'sms' ? 'sent by SMS' : 'emailed'), 'to ' + to, s);
+  return send(res, 200, { ok: true, via, to });
 }
 async function resetByEmail(req, res) {
   let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
   let shop; try { shop = await shopMain(true); } catch (e) { return send(res, 502, { error: 'Could not reach the shop database. Try again in a moment.' }); }
   const s = shop && findStaff(shop.staff || [], String(msg.name || '').slice(0, 80));
-  const rc = s && resetCodes.get(s.id);
-  if (!s || !rc || rc.exp < Date.now()) return send(res, 400, { error: 'That code has expired or was never sent. Send a new code.' });
-  if (rc.tries >= 5) { resetCodes.delete(s.id); return send(res, 429, { error: 'Too many wrong codes. Send a new code.' }); }
-  if (sha('rst:' + String(msg.code || '').replace(/\D/g, '')) !== rc.h) { rc.tries++; serverLog('Failed reset code', (5 - rc.tries) + ' tries left · on renatel.shop', s); return send(res, 401, { error: 'That code is not right. ' + (5 - rc.tries) + ' tries left.' }); }
+  if (!s) return send(res, 400, { error: 'That code has expired or was never sent. Send a new code.' });
   const pw = String(msg.password || '').slice(0, 200), rule = pwRule(pw, shop.set);
   if (rule) return send(res, 400, { error: rule });
-  await setPin(shop, s.id, pw); resetCodes.delete(s.id);
-  console.log('password reset by email code: ' + s.name); serverLog('Password reset', 'with a code emailed to ' + maskEmail(s.email) + ' · on renatel.shop', s);
+  const r = await shopStore.otpCheck('staff:' + s.id, msg.code);
+  if (r === 'expired') return send(res, 400, { error: 'That code has expired or was never sent. Send a new code.' });
+  if (r === 'locked') return send(res, 429, { error: 'Too many wrong codes. Send a new code.' });
+  if (r !== 'ok') { serverLog('Failed reset code', r + ' tries left · on renatel.shop', s); return send(res, 401, { error: r > 0 ? 'That code is not right. ' + r + (r === 1 ? ' try' : ' tries') + ' left.' : 'That code is not right, and that was the last try. Send a new code.' }); }
+  await setPin(shop, s.id, pw);
+  console.log('password reset by code: ' + s.name); serverLog('Password reset', 'with a one-time code · on renatel.shop', s);
   return send(res, 200, { ok: true, token: makeToken(s.id, cleanDev(msg.dev)), sid: s.id, name: s.name, exp: Date.now() + SESSION_DAYS * 864e5 });
 }
 // Who is calling: a logged-in staff member (session token) or a device with the shop code.

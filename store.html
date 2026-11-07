@@ -382,10 +382,11 @@ function goAccount(){closeCart();step=ME?'account':'auth';nextStep='account';if(
 function authView(){const A=(k,t,ph,ac,lbl)=>`<label class="lbl">${lbl}</label><input class="f" id="a_${k}" type="${t}" value="${esc(au[k])}" placeholder="${ph}" autocomplete="${ac}" oninput="au.${k}=this.value" onkeydown="if(event.key=='Enter')authGo()">`;
  const why=nextStep=='checkout'?`<div style="background:var(--gl);border-radius:12px;padding:10px 12px;font-size:14px;margin-bottom:8px">🛒 Your cart is saved (${lines().reduce((t,x)=>t+x.n,0)} item${lines().reduce((t,x)=>t+x.n,0)==1?'':'s'}, ${money(total())}). ${authMode=='signin'?'Sign in':'Create a free account'} to check out.</div>`:'';
  let body;
- if(authMode=='reset')body=`<h2 style="font-size:22px;margin:0 0 4px">Reset your password</h2><p class="mut" style="margin:0;font-size:14px">We email a 6-digit code to the address on your account.</p>
+ if(authMode=='reset')body=`<h2 style="font-size:22px;margin:0 0 4px">Reset your password</h2><p class="mut" style="margin:0;font-size:14px">${au.via=='email'?'We email a 6-digit code to the address on your account.':'We text a 6-digit code to the phone number of your account.'}</p>
   ${A('phone','tel','024 000 0000','tel','Phone number of your account')}
-  ${au.sent?`<p class="mut" style="font-size:13px;margin:8px 0 0">Code sent to <b>${esc(au.sent)}</b>. Check spam too.</p>${A('code','text','123456','one-time-code','Code from the email')}${A('password','password','At least 6 characters','new-password','New password')}`:''}
-  <p id="amsg" class="msg" role="status" aria-live="polite"></p><button class="pill big" id="ago" onclick="authGo()">${au.sent?'Set new password':'Send code'}</button>
+  ${au.sent?`<p class="mut" style="font-size:13px;margin:8px 0 0">${au.via=='email'?'Code emailed to':'📱 Code sent by SMS to'} <b>${esc(au.sent)}</b>.${au.via=='email'?' Check spam too.':''} <button class="ulink" style="font-size:13px" onclick="au.sent='';render()">Send a new code</button></p>${A('code','text','123456','one-time-code','6-digit code')}${A('password','password','At least 6 characters','new-password','New password')}`:''}
+  <p id="amsg" class="msg" role="status" aria-live="polite"></p><button class="pill big" id="ago" onclick="authGo()">${au.sent?'Set new password':au.via=='email'?'📧 Email me a code':'📱 Text me a code'}</button>
+  ${au.sent?'':`<p style="text-align:center;margin:12px 0 0"><button class="ulink" style="font-size:13px" onclick="au.via=au.via=='email'?'sms':'email';render()">${au.via=='email'?'Text me the code instead':'Email me the code instead'}</button></p>`}
   <p style="text-align:center;margin:14px 0 0"><button class="ulink" onclick="authMode='signin';au.sent='';render()">Back to sign in</button></p>`;
  else body=`<div class="tabs"><button class="${authMode=='signup'?'on':''}" onclick="authMode='signup';render()">Create account</button><button class="${authMode=='signin'?'on':''}" onclick="authMode='signin';render()">Sign in</button></div>
   ${authMode=='signup'?`${A('name','text','e.g. Ama Mensah','name','Full name *')}${A('phone','tel','024 000 0000','tel','Phone number (MoMo) *')}${A('email','email','you@example.com','email','Email (for receipts and password reset)')}${A('password','password','At least 6 characters','new-password','Choose a password *')}${A('password2','password','Type it again','new-password','Confirm password *')}`
@@ -398,7 +399,7 @@ async function authGo(){const m=$('#amsg'),b=$('#ago');m.textContent='';['name',
  try{let j;
   if(authMode=='signup'){if(au.password!==au.password2)throw new Error('The two passwords don’t match.');j=await call('/api/store/signup',{method:'POST',body:JSON.stringify({name:au.name,phone:au.phone,email:au.email,password:au.password,region:(LOC&&LOC.region)||'',branch:BRANCH()})})}
   else if(authMode=='signin')j=await call('/api/store/login',{method:'POST',body:JSON.stringify({phone:au.phone,password:au.password})});
-  else if(!au.sent){const r=await call('/api/store/reset/code',{method:'POST',body:JSON.stringify({phone:au.phone})});au.sent=r.to;b.disabled=false;return render()}
+  else if(!au.sent){const r=await call('/api/store/reset/code',{method:'POST',body:JSON.stringify({phone:au.phone,via:au.via||'sms'})});au.sent=r.to;au.via=r.via;b.disabled=false;return render()}
   else j=await call('/api/store/reset',{method:'POST',body:JSON.stringify({phone:au.phone,code:au.code,password:au.password})});
   saveMe(j.token,j.me);au={name:'',phone:'',email:'',password:'',password2:'',code:'',sent:''};step=nextStep;render();scrollTo(0,0)}
  catch(e){m.textContent=e.message;if(e.j&&e.j.exists){authMode='signin';render();$('#amsg').textContent=e.message}else{b.disabled=false;b.textContent=label}}}
