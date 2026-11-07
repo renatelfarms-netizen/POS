@@ -111,3 +111,20 @@ begin perform _mt_check(p_token);
 end $$;
 revoke all on function mt_shared_sms from public, anon, authenticated;
 grant execute on function mt_shared_sms to anon;
+
+-- Shared payments: the platform owner's Paystack key (site_secrets) for shops without their own; switch, commission and details in mt_kv 'shared_pay'.
+create or replace function mt_kv_get(p_token text, p_k text) returns text language plpgsql security definer set search_path = public, extensions as $$
+begin perform _mt_check(p_token); if p_k not in ('admin_pw','shared_sms','shared_pay') then return null; end if; return (select v from mt_kv where k = p_k); end $$;
+create or replace function mt_kv_set(p_token text, p_k text, p_v text) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+begin perform _mt_check(p_token); if p_k not in ('admin_pw','shared_sms','shared_pay') then raise exception 'unknown key'; end if;
+  insert into mt_kv (k, v) values (p_k, p_v) on conflict (k) do update set v = excluded.v, updated_at = now();
+  return jsonb_build_object('ok', true); end $$;
+create or replace function mt_shared_pay(p_token text) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare cfg jsonb; v_key text;
+begin perform _mt_check(p_token);
+  cfg := coalesce((select v::jsonb from mt_kv where mt_kv.k = 'shared_pay'), '{"on":false,"off":[],"pct":5}'::jsonb);
+  select value into v_key from site_secrets where name = 'paystack_secret';
+  return cfg || jsonb_build_object('ready', v_key is not null, 'live', coalesce(v_key like 'sk_live_%', false), 'key', case when coalesce((cfg->>'on')::boolean, false) then v_key else null end);
+end $$;
+revoke all on function mt_shared_pay from public, anon, authenticated;
+grant execute on function mt_shared_pay to anon;

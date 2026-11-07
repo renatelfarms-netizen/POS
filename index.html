@@ -1622,7 +1622,7 @@ function webSettings(ss){const F=(l,x)=>`<label class="fl" style="margin-top:10p
  ${F('Announcement shown at the top of the shop (optional)',`<input id="ws_msg" maxlength="160" value="${esc(ss.msg)}" placeholder="e.g. Free delivery in Kumasi this week!">`)}
  ${F('Delivery note shown at checkout (optional)',`<input id="ws_dnote" maxlength="160" value="${esc(ss.dnote)}" placeholder="e.g. Delivery fee is agreed on the phone. Same-day in Accra and Kumasi.">`)}
  <div class="form" style="margin-top:12px"><button class="btn pri" onclick="webSaveSet()">Save settings</button></div>
- </div>${me.role=='owner'?payCard()+smsCard()+credCard()+dlvSmsCard():`<p class="mut ln" style="margin:12px 0 0">💳 Payment and 📱 SMS settings are managed by the owner.</p>`}`}
+ </div>${me.role=='owner'?psCard()+smsCard()+credCard()+dlvSmsCard():`<p class="mut ln" style="margin:12px 0 0">💳 Payment and 📱 SMS settings are managed by the owner.</p>`}`}
 let SMS=null;
 function smsCard(){if(!SMS){SMS={busy:true};webApi('/api/store/admin/sms').then(j=>{SMS=j}).catch(e=>{SMS={err:e.message}}).finally(()=>{if(tab=='web'&&webTab=='settings'&&!busy())render()})}
  if(SMS.busy)return `<div class="card" style="margin-top:12px"><b>📱 SMS receipts</b><div class="rbig">${RING()}</div></div>`;
@@ -1647,14 +1647,38 @@ async function smsSave(b){const m=$('#smsm'),say=(t,ok)=>{m.style.color=ok?'var(
 async function smsTest(b){const to=await uiPrompt('Send a test SMS to which phone number?',(me.phone||''));if(!to)return;b.disabled=true;
  try{await webApi('/api/store/admin/sms/test',{method:'POST',body:JSON.stringify({to})});toast('📱 Test SMS sent','to '+to)}catch(e){uiAlert('The test SMS was not sent: '+e.message)}b.disabled=false}
 let PAY=null;
-function payCard(){if(!PAY){PAY={busy:true};webApi('/api/store/admin/pay').then(j=>{PAY=j}).catch(e=>{PAY={err:e.message}}).finally(()=>{if(tab=='web'&&webTab=='settings'&&!busy())render()})}
+/* ---------- platform payments (Tessa): earnings, commission, payouts, payout account ---------- */
+let POUT=null;
+function platCard(){if(!POUT){POUT={busy:true};webApi('/api/store/admin/payouts').then(j=>{POUT=j}).catch(e=>{POUT={err:e.message}}).finally(()=>{if(tab=='web'&&webTab=='settings'&&!busy())render()})}
+ const P=POUT,live=PAY.mode=='paystack',a=(P&&P.acct)||{kind:'momo'},F=(l,x)=>`<label class="fl" style="margin-top:8px"><span class="mut">${l}</span>${x}</label>`,st=(l,v,c)=>`<div class="card" style="padding:8px 10px;margin:0;flex:1;min-width:120px"><small class="mut">${l}</small><br><b class="${c||''}">${money(v)}</b></div>`;
+ return `<div class="card" style="margin-top:12px"><b>💳 Payments · Mobile Money &amp; cards</b>
+ <p class="ln" style="margin:8px 0"><span class="pill ok">✔ ${live?'LIVE':'Test mode'}</span> Customers pay online through the platform’s Paystack account. The platform pays your money out to you, minus <b>${+PAY.pct||0}%</b> commission.</p>
+ ${!P||P.busy?`<div class="rbig">${RING()}</div>`:P.err?`<p class="bad">${esc(P.err)}</p><button class="btn" onclick="POUT=null;render()">Try again</button>`:`
+ <div class="form" style="gap:8px;flex-wrap:wrap">${st('Paid online',P.collected)}${st('Commission',P.fees)}${st('Your share',P.net)}${st('Paid out to you',P.paid)}${st('Still to be paid',P.due,P.due>0?'bad':'')}</div>
+ <b class="ln" style="display:block;margin-top:12px">Where to pay you</b>${P.acct?'':'<p class="bad ln" style="margin:4px 0">Add your account so the platform can pay you.</p>'}
+ <div class="fg">${F('Pay me by',`<select id="pa_k"><option value="momo" ${a.kind!='bank'?'selected':''}>Mobile Money</option><option value="bank" ${a.kind=='bank'?'selected':''}>Bank account</option></select>`)}
+ ${F('Network or bank',`<input id="pa_b" maxlength="40" value="${esc(a.bank||'')}" placeholder="MTN MoMo / GCB Bank">`)}
+ ${F('Account name',`<input id="pa_n" maxlength="60" value="${esc(a.name||'')}" placeholder="Name on the account">`)}
+ ${F('Account or MoMo number',`<input id="pa_no" maxlength="30" inputmode="numeric" value="${esc(a.number||'')}" placeholder="024 000 0000">`)}
+ ${F('Bank branch (banks only, optional)',`<input id="pa_br" maxlength="40" value="${esc(a.branch||'')}">`)}</div>
+ <p id="pam" class="msg" style="margin-top:6px"></p><div class="form" style="margin-top:6px"><button class="btn pri" onclick="platAcctSave(this)">Save account</button></div>
+ <details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">Payouts (${(P.payouts||[]).length}) and online payments (${(P.orders||[]).length})</summary>
+ <div class="tw"><table><tr><th>Payout date</th><th>Amount</th><th>How</th><th>Reference</th></tr>${(P.payouts||[]).map(x=>`<tr><td>${fdt(x.at)}</td><td><b>${money(x.amt)}</b></td><td>${esc(x.method||'')}</td><td>${esc(x.ref||'')}${x.note?'<br><small class="mut">'+esc(x.note)+'</small>':''}</td></tr>`).join('')||'<tr><td colspan="4" class="mut">No payouts yet.</td></tr>'}</table></div>
+ <div class="tw" style="margin-top:8px"><table><tr><th>Paid</th><th>Order</th><th>Amount</th><th>Commission</th><th>Your share</th></tr>${(P.orders||[]).map(o=>`<tr><td>${fdt(o.at)}</td><td>${o.sale?'#'+o.sale:''} <small class="mut">${esc(o.name)}</small></td><td>${money(o.total)}</td><td>${money(o.fee)} <small class="mut">(${o.pct}%)</small></td><td><b>${money(o.net)}</b></td></tr>`).join('')||'<tr><td colspan="5" class="mut">No online payments yet.</td></tr>'}</table></div></details>`}
+ <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:600">Use your own Paystack account instead</summary><p class="mut ln" style="margin:6px 0">With your own key, money goes straight to your Paystack account and no commission is taken. Payments already taken by the platform are still paid out to you.</p>
+ <label class="fl"><span class="mut">Paystack <b>Secret Key</b></span><input id="paykey" type="password" autocomplete="off" spellcheck="false" placeholder="sk_live_…"></label><p id="paymsg" class="msg" style="margin-top:6px"></p><div class="form" style="margin-top:8px"><button class="btn" id="paybtn" onclick="psSave(this)">Check &amp; save key</button></div></details></div>`}
+async function platAcctSave(b){const m=$('#pam'),g=i=>$('#'+i).value.trim();m.style.color='';
+ const acct={kind:g('pa_k'),bank:g('pa_b'),name:g('pa_n'),number:g('pa_no'),branch:g('pa_br')};if(!acct.bank||!acct.name||acct.number.replace(/\D/g,'').length<8)return m.textContent='✖ Fill in the network or bank, the account name and the number.';
+ b.disabled=true;try{POUT=await webApi('/api/store/admin/payouts',{method:'POST',body:JSON.stringify({acct})});render();const m2=$('#pam');if(m2){m2.style.color='var(--ac)';m2.textContent='✔ Saved.'}}catch(e){m.textContent='✖ '+e.message;b.disabled=false}}
+function psCard(){if(!PAY){PAY={busy:true};webApi('/api/store/admin/pay').then(j=>{PAY=j}).catch(e=>{PAY={err:e.message}}).finally(()=>{if(tab=='web'&&webTab=='settings'&&!busy())render()})}
  if(PAY.busy)return `<div class="card" style="margin-top:12px"><b>💳 Payments</b><div class="rbig">${RING()}</div></div>`;
  if(PAY.err)return `<div class="card" style="margin-top:12px"><b>💳 Payments</b><p class="bad">${esc(PAY.err)}</p><button class="btn" onclick="PAY=null;render()">Try again</button></div>`;
+ if(PAY.source=='platform')return platCard();
  const live=PAY.mode=='paystack',ptest=PAY.mode=='paystack-test',cp=t=>`<span style="display:flex;gap:6px;align-items:center;margin-top:4px"><code style="flex:1;min-width:0;overflow:auto;white-space:nowrap;background:var(--bd);padding:6px 8px;border-radius:8px;font-size:12px">${esc(t)}</code><button class="btn sm" onclick="navigator.clipboard&&navigator.clipboard.writeText('${esc(t)}').then(()=>toast('Copied'))">Copy</button></span>`;
  return `<div class="card" style="margin-top:12px"><b>💳 Payments · Paystack (Mobile Money &amp; cards)</b>
  <p class="ln" style="margin:8px 0">${live?'<span class="pill ok">✔ LIVE</span> Customers pay with real Mobile Money and cards. Money goes to your Paystack account.':ptest?'<span class="pill low">Paystack test mode</span> Customers see the real Paystack checkout, but with test numbers only. No real money. Paste your <b>live</b> key when you are ready.':'<span class="pill low">🧪 Practice payments</span> No real money. Customers see a practice payment screen. Paste your Paystack key below to take real payments.'}${PAY.hint?` <span class="mut">Key: ${esc(PAY.hint)}${PAY.source=='hosting'?' (set on the hosting)':''}</span>`:''}</p>
  ${PAY.source=='hosting'?'':`<label class="fl"><span class="mut">Paystack <b>Secret Key</b> (starts with sk_live_ or sk_test_)</span><input id="paykey" type="password" autocomplete="off" spellcheck="false" placeholder="sk_live_…" oninput="if(payOk){payOk=false;const b=$('#paybtn');if(b){b.textContent='Check & save key';b.classList.remove('okb')}}"></label>
- <p id="paymsg" class="msg" style="margin-top:6px"></p><div class="form" style="margin-top:8px"><button class="btn pri" id="paybtn" onclick="paySave(this)">Check &amp; save key</button>${PAY.hint?`<button class="btn del" onclick="payOff(this)">Switch off (back to practice)</button>`:''}</div>`}
+ <p id="paymsg" class="msg" style="margin-top:6px"></p><div class="form" style="margin-top:8px"><button class="btn pri" id="paybtn" onclick="psSave(this)">Check &amp; save key</button>${PAY.hint?`<button class="btn del" onclick="payOff(this)">Switch off (back to practice)</button>`:''}</div>`}
  <details style="margin-top:12px" ${PAY.hint?'':'open'}><summary style="cursor:pointer;font-weight:600">How to connect Paystack</summary><ol class="ln" style="margin:8px 0 0;padding-left:18px">
   <li>Create a free business account at <a href="https://paystack.com/gh" target="_blank" rel="noopener">paystack.com/gh</a> (choose Ghana). Test keys work straight away; live keys come after Paystack verifies your business (Ghana Card, business registration and a bank or MoMo account for payouts).</li>
   <li>In Paystack go to <b>Settings → API Keys &amp; Webhooks</b>. Copy the <b>Secret Key</b> and paste it above. Never share it with anyone or send it in a chat.</li>
@@ -1662,7 +1686,7 @@ function payCard(){if(!PAY){PAY={busy:true};webApi('/api/store/admin/pay').then(
   <li>Optional: set the <b>Callback URL</b> to:${cp(PAY.callback)}</li>
   <li>Do one small test order on the shop with your own MoMo, then check it in 🧾 Orders and Receipts.</li></ol></details></div>`}
 let payOk=false;
-async function paySave(b){const m=$('#paymsg'),say=(t,ok)=>{m.style.color=ok?'var(--ac)':'';m.textContent=t};
+async function psSave(b){const m=$('#paymsg'),say=(t,ok)=>{m.style.color=ok?'var(--ac)':'';m.textContent=t};
  try{const k=($('#paykey').value||'').replace(/\s+/g,'');if(!k)return say('✖ Paste the Secret Key in the box first.');
   if(/^pk_/.test(k))return say('✖ That is the Public Key (pk_…). Copy the SECRET Key (sk_live_… or sk_test_…) instead.');
   if(!/^sk_(live|test)_/.test(k))return say('✖ That doesn’t look like a Paystack Secret Key. It must start with sk_live_ or sk_test_.');

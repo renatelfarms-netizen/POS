@@ -769,6 +769,49 @@ async function platformApi(req, res, url) {
       await adminHash(true); console.log('admin password changed');
       return send(res, 200, { ok: true, token: adminToken() });
     }
+    // Shared payments (Paystack): on/off, commission, your details; per shop: on/off, commission, payouts.
+    if (url === '/api/platform/admin/pay') {
+      let v = await payCfg(true); if (!v) return send(res, 502, { error: 'Could not read the payment settings.' });
+      if (req.method === 'POST') {
+        let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+        const t = (x, n) => String(x || '').trim().slice(0, n);
+        const cfg = { on: !!v.on, off: Array.isArray(v.off) ? v.off : [], pct: v.pct != null ? +v.pct : 5, rates: v.rates && typeof v.rates === 'object' ? v.rates : {}, me: v.me && typeof v.me === 'object' ? v.me : {} };
+        if (typeof m.on === 'boolean') cfg.on = m.on;
+        if (m.pct != null && m.pct !== '' && !m.id) { const p = +m.pct; if (!(p >= 0 && p <= 50)) return send(res, 400, { error: 'Commission must be between 0 and 50%.' }); cfg.pct = Math.round(p * 100) / 100; }
+        if (m.me && typeof m.me === 'object') cfg.me = { name: t(m.me.name, 60), phone: t(m.me.phone, 20), email: t(m.me.email, 120), kind: m.me.kind === 'bank' ? 'bank' : 'momo', bank: t(m.me.bank, 40), acctName: t(m.me.acctName, 60), number: t(m.me.number, 30) };
+        if (m.id && typeof m.shopOn === 'boolean') { cfg.off = cfg.off.filter((x) => x !== m.id); if (!m.shopOn) cfg.off.push(String(m.id).slice(0, 40)); }
+        if (m.id && m.rate !== undefined) { if (m.rate === '' || m.rate === null) delete cfg.rates[m.id]; else { const p = +m.rate; if (!(p >= 0 && p <= 50)) return send(res, 400, { error: 'Commission must be between 0 and 50%.' }); cfg.rates[String(m.id).slice(0, 40)] = Math.round(p * 100) / 100; } }
+        try { await sbCall('mt_kv_set', { p_k: 'shared_pay', p_v: JSON.stringify(cfg) }); } catch (e) { console.error('shared pay save', e.message); return send(res, 502, { error: 'Could not save.' }); }
+        console.log('shared payments: ' + (cfg.on ? 'on' : 'off') + ', ' + cfg.pct + '% commission');
+        v = await payCfg(true); for (const st of stores.values()) st.payReset && st.payReset();
+      }
+      return send(res, 200, { ok: true, on: !!v.on, off: v.off || [], pct: v.pct != null ? +v.pct : 5, rates: v.rates || {}, me: v.me || {}, ready: !!v.ready, live: !!v.live });
+    }
+    if (url === '/api/platform/admin/payouts' || url === '/api/platform/admin/payout' || url === '/api/platform/admin/payacct') {
+      const L = (await sbCall('mt_shop_list', {})) || [];
+      if (req.method === 'GET' && !q.get('id')) { // money owed to every shop
+        const out = [];
+        for (const r of L) { try { const g = await ctx.run({ shop: r }, () => store().ledger()); if (g.collected || g.paid) out.push({ id: r.id, name: r.name, slug: r.slug, collected: g.collected, fees: g.fees, net: g.net, paid: g.paid, due: g.due, acct: g.acct }); } catch (e) { console.error('ledger ' + r.slug, e.message); } }
+        return send(res, 200, { ok: true, shops: out });
+      }
+      let m = {}; if (req.method === 'POST') { try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); } }
+      const r = L.find((x) => x.id === (q.get('id') || m.id)); if (!r) return send(res, 404, { error: 'Shop not found.' });
+      return ctx.run({ shop: r }, async () => {
+        const st = store();
+        try {
+          if (url === '/api/platform/admin/payacct' && req.method === 'POST') await st.setAcct(m.acct);
+          if (url === '/api/platform/admin/payout' && req.method === 'POST') {
+            if (m.del) await st.delPayout(m.del);
+            else {
+              const rec = await st.addPayout({ amt: m.amt, method: m.method, ref: m.ref, note: m.note, by: 'Platform admin' });
+              const sh = await shopMain(false), ph = st.normPhone((sh && sh.set && sh.set.phone) || r.phone);
+              if (ph && m.notify !== false) st.sendSms(ph, PLATFORM + ': we have paid ' + r.name + ' GHS ' + rec.amt.toFixed(2) + (rec.method ? ' by ' + rec.method : '') + (rec.ref ? ' (ref ' + rec.ref + ')' : '') + ' for your online sales. Details: Online shop > Settings > Payments.').catch((e) => console.log('payout sms: ' + e.message));
+            }
+          }
+          return send(res, 200, Object.assign({ ok: true, shop: { id: r.id, name: r.name, slug: r.slug, phone: r.phone } }, await st.ledger()));
+        } catch (e) { return send(res, 400, { error: e.message }); }
+      });
+    }
     // Shared SMS account: on/off for all shops, and per shop.
     if (url === '/api/platform/admin/sms') {
       let v = await sharedCfg(true); if (!v) return send(res, 502, { error: 'Could not read the SMS settings.' });
@@ -852,12 +895,21 @@ async function sharedCfg(fresh) {
   if (fresh || Date.now() - shSms.at > 30000) { try { shSms = { at: Date.now(), v: await sbCall('mt_shared_sms', {}) }; } catch (e) { console.error('shared sms', e.message); shSms = { at: Date.now(), v: null }; } }
   return shSms.v;
 }
+// Shared payments: the platform owner's Paystack account takes online payments for shops without their own key;
+// the platform pays each shop out (minus its commission) and records the payouts.
+let shPay = { at: 0, v: null };
+async function payCfg(fresh) {
+  if (fresh || Date.now() - shPay.at > 30000) { try { shPay = { at: Date.now(), v: await sbCall('mt_shared_pay', {}) }; } catch (e) { console.error('shared pay', e.message); shPay = { at: Date.now(), v: null }; } }
+  return shPay.v;
+}
+const payPct = (v, id) => { const r = v && v.rates && v.rates[id]; return Math.max(0, Math.min(50, +(r != null && r !== '' ? r : (v && v.pct != null ? v.pct : 5)) || 0)); };
+async function sharedPay(fresh) { const v = await payCfg(!!fresh); return v && v.on && v.key && !(v.off || []).includes(SID()) ? { key: v.key, pct: payPct(v, SID()) } : null; }
 async function sharedSms() { const v = await sharedCfg(false); return v && v.on && v.token && !(v.off || []).includes(SID()) ? { token: v.token, sender: v.sender } : null; }
 const hostName = () => String(process.env.PLATFORM_HOST || 'lavenderblush-gull-669222.hostingersite.com').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 function store() {
   const id = SID(); if (id === '-') throw new Error('No shop');
   if (!stores.has(id)) stores.set(id, makeStore({ sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS, caller,
-    multi: true, noTimers: true, sharedSms, host: hostName(), base: () => '/' + T().shop.slug, scope: () => 'shop:' + SID() + ':', siteUrl: () => 'https://' + hostName() }));
+    multi: true, noTimers: true, sharedSms, sharedPay, host: hostName(), base: () => '/' + T().shop.slug, scope: () => 'shop:' + SID() + ':', siteUrl: () => 'https://' + hostName() }));
   return stores.get(id);
 }
 // Credit reminders: every 10 minutes, for every open shop (each shop's own SMS account; sent once a day per customer).
