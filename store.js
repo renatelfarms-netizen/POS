@@ -45,11 +45,17 @@ module.exports = function store(d) {
   const brKeys = () => (ONE ? ['kum'] : Object.keys(BR));
   const brOf = (b) => (BR[b] && brKeys().includes(b) ? b : 'kum');
   // The Paystack key: from the hosting environment, or the one the owner saved in the POS (re-read every minute).
-  const PK = { key: '', src: '', at: 0 };
+  const PK = { key: '', src: '', at: 0, pct: 0 };
   async function loadKey() {
     if (ENVKEY) { PK.key = ENVKEY; PK.src = 'hosting'; return; }
     if (!sbOn()) return;
-    try { const v = await sbCall('site_secret_get', { p_name: 'paystack_secret' }); PK.key = v || ''; PK.src = v ? 'pos' : ''; PK.at = Date.now(); }
+    try {
+      const v = await sbCall('site_secret_get', { p_name: 'paystack_secret' }); PK.key = v || ''; PK.src = v ? 'pos' : ''; PK.pct = 0;
+      // Multi-shop: a shop with no Paystack key of its own may take payments through the platform's account
+      // (switched on by the platform admin); the platform pays the shop out later, minus its commission.
+      if (!PK.key && d.sharedPay) { const sp = await d.sharedPay(); if (sp && sp.key) { PK.key = sp.key; PK.src = 'platform'; PK.pct = sp.pct; } }
+      PK.at = Date.now();
+    }
     catch (e) { console.error('paystack key', e.message); }
   }
   loadKey(); if (!d.noTimers) setInterval(loadKey, 60000).unref();
@@ -57,6 +63,10 @@ module.exports = function store(d) {
   // so every process switches to (or away from) Paystack together.
   const freshKey = async () => { if (!ENVKEY && Date.now() - PK.at > 3000) await loadKey(); };
   const KEY = () => PK.key;
+  async function keyFor(o) {
+    if (o && o.plat && PK.src !== 'platform' && d.sharedPay) { const sp = await d.sharedPay(true); if (sp && sp.key) return sp.key; }
+    return KEY();
+  }
   const PS_API = process.env.PAYSTACK_API || 'https://api.paystack.co';
   const mode = () => (KEY() ? (KEY().startsWith('sk_test_') ? 'paystack-test' : 'paystack') : 'test');
   const WHO = { id: null, name: 'Online shop' };
@@ -398,6 +408,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
     catch (e) {
       console.error('finalize ' + ref, e.message);
       o.status = 'paid_short'; o.paidAt = o.paidAt || Date.now(); o.payment = pay; o.short = 'could not be recorded automatically';
+      if (o.plat) { o.fee = r2(o.total * (+o.feePct || 0) / 100); o.net = r2(o.total - o.fee); }
       try { await putOrder(ref, o); } catch (e2) { console.error('finalize save', e2.message); }
       serverLog('Online order needs attention', 'Order ' + ref + ' was paid (' + money(o.total) + ') but could not be recorded automatically. Check the stock and record the sale for ' + o.name + ' ' + o.phone + '.', WHO);
       return o;
@@ -411,6 +422,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
       if (!p) {
         for (const [tp, ti] of prods) await sbCall('web_stock_take', { p_col: PF + 'products', p_id: 'p' + tp.id, p_qty: -ti.qty }); // put back what was taken
         o.status = 'paid_short'; o.paidAt = Date.now(); o.payment = pay; o.short = it.name;
+        if (o.plat) { o.fee = r2(o.total * (+o.feePct || 0) / 100); o.net = r2(o.total - o.fee); }
         await putOrder(ref, o);
         serverLog('Online order needs attention', 'Order ' + ref + ' was paid (' + money(o.total) + ') but ' + it.name + ' is out of stock at the ' + BR[b].name + '. Contact ' + o.name + ' ' + o.phone + ' to refund or swap.', WHO);
         return o;
@@ -442,6 +454,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
     }
     await appendRec(PF + 'sales', accraDay(now), sale);
     o.status = 'paid'; o.saleId = saleId; o.paidAt = now; o.payment = pay;
+    if (o.plat) { o.fee = r2(o.total * (+o.feePct || 0) / 100); o.net = r2(o.total - o.fee); sale.online.plat = true; }
     await putOrder(ref, o);
     prodAt = 0;
     serverLog('Sale', '#' + saleId + ' · ' + money(o.total) + ' · Online (' + via + ') · ' + BR[b].name + ' · ' + o.name + ' ' + o.phone + (o.region ? ' (' + o.region + ')' : '') + ' · ' + (o.mode === 'delivery' ? 'delivery' : 'pickup') + ' · order ' + ref, WHO);
@@ -468,7 +481,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
     const o = await getOrder(ref);
     if (!o) return null;
     if (o.status !== 'pending') return o;
-    const t = await paystack('/transaction/verify/' + encodeURIComponent(ref));
+    const t = await paystack('/transaction/verify/' + encodeURIComponent(ref), null, await keyFor(o));
     if (t.status === 'success' && t.amount === Math.round(o.total * 100) && String(t.currency).toUpperCase() === 'GHS') {
       return finalize(ref, { provider: mode(), reference: t.reference, channel: t.channel || '', paidAt: t.paid_at || '' });
     }
@@ -594,9 +607,19 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
           serverLog('SMS settings changed', (token ? 'USMS-GH token saved · ' : token === '' ? 'token removed · ' : '') + (sender !== null ? 'sender ID “' + sender + '”' : ''), st);
           return send(res, 200, await info());
         }
+        if (MULTI && url === '/api/store/admin/payouts') { // the shop's earnings from payments taken by the platform
+          if (req.method === 'POST') {
+            const m = await json(req) || {}, a = cleanAcct(m.acct);
+            if (!a) return send(res, 400, { error: 'Fill in the account name and number, and the network or bank.' });
+            await sbCall('shop_db_put', { p_col: 'platAcct', p_id: 'main', p_data: Object.assign(a, { by: st.name, at: Date.now() }) });
+            serverLog('Payout account saved', a.kind + ' · ' + a.bank + ' · ' + a.name + ' · ' + a.number.slice(0, 3) + '•••' + a.number.slice(-3), st);
+          }
+          await freshKey(); return send(res, 200, await ledger());
+        }
         if (url === '/api/store/admin/pay') {
           const host = 'https://' + String(req.headers['x-forwarded-host'] || req.headers.host || DEFHOST).split(',')[0].trim();
-          const info = () => ({ mode: mode(), source: PK.src, hint: KEY() ? KEY().slice(0, 8) + '…' + KEY().slice(-4) : '', webhook: host + BASE() + '/api/store/paystack', callback: host + (MULTI ? BASE() + '/shop' : '/store') + '/done/' });
+          const info = () => ({ mode: mode(), source: PK.src, pct: PK.src === 'platform' ? PK.pct : undefined, hint: PK.src === 'platform' ? '' : KEY() ? KEY().slice(0, 8) + '…' + KEY().slice(-4) : '', webhook: host + BASE() + '/api/store/paystack', callback: host + (MULTI ? BASE() + '/shop' : '/store') + '/done/' });
+          await freshKey();
           if (req.method === 'GET') return send(res, 200, info());
           if (req.method === 'POST') {
             if (ENVKEY) return send(res, 409, { error: 'The key is set on the hosting, so it can’t be changed here.' });
@@ -766,20 +789,21 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         total = r2(total);
         const ref = 'RS' + crypto.randomBytes(8).toString('hex').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10).padEnd(10, '0');
         const o = { status: 'pending', created: Date.now(), host: hostOf(req), branch, region, items, total, name, phone, email, acct: phone, mode: dmode, addr, city, note, pay: mode(), ip: clientIp(req) };
+        if (PK.src === 'platform' && mode() !== 'test') { o.plat = true; o.feePct = PK.pct; } // paid into the platform's Paystack; paid out to the shop later
         await putOrder(ref, o);
         cust.a.orders = (cust.a.orders || []).concat(ref).slice(-50); if (region && !cust.a.region) cust.a.region = region;
         await acctPut(phone, cust.a, false);
         if (mode() === 'test') return send(res, 200, { ref, pay_url: (MULTI ? BASE() + '/shop' : '/store') + '/pay/' + ref });
         const host = 'https://' + String(req.headers['x-forwarded-host'] || req.headers.host || DEFHOST).split(',')[0].trim();
         const t = await paystack('/transaction/initialize', { email: email || phone.replace(/\D/g, '') + '@customers.' + DEFHOST, amount: Math.round(total * 100), currency: 'GHS', reference: ref,
-          callback_url: host + (MULTI ? BASE() + '/shop' : '/store') + '/done/' + ref, channels: ['mobile_money', 'card'], metadata: { name, phone, shop_order: ref, branch } });
+          callback_url: host + (MULTI ? BASE() + '/shop' : '/store') + '/done/' + ref, channels: ['mobile_money', 'card'], metadata: Object.assign({ name, phone, shop_order: ref, branch }, MULTI ? { tessa: BASE().slice(1) } : {}) });
         return send(res, 200, { ref, pay_url: t.authorization_url });
       }
       const om = url.match(/^\/api\/store\/order\/(RS[A-Z0-9]{10})$/);
       if (req.method === 'GET' && om) {
         await freshKey();
         let o = await getOrder(om[1]);
-        if (o && o.status === 'pending' && o.pay !== 'test' && KEY()) { try { o = await verifyPaystack(om[1]); } catch (e) { console.error('verify', e.message); } }
+        if (o && o.status === 'pending' && o.pay !== 'test' && (KEY() || o.plat)) { try { o = await verifyPaystack(om[1]); } catch (e) { console.error('verify', e.message); } }
         return o ? send(res, 200, publicOrder(o, om[1])) : send(res, 404, { error: 'Order not found.' });
       }
       if (req.method === 'POST' && url === '/api/store/testpay') {
@@ -796,10 +820,19 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         // Paystack webhook: signed with the secret key. Records the sale even if the customer closes the page.
         await freshKey();
         const raw = await readBody(req), sig = String(req.headers['x-paystack-signature'] || '');
-        const want = KEY() ? crypto.createHmac('sha512', KEY()).update(raw).digest('hex') : '';
-        if (!want || sig.length !== want.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))) return send(res, 401, { error: 'bad signature' });
+        const keys = [KEY()]; if (MULTI && d.sharedPay && PK.src !== 'platform') { const sp = await d.sharedPay(true); if (sp && sp.key) keys.push(sp.key); }
+        const good = keys.filter(Boolean).some((k) => { const want = crypto.createHmac('sha512', k).update(raw).digest('hex'); return sig.length === want.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want)); });
+        if (!good) return send(res, 401, { error: 'bad signature' });
         let ev; try { ev = JSON.parse(raw); } catch (e) { return send(res, 400, {}); }
-        if (ev.event === 'charge.success' && ev.data && REF_RX.test(String(ev.data.reference))) { try { await verifyPaystack(ev.data.reference); } catch (e) { console.error('webhook', e.message); } }
+        if (ev.event === 'charge.success' && ev.data && REF_RX.test(String(ev.data.reference))) {
+          let found = null; try { found = await verifyPaystack(ev.data.reference); } catch (e) { console.error('webhook', e.message); }
+          // Renatel's Paystack account also takes payments for Tessa POS shops: pass those on, signed as received.
+          const md = ev.data.metadata || {}, slug = String(md.tessa || '');
+          if (!MULTI && !found && /^[a-z0-9-]{3,40}$/.test(slug)) {
+            const to = (process.env.TESSA_URL || 'https://lavenderblush-gull-669222.hostingersite.com').replace(/\/+$/, '') + '/' + slug + '/api/store/paystack';
+            fetch(to, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-paystack-signature': sig }, body: raw, signal: AbortSignal.timeout(20000) }).then((r) => console.log('webhook passed to ' + slug + ': ' + r.status)).catch((e) => console.error('webhook pass ' + slug, e.message));
+          }
+        }
         return send(res, 200, { ok: true });
       }
     } catch (e) {
@@ -808,6 +841,38 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
     }
     return send(res, 404, { error: 'Not found.' });
   }
+
+  // ---- platform payments (multi-shop): what the platform collected for this shop, its commission, and payouts ----
+  const PO = 'platPayouts';
+  function cleanAcct(a) {
+    if (!a || typeof a !== 'object') return null;
+    const t = (v, n) => String(v || '').trim().replace(/\s+/g, ' ').slice(0, n);
+    const out = { kind: a.kind === 'bank' ? 'bank' : 'momo', bank: t(a.bank, 40), name: t(a.name, 60), number: t(a.number, 30).replace(/[^\d -]/g, ''), branch: t(a.branch, 40) };
+    return out.bank && out.name && out.number.replace(/\D/g, '').length >= 8 ? out : null;
+  }
+  async function ledger() {
+    await fresh();
+    const [acct, pd] = await Promise.all([sbCall('shop_db_get', { p_col: 'platAcct', p_id: 'main' }), sbCall('shop_db_get', { p_col: PO, p_id: 'list' })]);
+    const payouts = ((pd && pd.recs) || []).slice();
+    const orders = Object.entries(orderDocs).filter(([, o]) => o && o.plat && (o.status === 'paid' || o.status === 'paid_short'))
+      .map(([ref, o]) => ({ ref, at: o.paidAt, sale: o.saleId || null, name: o.name, total: r2(o.total), pct: +o.feePct || 0, fee: o.fee != null ? o.fee : r2(o.total * (+o.feePct || 0) / 100), net: o.net != null ? o.net : r2(o.total - r2(o.total * (+o.feePct || 0) / 100)) }))
+      .sort((a, b) => b.at - a.at);
+    const sum = (L, k) => r2(L.reduce((a, x) => a + (+x[k] || 0), 0));
+    const collected = sum(orders, 'total'), fees = sum(orders, 'fee'), net = sum(orders, 'net'), paid = sum(payouts, 'amt');
+    payouts.sort((a, b) => b.at - a.at);
+    return { on: PK.src === 'platform', pct: PK.pct, collected, fees, net, paid, due: r2(net - paid), orders: orders.slice(0, 200), payouts: payouts.slice(0, 100), acct };
+  }
+  async function addPayout(p) {
+    const amt = r2(+p.amt); if (!(amt > 0)) throw new Error('Enter the amount paid out.');
+    const [id] = await sbCall('shop_ids', { p_n: 1 });
+    const rec = { id, at: Date.now(), amt, method: String(p.method || '').slice(0, 30), ref: String(p.ref || '').slice(0, 60), note: String(p.note || '').slice(0, 120), by: String(p.by || 'Platform') };
+    const cur = (await sbCall('shop_db_get', { p_col: PO, p_id: 'list' })) || { recs: [] };
+    cur.recs = (cur.recs || []).concat(rec); await sbCall('shop_db_put', { p_col: PO, p_id: 'list', p_data: cur });
+    serverLog('Payout received', CUR + ' ' + amt.toFixed(2) + ' paid to the shop by the platform' + (rec.method ? ' · ' + rec.method : '') + (rec.ref ? ' · ref ' + rec.ref : ''), { id: null, name: 'Platform' });
+    return rec;
+  }
+  async function delPayout(id) { const cur = (await sbCall('shop_db_get', { p_col: PO, p_id: 'list' })) || { recs: [] }; cur.recs = (cur.recs || []).filter((x) => x.id !== Number(id)); await sbCall('shop_db_put', { p_col: PO, p_id: 'list', p_data: cur }); serverLog('Payout removed', 'record #' + id + ' removed by the platform', { id: null, name: 'Platform' }); }
+  async function setAcct(a) { const c = cleanAcct(a); if (!c) throw new Error('Fill in the account name and number, and the network or bank.'); await sbCall('shop_db_put', { p_col: 'platAcct', p_id: 'main', p_data: Object.assign(c, { by: 'Platform', at: Date.now() }) }); return c; }
 
   function page(req, res, head, title) {
     try {
@@ -819,5 +884,5 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
     } catch (e) { res.writeHead(500, { 'Content-Type': 'text/plain' }); res.end('The online shop page is missing.'); }
   }
 
-  return { remindRun, smsReset: () => { SM.at = 0; }, api, page, receiptPage, invoicePage, isLive: () => mode() === 'paystack', sendSms, smsReady, otpIssue, otpCheck, otpSms, normPhone };
+  return { remindRun, smsReset: () => { SM.at = 0; }, payReset: () => { PK.at = 0; }, ledger, addPayout, delPayout, setAcct, api, page, receiptPage, invoicePage, isLive: () => mode() === 'paystack', sendSms, smsReady, otpIssue, otpCheck, otpSms, normPhone };
 };
