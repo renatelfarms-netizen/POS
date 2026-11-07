@@ -21,7 +21,12 @@ const fs = require('fs');
 const path = require('path');
 
 module.exports = function store(d) {
-  const { sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS } = d;
+  const { sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS, caller } = d;
+  // Shop settings kept in the POS (Settings saved in shop/main: set.store).
+  const storeSet = (shop) => Object.assign({ open: true, msg: '', pickup: true, delivery: true, dnote: '' }, (shop && shop.set && shop.set.store) || {});
+  // Staff permissions for the online shop: the owner has all; others as granted in Staff → Access (perms.web).
+  const WEBP = ['orders', 'products', 'customers', 'settings'];
+  const webCan = (st, k) => !!st && !st.locked && (st.role === 'owner' || !!(st.perms && st.perms.web && st.perms.web[k]));
   const BR = { kum: { pf: '', name: 'Kumasi branch', city: 'Kumasi' }, acc: { pf: 'accra_', name: 'Accra branch', city: 'Accra' } };
   const brOf = (b) => (BR[b] ? b : 'kum');
   const KEY = () => process.env.PAYSTACK_SECRET_KEY || '';
@@ -34,12 +39,13 @@ module.exports = function store(d) {
 
   // ---- products ----
   // Product documents of both branches, kept up to date with the same change feed the tills use.
-  const prodDocs = { kum: {}, acc: {} }, custDocs = { kum: {}, acc: {} }; let prodRev = 0, prodAt = 0, prodBusy = null;
+  const prodDocs = { kum: {}, acc: {} }, custDocs = { kum: {}, acc: {} }, orderDocs = {}; let prodRev = 0, prodAt = 0, prodBusy = null;
   async function refreshProducts() {
     let more = true;
     while (more) {
       const j = await sbCall('shop_db_pull', { p_since: prodRev });
       for (const x of j.docs || []) {
+        if (x.c === 'webOrders') { if (x.x) delete orderDocs[x.id]; else orderDocs[x.id] = x.d; continue; }
         const b = x.c === 'products' || x.c === 'customers' ? 'kum' : x.c === 'accra_products' || x.c === 'accra_customers' ? 'acc' : null;
         const box = b && (x.c.endsWith('products') ? prodDocs : custDocs)[b];
         if (box) { if (x.x) delete box[x.id]; else box[x.id] = x.d; }
@@ -72,7 +78,7 @@ module.exports = function store(d) {
     let t; try { t = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); } catch (e) { return null; }
     if (!(t.exp > Date.now())) return null;
     const a = await acctGet(t.ph); if (!a || (a.pwAt && t.iat < a.pwAt)) return null;
-    return { phone: t.ph, a };
+    return { phone: t.ph, a, blocked: !!a.blocked };
   }
   const profile = (ph, a) => ({ name: a.name, phone: ph, email: a.email || '', region: a.region || '' });
   // The account in the POS Customers list of a branch: found by phone, or added.
@@ -94,7 +100,7 @@ module.exports = function store(d) {
   const ORD = 'webOrders';
   const getOrder = (ref) => sbCall('shop_db_get', { p_col: ORD, p_id: ref });
   const putOrder = (ref, o) => sbCall('shop_db_put', { p_col: ORD, p_id: ref, p_data: o });
-  const publicOrder = (o, ref) => ({ ref, branch: o.branch, branchName: (BR[o.branch] || BR.kum).name, status: o.status, items: o.items.map((i) => ({ name: i.name, qty: i.qty, price: i.price })), total: o.total, name: o.name, mode: o.mode, saleId: o.saleId || null, created: o.created, pay: o.pay || mode() });
+  const publicOrder = (o, ref) => ({ ref, branch: o.branch, branchName: (BR[o.branch] || BR.kum).name, status: o.status, items: o.items.map((i) => ({ name: i.name, qty: i.qty, price: i.price })), total: o.total, name: o.name, mode: o.mode, saleId: o.saleId || null, created: o.created, pay: o.pay || mode(), fulfil: o.fulfil || '' });
 
   // Append one record to a list document ({recs:[...]}) the way the tills do: up to 300 per document.
   async function appendRec(col, base, rec) {
@@ -150,7 +156,7 @@ module.exports = function store(d) {
     if (o.mode === 'delivery') {
       const dl = { id: ids[1], ts: now, sale: saleId, name: o.name, phone: o.phone, addr: o.addr, region: o.region || '', city: o.city || '', gps: '', note: ('Online order ' + ref + '. ' + (o.note || '')).trim(),
         items: items.map((i) => i.qty + ' × ' + i.name).join(', '), fee: 0, rider: null, status: 'Pending', by: 'Online shop', byId: null, when: '', cod: 0, codPaid: false };
-      sale.dlv = dl.id;
+      sale.dlv = dl.id; o.dlvId = dl.id;
       await appendRec(PF + 'deliveries', accraDay(now).slice(0, 7), dl);
     }
     await appendRec(PF + 'sales', accraDay(now), sale);
@@ -202,9 +208,53 @@ module.exports = function store(d) {
         const shop = await shopMain(false), set = (shop && shop.set) || {}; CUR = set.cur || CUR;
         const b = brOf(new URL(req.url, 'http://x').searchParams.get('b')), names = set.brNames || {};
         const list = await listed(b, false);
-        return send(res, 200, { name: set.name || 'Renatel Shop', phone: set.phone || '', addr: b === 'kum' ? set.addr || '' : '', city: BR[b].city, cur: set.cur || 'GH₵', mode: mode(),
+        const ss = storeSet(shop);
+        return send(res, 200, { store: { open: ss.open !== false, msg: ss.msg || '', pickup: ss.pickup !== false, delivery: ss.delivery !== false, dnote: ss.dnote || '' }, name: set.name || 'Renatel Shop', phone: set.phone || '', addr: b === 'kum' ? set.addr || '' : '', city: BR[b].city, cur: set.cur || 'GH₵', mode: mode(),
           branch: b, branches: Object.fromEntries(Object.entries(BR).map(([k, v]) => [k, { name: names[k] || v.name, city: v.city }])),
           products: list.map((p) => ({ id: p.id, name: p.name, cat: p.cat || '', unit: p.unit || 'pcs', price: p.price, left: Math.max(0, p.stock || 0), img: /^[a-f0-9]{24}$/.test(p.img || '') ? p.img : '' })).sort((x, y) => x.name.localeCompare(y.name)) });
+      }
+      // ---- POS: online shop management (logged-in staff with the right permission) ----
+      if (url.startsWith('/api/store/admin/')) {
+        const who = await caller(req);
+        if (who.err) return send(res, who.err[0], { error: who.err[1] });
+        const st = who.staff, need = url.includes('/order') ? 'orders' : url.includes('/customer') ? 'customers' : '';
+        if (!st || !webCan(st, need)) return send(res, 403, { error: 'You don’t have access to this part of the online shop. Ask the owner.' });
+        if (req.method === 'GET' && url === '/api/store/admin/orders') {
+          await listed('kum', true);
+          const list = Object.entries(orderDocs).map(([ref, o]) => Object.assign(publicOrder(o, ref), { phone: o.phone, email: o.email || '', addr: o.addr || '', city: o.city || '', note: o.note || '', region: o.region || '',
+            paidAt: o.paidAt || null, provider: (o.payment && o.payment.provider) || '', channel: (o.payment && o.payment.channel) || '', short: o.short || '', fulfilBy: o.fulfilBy || '', fulfilAt: o.fulfilAt || null }))
+            .sort((a, b) => b.created - a.created).slice(0, 400);
+          return send(res, 200, { orders: list, mode: mode() });
+        }
+        if (req.method === 'POST' && url === '/api/store/admin/order') {
+          const m = await json(req), ref = m && String(m.ref || ''), f = m && String(m.fulfil || '');
+          if (!REF_RX.test(ref) || !['', 'ready', 'done', 'refunded', 'cancelled'].includes(f)) return send(res, 400, { error: 'Unknown order or action.' });
+          const o = await getOrder(ref); if (!o) return send(res, 404, { error: 'Order not found.' });
+          if (f === 'cancelled' && o.status !== 'pending') return send(res, 400, { error: 'This order is paid. Refund the sale in Receipts instead.' });
+          if (f === 'refunded' && o.status !== 'paid_short') return send(res, 400, { error: 'Only orders paid for a sold-out item are refunded here. Refund other sales in Receipts.' });
+          if ((f === 'ready' || f === 'done') && o.status !== 'paid') return send(res, 400, { error: 'This order is not paid.' });
+          o.fulfil = f; o.fulfilBy = st.name; o.fulfilAt = Date.now(); (o.hist = o.hist || []).push({ ts: Date.now(), by: st.name, f });
+          await putOrder(ref, o); orderDocs[ref] = o;
+          if (f === 'done' && o.mode === 'delivery' && o.dlvId) {
+            const col = BR[brOf(o.branch)].pf + 'deliveries', mon = accraDay(o.paidAt || o.created).slice(0, 7);
+            for (let n = 0; n < 50; n++) { const id = mon + '_web_' + n, cur = await sbCall('shop_db_get', { p_col: col, p_id: id }); if (!cur) break; const r = (cur.recs || []).find((x) => x.id === o.dlvId); if (r) { r.status = 'Delivered'; r.deliveredTs = Date.now(); await sbCall('shop_db_put', { p_col: col, p_id: id, p_data: cur }); break; } }
+          }
+          const L = { '': 'back to new', ready: 'ready for ' + (o.mode === 'delivery' ? 'delivery' : 'pickup'), done: o.mode === 'delivery' ? 'delivered' : 'collected', refunded: 'refunded', cancelled: 'cancelled' };
+          serverLog('Online order ' + (L[f] || f), (o.saleId ? 'receipt #' + o.saleId + ' · ' : '') + 'order ' + ref + ' · ' + o.name + ' ' + o.phone, st);
+          return send(res, 200, { ok: true, fulfil: f });
+        }
+        if (req.method === 'GET' && url === '/api/store/admin/customers') {
+          return send(res, 200, { customers: (await sbCall('web_acct_list', {})) || [] });
+        }
+        if (req.method === 'POST' && url === '/api/store/admin/customer') {
+          const m = await json(req), ph = m && normPhone(m.phone);
+          const a = ph ? await acctGet(ph) : null; if (!a) return send(res, 404, { error: 'Account not found.' });
+          a.blocked = !!m.blocked; if (a.blocked) a.pwAt = Date.now(); // blocking also signs them out everywhere
+          await acctPut(ph, a, false);
+          serverLog(a.blocked ? 'Blocked online account' : 'Unblocked online account', a.name + ' · ' + ph, st);
+          return send(res, 200, { ok: true, blocked: a.blocked });
+        }
+        return send(res, 404, { error: 'Not found.' });
       }
       // ---- accounts ----
       if (req.method === 'POST' && url === '/api/store/signup') {
@@ -228,6 +278,7 @@ module.exports = function store(d) {
         if (!allow(req, 20, 'li') || (ph && !allow({ headers: {}, socket: {} }, 15, 'lp' + ph))) return send(res, 429, { error: 'Too many tries. Wait a while, then try again.' });
         const a = ph ? await acctGet(ph) : null;
         if (!a || !(await checkPw(String(m.password || ''), a.pw))) return send(res, 401, { error: 'That phone number and password don’t match.' });
+        if (a.blocked) return send(res, 403, { error: 'This account is blocked. Please call the shop.' });
         return send(res, 200, { token: ctoken(ph), me: profile(ph, a) });
       }
       if (url === '/api/store/me') {
@@ -283,6 +334,9 @@ module.exports = function store(d) {
         if (!allow(req, 15)) return send(res, 429, { error: 'Too many orders from here. Try again in an hour.' });
         const cust = await custOf(req);
         if (!cust) return send(res, 401, { error: 'Please create an account or sign in to check out.', auth: true });
+        if (cust.blocked) return send(res, 403, { error: 'Your account is blocked. Please call the shop.' });
+        const ss = storeSet(await shopMain(false));
+        if (ss.open === false) return send(res, 403, { error: (ss.msg ? ss.msg + ' ' : '') + 'The online shop is not taking orders right now.' });
         const m = await json(req); if (!m) return send(res, 400, { error: 'Not valid data.' });
         const name = cust.a.name, phone = cust.phone, email = String(m.email || cust.a.email || '').trim().toLowerCase().slice(0, 120);
         const branch = brOf(m.branch), region = String(m.region || '').trim().slice(0, 40);
@@ -291,6 +345,7 @@ module.exports = function store(d) {
         if (phone.replace(/\D/g, '').length < 10) return send(res, 400, { error: 'Enter a valid phone number, e.g. 024 000 0000.' });
         if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return send(res, 400, { error: 'That email address doesn’t look right.' });
         if (dmode === 'delivery' && !addr) return send(res, 400, { error: 'Enter the delivery address or a landmark.' });
+        if ((dmode === 'delivery' && ss.delivery === false) || (dmode === 'pickup' && ss.pickup === false)) return send(res, 400, { error: (dmode === 'delivery' ? 'Delivery' : 'Pickup') + ' is not available right now. Choose the other option.' });
         const want = new Map();
         for (const it of Array.isArray(m.items) ? m.items.slice(0, 50) : []) { const id = +it.id, n = Math.floor(+it.qty); if (id > 0 && n > 0) want.set(id, (want.get(id) || 0) + n); }
         if (!want.size) return send(res, 400, { error: 'Your cart is empty.' });

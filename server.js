@@ -555,7 +555,7 @@ async function photoServe(req, res, key) {
 }
 
 // ---- online shop (renatel.shop/store): see store.js ----
-const shopStore = require('./store')({ sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS });
+const shopStore = require('./store')({ sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS, caller });
 
 http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0];

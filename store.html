@@ -168,6 +168,7 @@ input.f:focus,textarea.f:focus{border-color:var(--g);box-shadow:0 0 0 3px var(--
  <button class="cartbtn" id="acctbtn" onclick="goAccount()" aria-label="My account"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg><span id="acctname">Sign in</span></button>
  <button class="cartbtn" id="cartbtn" onclick="openCart()" aria-label="Open cart"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>Cart <span class="n" id="cartn">0</span></button>
 </div></header>
+<div class="test" id="annbar" hidden style="background:var(--y);color:var(--ink);border:0;font-weight:500"><div class="wrap" id="annwrap"></div></div>
 <div class="locbar" id="locbar" hidden><div class="wrap" id="locwrap"></div></div>
 <div class="test" id="testbar" hidden><div class="wrap">🧪 <b>Test mode:</b> payments are simulated and no money is taken, but orders are recorded in the shop and stock really goes down.</div></div>
 <main id="app"><div class="spin"></div></main>
@@ -221,7 +222,7 @@ async function call(u,o){o=o||{};const h={'Content-Type':'application/json'};if(
 
 async function info(){for(let i=0;;i++){try{return await call('/api/store/info?b='+BRANCH())}catch(e){if(i>=4)throw e;await new Promise(r=>setTimeout(r,2500))}}}
 async function load(){try{const j=await info();S=j;document.title=j.name+' · Shop online';$('#shopname').textContent=j.name;
-  $('#testbar').hidden=j.mode!='test';
+  $('#testbar').hidden=j.mode!='test';const st=j.store||{};$('#annbar').hidden=!st.msg&&st.open!==false;$('#annwrap').innerHTML=(st.open===false?'⛔ <b>We’re not taking online orders right now.</b> You can still look around. ':'')+(st.msg?'📣 '+esc(st.msg):'');
   if(j.phone)$('#calllink').href='tel:'+j.phone.replace(/[^\d+]/g,'');else $('#calllink').hidden=true;
   $('#foot').innerHTML=`<b>${esc(j.name)}</b>${j.addr||j.city?' · '+esc([j.addr,j.city].filter(Boolean).join(', ')):''}${j.phone?' · <a href="tel:'+esc(j.phone.replace(/[^\d+]/g,''))+'">'+esc(j.phone)+'</a>':''}<br><span style="opacity:.75">Pay securely with Mobile Money or card${j.mode=='paystack-test'?' · Paystack test mode':''}.</span>`;
   Object.keys(cart).forEach(id=>{const p=P(id);if(!p)delete cart[id];else cart[id]=Math.min(cart[id],p.left)});keep()}
@@ -271,22 +272,22 @@ function cartPane(){const L=lines();$('#pane').innerHTML=`<div style="display:fl
  ${L.length?`<div>${L.map(x=>`<div class="row"><div style="display:flex;gap:10px;align-items:center"><div class="pimg" style="width:52px;aspect-ratio:1;font-size:26px;background:${x.p.img?'#fff':tint(x.p.cat||x.p.name)}">${pimg(x.p)}</div><div><b style="font-size:14px">${esc(x.p.name)}</b><br><small class="mut">${money(x.p.price)} each</small></div></div><div style="text-align:right"><div class="qty"><button onclick="add(${x.p.id},-1)">−</button><span>${x.n}</span><button onclick="add(${x.p.id},1)" ${x.n>=x.p.left?'disabled':''}>+</button></div><small>${money(x.p.price*x.n)}</small></div></div>`).join('')}
  <div class="tot"><span>Total</span><span>${money(total())}</span></div></div><button class="pill big" onclick="goCheckout()">Checkout →</button>`:'<div class="empty" style="background:var(--soft)"><div style="font-size:40px">🛒</div><b>Your cart is empty</b><p class="mut">Add products to get started.</p></div>'}`}
 
-function checkoutView(){const L=lines();if(!L.length){step='shop';return shopView()}if(!ME){step='auth';nextStep='checkout';return authView()}if(!ck.email&&ME.me.email)ck.email=ME.me.email;
+function checkoutView(){const L=lines();if(!L.length){step='shop';return shopView()}const SS=Object.assign({open:true,pickup:true,delivery:true},S.store||{});if(!SS.pickup&&ck.mode=='pickup')ck.mode='delivery';if(!SS.delivery&&ck.mode=='delivery')ck.mode='pickup';if(!ME){step='auth';nextStep='checkout';return authView()}if(!ck.email&&ME.me.email)ck.email=ME.me.email;
  const V=(k,t,ph,ac)=>`<input class="f" id="f_${k}" type="${t||'text'}" value="${esc(ck[k])}" placeholder="${ph||''}" autocomplete="${ac||'off'}" oninput="ck.${k}=this.value">`;
  return `<div class="page"><div class="wrap"><button class="btn" onclick="step='shop';render()" style="margin-bottom:16px">← Keep shopping</button><h2 style="margin:0 0 16px">Checkout</h2>
  <div class="two"><div class="box"><div style="background:var(--gl);border-radius:12px;padding:10px 12px;font-size:14px;margin-bottom:6px">📍 ${LOC&&LOC.region?'<b>'+esc(LOC.region)+'</b> · ':''}Your order comes from our <b>${esc(brName())}</b>. <button class="ulink" style="font-size:13px;color:var(--g)" onclick="locAsk()">Change</button></div><b style="font-size:18px">Your details</b>
   <div class="row" style="border:0;padding:8px 0 0"><span>👤 Ordering as <b>${esc(ME.me.name)}</b> · ${esc(ME.me.phone)}</span><button class="ulink" style="font-size:13px" onclick="signOut();goCheckout()">Not you?</button></div>
   <label class="lbl">Email for your receipt (optional)</label>${V('email','email','you@example.com','email')}
   <label class="lbl">How do you want it?</label>
-  <div class="seg"><label><input type="radio" name="dm" value="pickup" ${ck.mode=='pickup'?'checked':''} onchange="ck.mode='pickup';render()"><span><b>Pick up</b><br><small class="mut">Collect at our ${esc(brCity())} branch</small></span></label>
-  <label><input type="radio" name="dm" value="delivery" ${ck.mode=='delivery'?'checked':''} onchange="ck.mode='delivery';render()"><span><b>Delivery</b><br><small class="mut">We call you to arrange it</small></span></label></div>
-  ${ck.mode=='delivery'?`<label class="lbl">Delivery address or landmark *</label>${V('addr','text','House no., street, landmark','street-address')}<label class="lbl">Town / city</label>${V('city','text','e.g. Kumasi')}<p class="mut" style="font-size:13px;margin:8px 0 0">Any delivery fee is agreed with you on the phone.</p>`:''}
+  <div class="seg" ${SS.pickup&&SS.delivery?'':'style="grid-template-columns:1fr"'}>${SS.pickup?`<label><input type="radio" name="dm" value="pickup" ${ck.mode=='pickup'?'checked':''} onchange="ck.mode='pickup';render()"><span><b>Pick up</b><br><small class="mut">Collect at our ${esc(brCity())} branch</small></span></label>`:''}
+  ${SS.delivery?`<label><input type="radio" name="dm" value="delivery" ${ck.mode=='delivery'?'checked':''} onchange="ck.mode='delivery';render()"><span><b>Delivery</b><br><small class="mut">We call you to arrange it</small></span></label>`:''}</div>
+  ${ck.mode=='delivery'?`<label class="lbl">Delivery address or landmark *</label>${V('addr','text','House no., street, landmark','street-address')}<label class="lbl">Town / city</label>${V('city','text','e.g. Kumasi')}<p class="mut" style="font-size:13px;margin:8px 0 0">${esc((S.store&&S.store.dnote)||'Any delivery fee is agreed with you on the phone.')}</p>`:''}
   <label class="lbl">Note (optional)</label><textarea class="f" id="f_note" rows="2" oninput="ck.note=this.value">${esc(ck.note)}</textarea>
  </div>
  <div class="box"><b style="font-size:18px">Order summary</b>${L.map(x=>`<div class="row"><span>${x.n} × ${esc(x.p.name)}</span><b>${money(x.p.price*x.n)}</b></div>`).join('')}
   <div class="tot"><span>Total</span><span>${money(total())}</span></div>
   <p id="cmsg" class="msg" role="status" aria-live="polite"></p>
-  <button class="pill big" id="paybtn" onclick="placeOrder()">Pay ${money(total())}</button>
+  ${SS.open?`<button class="pill big" id="paybtn" onclick="placeOrder()">Pay ${money(total())}</button>`:`<p class="msg" style="text-align:center">⛔ The shop is not taking online orders right now. Your cart is saved. Please come back later.</p>`}
   <p class="mut" style="font-size:13px;margin:12px 0 0;text-align:center">🔒 ${S.mode=='test'?'Test mode: you’ll see a practice payment screen. No money is taken.':'You’ll pay securely on Paystack with Mobile Money or card.'}</p></div></div></div></div>`}
 async function placeOrder(){const b=$('#paybtn'),m=$('#cmsg');m.textContent='';
  ['email','addr','city','note'].forEach(k=>{const e=$('#f_'+k);if(e)ck[k]=e.value});
@@ -347,7 +348,7 @@ async function authGo(){const m=$('#amsg'),b=$('#ago');m.textContent='';['name',
  catch(e){m.textContent=e.message;if(e.j&&e.j.exists){authMode='signin';render();$('#amsg').textContent=e.message}else{b.disabled=false;b.textContent=label}}}
 let acc={orders:null,err:''};
 function accountView(){if(!ME){step='auth';return authView()}if(acc.orders==null&&!acc.busy){acc.busy=true;call('/api/store/me').then(j=>{acc.orders=j.orders;saveMe(null,j.me)}).catch(e=>{acc.err=e.message;acc.orders=[]}).finally(()=>{acc.busy=false;if(step=='account')render()})}
- const me=ME.me,st=o=>o.status=='paid'?'<span class="ostat">Paid</span>':o.status=='paid_short'?'<span class="ostat x">Paid · item sold out</span>':'<span class="ostat p">Not paid</span>';
+ const me=ME.me,st=o=>o.status=='paid'?(o.fulfil=='done'?`<span class="ostat">✔ ${o.mode=='delivery'?'Delivered':'Collected'}</span>`:o.fulfil=='ready'?`<span class="ostat">${o.mode=='delivery'?'On its way soon':'Ready for pickup'}</span>`:'<span class="ostat">Paid · being prepared</span>'):o.fulfil=='refunded'?'<span class="ostat x">Refunded</span>':o.fulfil=='cancelled'?'<span class="ostat x">Cancelled</span>':o.status=='paid_short'?'<span class="ostat x">Paid · item sold out</span>':'<span class="ostat p">Not paid</span>';
  return `<div class="page"><div class="wrap"><div class="phead" style="margin-bottom:16px"><div><p class="eyebrow">Hello, ${esc(me.name.split(' ')[0])}</p><h2>My <span class="g">Account</span></h2></div><button class="btn" onclick="signOut();step='shop';render()">Sign out</button></div>
  <div class="two"><div class="box"><b style="font-size:18px">My orders</b>${acc.orders==null?'<div class="spin" style="margin:30px auto"></div>':acc.orders.length?acc.orders.map(o=>`<div class="row" style="align-items:flex-start"><div><b>${o.saleId?'Receipt #'+esc(o.saleId):'Order '+esc(o.ref)}</b> ${st(o)}<br><small class="mut">${new Date(o.created).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'})} · ${esc(o.branchName||'')} · ${o.mode=='delivery'?'Delivery':'Pickup'}</small><br><small>${o.items.map(i=>i.qty+' × '+esc(i.name)).join(', ')}</small></div><b>${money(o.total)}</b></div>`).join(''):`<p class="mut">No orders yet. <a href="#products" onclick="step='shop';render()">Start shopping</a></p>`}${acc.err?`<p class="msg">${esc(acc.err)}</p>`:''}</div>
  <div class="box"><b style="font-size:18px">My details</b>
