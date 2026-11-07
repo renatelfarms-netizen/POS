@@ -146,10 +146,13 @@ module.exports = function store(d) {
     }
   }
   const SMS_API = process.env.USMS_API || 'https://webapp.usmsgh.com/api';
-  const SM = { token: '', sender: '', at: 0 };
+  const SM = { token: '', sender: '', at: 0, shared: false };
   async function smsCfg(fresh) {
     if (!fresh && SM.at && Date.now() - SM.at < 30000) return SM;
-    try { const [t, sd] = await Promise.all([sbCall('site_secret_get', { p_name: 'usms_token' }), sbCall('site_secret_get', { p_name: 'usms_sender' })]); SM.token = t || ''; SM.sender = sd || ''; SM.at = Date.now(); }
+    try { const [t, sd] = await Promise.all([sbCall('site_secret_get', { p_name: 'usms_token' }), sbCall('site_secret_get', { p_name: 'usms_sender' })]); SM.token = t || ''; SM.sender = sd || ''; SM.shared = false;
+      // Multi-shop: a shop with no SMS account of its own may use the platform's shared account (switched on by the platform admin).
+      if (!SM.token && d.sharedSms) { const sh = await d.sharedSms(); if (sh && sh.token && sh.sender) { SM.token = sh.token; SM.sender = sh.sender; SM.shared = true; } }
+      SM.at = Date.now(); }
     catch (e) { console.error('sms config', e.message); }
     return SM;
   }
@@ -569,7 +572,9 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         const need = url.includes('/order') ? 'orders' : url.includes('/customer') ? 'customers' : url.endsWith('/pay') || url.includes('/sms') ? 'pay' : '';
         if (!st || (need === 'pay' ? st.role !== 'owner' || st.locked : !webCan(st, need))) return send(res, 403, { error: need === 'pay' ? 'Only the owner can change payment and SMS settings.' : 'You don’t have access to this part of the online shop. Ask the owner.' });
         if (url === '/api/store/admin/sms' || url === '/api/store/admin/sms/test') {
-          const info = async () => { const c = await smsCfg(true); let balance = null, err = ''; if (c.token) { try { const j = await usms('/balance', null, c.token); balance = j.data && (j.data.remaining_balance ?? j.data.balance ?? null); } catch (e) { err = e.message; } }
+          const info = async () => { const c = await smsCfg(true); let balance = null, err = '';
+            if (c.shared) return { configured: true, shared: true, sender: c.sender, hint: '', balance: null, error: '' }; // the shared account's token and balance stay private
+            if (c.token) { try { const j = await usms('/balance', null, c.token); balance = j.data && (j.data.remaining_balance ?? j.data.balance ?? null); } catch (e) { err = e.message; } }
             return { configured: !!(c.token && c.sender), sender: c.sender, hint: c.token ? c.token.split('|')[0] + '|…' + c.token.slice(-4) : '', balance, error: err }; };
           if (req.method === 'GET') return send(res, 200, await info());
           const m = await json(req) || {};
@@ -814,5 +819,5 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
     } catch (e) { res.writeHead(500, { 'Content-Type': 'text/plain' }); res.end('The online shop page is missing.'); }
   }
 
-  return { remindRun, api, page, receiptPage, invoicePage, isLive: () => mode() === 'paystack', sendSms, smsReady, otpIssue, otpCheck, otpSms, normPhone };
+  return { remindRun, smsReset: () => { SM.at = 0; }, api, page, receiptPage, invoicePage, isLive: () => mode() === 'paystack', sendSms, smsReady, otpIssue, otpCheck, otpSms, normPhone };
 };
