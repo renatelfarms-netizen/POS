@@ -582,6 +582,16 @@ http.createServer((req, res) => {
   }
   // App icon and "Add to Home screen" details
   const ICONS = { '/icon-192.png': 'icon-192.png', '/icon-512.png': 'icon-512.png', '/apple-touch-icon.png': 'apple-touch-icon.png', '/apple-touch-icon-precomposed.png': 'apple-touch-icon.png', '/favicon.ico': 'icon-192.png' };
+  // Renatel Shop logo (SVG): /logo.svg, /logo-white.svg, /logo-icon.svg
+  const LOGOS = { '/logo.svg': 'logo.svg', '/logo-white.svg': 'logo-white.svg', '/logo-icon.svg': 'logo-icon.svg' };
+  if (LOGOS[url]) {
+    fs.readFile(path.join(__dirname, 'icons', LOGOS[url]), (e, buf) => {
+      if (e) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' });
+      res.end(buf);
+    });
+    return;
+  }
   if (ICONS[url]) {
     fs.readFile(path.join(__dirname, 'icons', ICONS[url]), (e, buf) => {
       if (e) { res.writeHead(404); return res.end(); }

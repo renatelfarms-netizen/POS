@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Shop online</title>
 <meta name="theme-color" content="#0b7a4b">
-<link rel="icon" href="/icon-192.png">
+<link rel="icon" type="image/svg+xml" href="/logo-icon.svg"><link rel="icon" href="/icon-192.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -47,7 +47,7 @@ body{overflow-x:hidden}
 .tabs button{border:0;background:none;border-radius:999px;padding:10px;font-weight:600;cursor:pointer;color:var(--mut)}
 .tabs button.on{background:#fff;color:var(--g);box-shadow:var(--sh)}
 .acct{background:#fff;color:var(--g);border:0}
-.ostat{font-size:12px;font-weight:600;border-radius:999px;padding:2px 10px;background:var(--gl);color:var(--g)}
+.ostat{font-size:12px;font-weight:600;border-radius:999px;padding:2px 10px;background:var(--gl);color:var(--g);white-space:nowrap;display:inline-block;margin-top:2px}
 .ostat.p{background:#fff4d4;color:#7a5600}.ostat.x{background:#fdeceb;color:var(--bad)}
 .test{background:#fff6d6;color:#6b4a00;font-size:13px;padding:8px 0;border-bottom:1px solid #f3df9a}
 
@@ -158,7 +158,7 @@ input.f:focus,textarea.f:focus{border-color:var(--g);box-shadow:0 0 0 3px var(--
 @keyframes s{to{transform:rotate(1turn)}}
 .drawer{position:fixed;inset:0;background:rgba(10,20,15,.45);display:none;z-index:30}
 .drawer.on{display:block}
-.drawer .pane{position:absolute;right:0;top:0;bottom:0;width:min(420px,100%);background:#fff;padding:20px;overflow:auto;display:flex;flex-direction:column;gap:14px}
+.drawer .pane{position:absolute;right:0;top:0;bottom:0;width:min(420px,88%);background:#fff;padding:20px;overflow:auto;display:flex;flex-direction:column;gap:14px}
 
 /* ---------- motion: the design's own pictures move ---------- */
 .fadeup{opacity:0;transform:translateY(18px);animation:fu .8s cubic-bezier(.2,.7,.2,1) forwards}
@@ -211,7 +211,7 @@ input.f:focus,textarea.f:focus{border-color:var(--g);box-shadow:0 0 0 3px var(--
 </head>
 <body>
 <header class="nav"><div class="wrap">
- <a class="logo" href="/"><i>🛍️</i><b id="shopname">Shop online</b></a>
+ <a class="logo" href="/"><img src="/logo-icon.svg" alt="" width="34" height="34" style="border-radius:9px;box-shadow:0 0 0 2px rgba(255,255,255,.25)"><b id="shopname">Shop online</b></a>
  <button class="catbtn" id="catbtn" onclick="goCats()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>Browse All Categories</span></button>
  <nav class="links" id="links"><a href="/">Home</a><a href="/#products">Shop</a><a href="/#how">How it works</a><a id="calllink" href="#">Contact</a></nav>
  <span class="sp"></span>
@@ -276,7 +276,7 @@ async function info(){for(let i=0;;i++){try{return await call('/api/store/info?b
 async function load(){try{const j=await info();S=j;document.title=j.name+' · Shop online';$('#shopname').textContent=j.name;
   $('#testbar').hidden=j.mode!='test';const st=j.store||{};$('#annbar').hidden=!st.msg&&st.open!==false;$('#annwrap').innerHTML=(st.open===false?'⛔ <b>We’re not taking online orders right now.</b> You can still look around. ':'')+(st.msg?'📣 '+esc(st.msg):'');
   if(j.phone)$('#calllink').href='tel:'+j.phone.replace(/[^\d+]/g,'');else $('#calllink').hidden=true;
-  $('#foot').innerHTML=`<b>${esc(j.name)}</b>${j.addr||j.city?' · '+esc([j.addr,j.city].filter(Boolean).join(', ')):''}${j.phone?' · <a href="tel:'+esc(j.phone.replace(/[^\d+]/g,''))+'">'+esc(j.phone)+'</a>':''}<br><span style="opacity:.75">Pay securely with Mobile Money or card${j.mode=='paystack-test'?' · Paystack test mode':''}.</span><br><a href="/pos" style="opacity:.6;font-size:12px">Staff login</a>`;
+  $('#foot').innerHTML=`<img src="/logo-white.svg" alt="${esc(j.name)}" height="40" style="display:block;margin-bottom:10px"><b>${esc(j.name)}</b>${j.addr||j.city?' · '+esc([j.addr,j.city].filter(Boolean).join(', ')):''}${j.phone?' · <a href="tel:'+esc(j.phone.replace(/[^\d+]/g,''))+'">'+esc(j.phone)+'</a>':''}<br><span style="opacity:.75">Pay securely with Mobile Money or card${j.mode=='paystack-test'?' · Paystack test mode':''}.</span><br><a href="/pos" style="opacity:.6;font-size:12px">Staff login</a>`;
   Object.keys(cart).forEach(id=>{const p=P(id);if(!p)delete cart[id];else cart[id]=Math.min(cart[id],p.left)});keep()}
  catch(e){$('#app').innerHTML=`<div class="page"><div class="wrap narrow box"><b>The shop can’t be reached</b><p class="mut">${esc(e.message)}</p><button class="pill" onclick="location.reload()">Try again</button></div></div>`;throw e}}
 
@@ -305,7 +305,7 @@ function shopView(){const city=brCity(),ph=S.products.filter(p=>p.img),pi=k=>ph.
    <div class="promo y rv"><span class="bdg">Pickup or delivery</span><h3>Collect in ${esc(city)} or Get it Delivered</h3><p>Choose at checkout. For delivery we call you to arrange the time.</p><a class="pill sm" href="#products">Shop Now →</a><span class="pbig">🚚</span></div>
   </div></div></section>
  <section class="prods" id="products"><div class="wrap"><div class="phead"><div><p class="eyebrow">Products</p><h2>Featured <span class="g">Products</span></h2></div>
-  <label class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6e7571" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" placeholder="Search products" value="${esc(q)}" oninput="q=this.value;$('#grid').innerHTML=cards();reveal()" aria-label="Search products"></label></div>
+  <label class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6e7571" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" placeholder="Search products" value="${esc(q)}" oninput="q=this.value;$('#grid').innerHTML=cards();$('#grid').querySelectorAll('.rv').forEach(e=>e.classList.add('in'))" aria-label="Search products"></label></div>
   <div class="grid" id="grid">${cards()}</div></div></section>
  <section id="how"><div class="wrap"><p class="eyebrow center">Simple & safe</p><h2 class="center">How it <span class="g">works</span></h2>
   <div class="how"><div class="step rv"><i>🛒</i><b>1. Pick your products</b><p>Add what you need to the cart. Stock is live from the shop.</p></div>
@@ -332,7 +332,7 @@ function checkoutView(){const L=lines();if(!L.length){step='shop';return shopVie
  const V=(k,t,ph,ac)=>`<input class="f" id="f_${k}" type="${t||'text'}" value="${esc(ck[k])}" placeholder="${ph||''}" autocomplete="${ac||'off'}" oninput="ck.${k}=this.value">`;
  return `<div class="page"><div class="wrap"><button class="btn" onclick="step='shop';render()" style="margin-bottom:16px">← Keep shopping</button><h2 style="margin:0 0 16px">Checkout</h2>
  <div class="two"><div class="box"><div style="background:var(--gl);border-radius:12px;padding:10px 12px;font-size:14px;margin-bottom:6px">📍 ${LOC&&LOC.region?'<b>'+esc(LOC.region)+'</b> · ':''}Your order comes from our <b>${esc(brName())}</b>. <button class="ulink" style="font-size:13px;color:var(--g)" onclick="locAsk()">Change</button></div><b style="font-size:18px">Your details</b>
-  <div class="row" style="border:0;padding:8px 0 0"><span>👤 Ordering as <b>${esc(ME.me.name)}</b> · ${esc(ME.me.phone)}</span><button class="ulink" style="font-size:13px" onclick="signOut();goCheckout()">Not you?</button></div>
+  <div style="display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:8px 0 0"><span>👤 Ordering as <b>${esc(ME.me.name)}</b> <span class="mut" style="white-space:nowrap">${esc(ME.me.phone)}</span></span><button class="ulink" style="font-size:13px;white-space:nowrap" onclick="signOut();goCheckout()">Not you?</button></div>
   <label class="lbl">Email for your receipt (optional)</label>${V('email','email','you@example.com','email')}
   <label class="lbl">How do you want it?</label>
   <div class="seg" ${SS.pickup&&SS.delivery?'':'style="grid-template-columns:1fr"'}>${SS.pickup?`<label><input type="radio" name="dm" value="pickup" ${ck.mode=='pickup'?'checked':''} onchange="ck.mode='pickup';render()"><span><b>Pick up</b><br><small class="mut">Collect at our ${esc(brCity())} branch</small></span></label>`:''}
@@ -366,7 +366,7 @@ async function testPay(ref,ok){const b=$('#okb');b.disabled=true;b.textContent='
  catch(e){$('#pmsg').textContent=e.message;b.disabled=false;b.textContent='✔ Simulate successful MoMo payment'}}
 
 async function doneView(ref,o){$('#cartbtn').hidden=false;if(!o){$('#app').innerHTML='<div class="spin"></div><p class="mut" style="text-align:center">Checking your payment…</p>';
-  for(let i=0;i<6;i++){try{o=await call('/api/store/order/'+ref)}catch(e){}if(o&&!['pending','processing'].includes(o.status))break;await new Promise(r=>setTimeout(r,2500))}}
+  for(let i=0;i<6;i++){try{o=await call('/api/store/order/'+ref)}catch(e){if(e.status==404)break}if(o&&!['pending','processing'].includes(o.status))break;await new Promise(r=>setTimeout(r,2500))}}
  if(!o)return $('#app').innerHTML=shell(`<div class="box"><b>Order not found</b><p><a class="pill" href="/">Back to the shop</a></p></div>`);
  if(o.status=='paid'){cart={};keep();badge()}
  const box=(ic,h,body)=>shell(`<div class="box"><div class="bigic">${ic}</div><h2 style="text-align:center;margin:6px 0 10px">${h}</h2>${body}<a class="pill big" style="margin-top:16px" href="/">Back to the shop</a></div>`);
@@ -406,7 +406,7 @@ let acc={orders:null,err:''};
 function accountView(){if(!ME){step='auth';return authView()}if(acc.orders==null&&!acc.busy){acc.busy=true;call('/api/store/me').then(j=>{acc.orders=j.orders;saveMe(null,j.me)}).catch(e=>{acc.err=e.message;acc.orders=[]}).finally(()=>{acc.busy=false;if(step=='account')render()})}
  const me=ME.me,st=o=>o.status=='paid'?(o.fulfil=='done'?`<span class="ostat">✔ ${o.mode=='delivery'?'Delivered':'Collected'}</span>`:o.fulfil=='ready'?`<span class="ostat">${o.mode=='delivery'?'On its way soon':'Ready for pickup'}</span>`:'<span class="ostat">Paid · being prepared</span>'):o.fulfil=='refunded'?'<span class="ostat x">Refunded</span>':o.fulfil=='cancelled'?'<span class="ostat x">Cancelled</span>':o.status=='paid_short'?'<span class="ostat x">Paid · item sold out</span>':'<span class="ostat p">Not paid</span>';
  return `<div class="page"><div class="wrap"><div class="phead" style="margin-bottom:16px"><div><p class="eyebrow">Hello, ${esc(me.name.split(' ')[0])}</p><h2>My <span class="g">Account</span></h2></div><button class="btn" onclick="signOut();step='shop';render()">Sign out</button></div>
- <div class="two"><div class="box"><b style="font-size:18px">My orders</b>${acc.orders==null?'<div class="spin" style="margin:30px auto"></div>':acc.orders.length?acc.orders.map(o=>`<div class="row" style="align-items:flex-start"><div><b>${o.saleId?'Receipt #'+esc(o.saleId):'Order '+esc(o.ref)}</b> ${st(o)}<br><small class="mut">${new Date(o.created).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'})} · ${esc(o.branchName||'')} · ${o.mode=='delivery'?'Delivery':'Pickup'}</small><br><small>${o.items.map(i=>i.qty+' × '+esc(i.name)).join(', ')}</small></div><b>${money(o.total)}</b></div>`).join(''):`<p class="mut">No orders yet. <a href="#products" onclick="step='shop';render()">Start shopping</a></p>`}${acc.err?`<p class="msg">${esc(acc.err)}</p>`:''}</div>
+ <div class="two"><div class="box"><b style="font-size:18px">My orders</b>${acc.orders==null?'<div class="spin" style="margin:30px auto"></div>':acc.orders.length?acc.orders.map(o=>`<div class="row" style="align-items:flex-start"><div><b>${o.saleId?'Receipt #'+esc(o.saleId):'Order '+esc(o.ref)}</b> ${st(o)}<br><small class="mut">${new Date(o.created).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'})} · ${esc(o.branchName||'')} · ${o.mode=='delivery'?'Delivery':'Pickup'}</small><br><small>${o.items.map(i=>i.qty+' × '+esc(i.name)).join(', ')}</small></div><b style="white-space:nowrap">${money(o.total)}</b></div>`).join(''):`<p class="mut">No orders yet. <a href="#products" onclick="step='shop';render()">Start shopping</a></p>`}${acc.err?`<p class="msg">${esc(acc.err)}</p>`:''}</div>
  <div class="box"><b style="font-size:18px">My details</b>
   <label class="lbl">Full name</label><input class="f" id="m_name" value="${esc(me.name)}">
   <label class="lbl">Phone number</label><input class="f" value="${esc(me.phone)}" disabled>

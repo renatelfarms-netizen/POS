@@ -235,7 +235,7 @@ html,body{overscroll-behavior-y:contain}
 </head>
 <body>
 <header>
-<b>🛍️ <span id="brand">Renatel Shop</span></b>
+<b><img src="/logo-icon.svg" alt="" width="22" height="22" style="vertical-align:-5px;border-radius:6px" onerror="this.replaceWith('🛍️')"> <span id="brand">Renatel Shop</span></b>
 <button class="btn sm pri" id="bell" onclick="queueDlg()" hidden></button><span id="sync" class="mut ln" title="Where your shop data is saved"></span><button class="btn sm" id="brsw" onclick="brDlg()" hidden></button><button class="btn sm" id="who" onclick="userMenu()" hidden></button><button id="cpw" onclick="pinDlg()" hidden></button><button id="lo" onclick="logout()" hidden></button>
 </header>
 <nav id="tabs"></nav>
@@ -561,7 +561,7 @@ function ctLabel(root){(root||document).querySelectorAll('#app .tw table,#dlgc .
 let ctT=null;new MutationObserver(()=>{clearTimeout(ctT);ctT=setTimeout(()=>ctLabel(),30)}).observe(document.body,{childList:true,subtree:true});
 function loginShell(o){document.body.classList.add('lgmode');const h=new Date().getHours(),hi=h<12?'Good morning':h<17?'Good afternoon':'Good evening',lg=db.set.rx&&db.set.rx.logo;
  return `<div class="lg2"><div class="lg2-card">
-  <div class="lg2-brand"><div class="lg2-logo">${lg?`<img src="${lg}" alt="">`:'🛍️'}</div><h1>${esc(db.set.name)}</h1><p>${hi} · ${new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'})}</p></div>
+  <div class="lg2-brand"><div class="lg2-logo">${lg?`<img src="${lg}" alt="">`:(WEB0?'<img src="/logo-icon.svg" alt="" style="width:100%;height:100%">':'🛍️')}</div><h1>${esc(db.set.name)}</h1><p>${hi} · ${new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'})}</p></div>
   <form onsubmit="event.preventDefault();${o.go}()" novalidate>
    <label class="lg2-f" for="${o.u}"><span>Name</span><div class="lg2-in">${LGI.user}<input id="${o.u}" type="text" autocomplete="username" autocapitalize="words" spellcheck="false" placeholder="Your name" value="${esc(o.name||'')}" onkeydown="if(event.key=='Enter'){event.preventDefault();$('#${o.p}').focus()}" oninput="pwClear('${o.u}','${o.msg}')"></div></label>
    <label class="lg2-f" for="${o.p}"><span>Password</span><div class="lg2-in">${LGI.lock}<input id="${o.p}" type="password" autocomplete="current-password" placeholder="Password or PIN" oninput="pwClear('${o.p}','${o.msg}')"><button type="button" class="lg2-eye" onclick="lgEye(this,'${o.p}')" aria-label="Show password" title="Show password">${LGI.eye}</button></div></label>
