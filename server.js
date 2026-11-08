@@ -22,7 +22,7 @@ const ctx = new AsyncLocalStorage();
 const T = () => ctx.getStore() || {};
 const SID = () => (T().shop || {}).id || '-';
 const PLATFORM = process.env.PLATFORM_NAME || 'Tessa POS';
-const SITE = process.env.PLATFORM_HOST || 'the website';
+const SITE = process.env.PLATFORM_HOST || 'tessapos.shop';
 
 const PAGE = path.join(__dirname, 'index.html'), LANDING = path.join(__dirname, 'landing.html'), ADMIN = path.join(__dirname, 'admin.html'), LOGIN = path.join(__dirname, 'login.html'), REGISTER = path.join(__dirname, 'register.html'), CSS = path.join(__dirname, 'site.css');
 const PORT = process.env.PORT || 3000;
@@ -905,7 +905,7 @@ async function payCfg(fresh) {
 const payPct = (v, id) => { const r = v && v.rates && v.rates[id]; return Math.max(0, Math.min(50, +(r != null && r !== '' ? r : (v && v.pct != null ? v.pct : 5)) || 0)); };
 async function sharedPay(fresh) { const v = await payCfg(!!fresh); return v && v.on && v.key && !(v.off || []).includes(SID()) ? { key: v.key, pct: payPct(v, SID()) } : null; }
 async function sharedSms() { const v = await sharedCfg(false); return v && v.on && v.token && !(v.off || []).includes(SID()) ? { token: v.token, sender: v.sender } : null; }
-const hostName = () => String(process.env.PLATFORM_HOST || 'lavenderblush-gull-669222.hostingersite.com').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+const hostName = () => String(process.env.PLATFORM_HOST || 'tessapos.shop').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 function store() {
   const id = SID(); if (id === '-') throw new Error('No shop');
   if (!stores.has(id)) stores.set(id, makeStore({ sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS, caller,
