@@ -829,7 +829,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
           // Renatel's Paystack account also takes payments for Tessa POS shops: pass those on, signed as received.
           const md = ev.data.metadata || {}, slug = String(md.tessa || '');
           if (!MULTI && !found && /^[a-z0-9-]{3,40}$/.test(slug)) {
-            const to = (process.env.TESSA_URL || 'https://lavenderblush-gull-669222.hostingersite.com').replace(/\/+$/, '') + '/' + slug + '/api/store/paystack';
+            const to = (process.env.TESSA_URL || 'https://tessapos.shop').replace(/\/+$/, '') + '/' + slug + '/api/store/paystack';
             fetch(to, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-paystack-signature': sig }, body: raw, signal: AbortSignal.timeout(20000) }).then((r) => console.log('webhook passed to ' + slug + ': ' + r.status)).catch((e) => console.error('webhook pass ' + slug, e.message));
           }
         }
