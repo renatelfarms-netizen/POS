@@ -173,7 +173,7 @@ function sbSave(dev, name, raw, digest, cnt) {
 }
 
 // Collections the shop page stores (same list as COLS in index.html).
-const DB_COLS = new Set(['shop', 'devices', 'mailed', 'students', 'att', 'marks', 'rtabs', 'kot', 'jobs', 'remits', 'products', 'customers', 'sales', 'expenses', 'deliveries', 'pos', 'moves', 'log', 'whMoves', 'transfers', 'trReq', 'whItems', 'whPos',
+const DB_COLS = new Set(['shop', 'devices', 'mailed', 'students', 'att', 'marks', 'rtabs', 'kot', 'jobs', 'remits', 'notes', 'products', 'customers', 'sales', 'expenses', 'deliveries', 'pos', 'moves', 'log', 'whMoves', 'transfers', 'trReq', 'whItems', 'whPos',
   'accra_products', 'accra_customers', 'accra_sales', 'accra_expenses', 'accra_deliveries', 'accra_pos', 'accra_moves']);
 
 // ---- online backups of the shared shop, made by the server ----

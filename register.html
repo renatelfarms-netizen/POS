@@ -67,6 +67,11 @@ $('#su').addEventListener('submit',async e=>{e.preventDefault();document.querySe
   const K='shop-pos-v1:'+j.slug;try{sessionStorage.setItem(K+'-sess',JSON.stringify({t:j.token,sid:j.sid,exp:j.exp}));sessionStorage.setItem(K+'-auto',JSON.stringify({sid:j.sid,ts:Date.now()}))}catch(e){}
   msg('✓ '+body.shopName+' is ready. Opening your shop…','ok');b.innerHTML='<span class="spin"></span> Opening your shop…';setTimeout(()=>location.href='/'+j.slug,500)}
  catch(err){b.disabled=false;b.textContent='Create my shop';msg('✗ '+(err.message==='Failed to fetch'?'Can’t reach the website. Check the internet connection.':err.message),'no')}});
+
+(function(){const W={retail:['shop','e.g. Kofi Mart','Add branches, staff and products inside your shop.'],pharmacy:['pharmacy','e.g. Afia Pharmacy','Add staff and drugs inside.'],school:['school','e.g. Bright Future School','Add classes, teachers and students inside.'],restaurant:['restaurant','e.g. Mama’s Kitchen','Add tables, staff and your menu inside.'],courier:['business','e.g. Swift Riders','Add riders and delivery zones inside.']};
+ const f=()=>{const w=W[$('#biz').value]||W.retail,h=document.querySelector('h1'),l=document.querySelector('#shopName').closest('label'),k=document.querySelector('#slug').closest('label'),sm=document.querySelector('form .small'),b=$('#sub');
+  h.textContent='Create your '+w[0];l.firstChild.nodeValue=w[0][0].toUpperCase()+w[0].slice(1)+' name';$('#shopName').placeholder=w[1];k.firstChild.nodeValue='Your '+w[0]+' link\n    ';if(sm)sm.textContent='Free to use. '+w[2];if(!b.disabled)b.textContent='Create my '+w[0]};
+ $('#biz').addEventListener('change',f);f()})();
 </script>
 </body>
 </html>
