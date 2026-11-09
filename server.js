@@ -173,7 +173,7 @@ function sbSave(dev, name, raw, digest, cnt) {
 }
 
 // Collections the shop page stores (same list as COLS in index.html).
-const DB_COLS = new Set(['shop', 'devices', 'mailed', 'students', 'att', 'marks', 'products', 'customers', 'sales', 'expenses', 'deliveries', 'pos', 'moves', 'log', 'whMoves', 'transfers', 'trReq', 'whItems', 'whPos',
+const DB_COLS = new Set(['shop', 'devices', 'mailed', 'students', 'att', 'marks', 'rtabs', 'kot', 'jobs', 'remits', 'products', 'customers', 'sales', 'expenses', 'deliveries', 'pos', 'moves', 'log', 'whMoves', 'transfers', 'trReq', 'whItems', 'whPos',
   'accra_products', 'accra_customers', 'accra_sales', 'accra_expenses', 'accra_deliveries', 'accra_pos', 'accra_moves']);
 
 // ---- online backups of the shared shop, made by the server ----
@@ -595,7 +595,7 @@ async function signup(req, res) {
   let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
   const t = (v, n) => String(v || '').trim().slice(0, n);
   const name = t(m.shopName, 60), slug = t(m.slug, 40).toLowerCase(), owner = t(m.ownerName, 60), email = t(m.email, 120).toLowerCase(), phone = t(m.phone, 30), pw = String(m.password || '').slice(0, 200);
-  const nb = m.branches === 2 ? 2 : 1, br1 = t(m.br1, 40) || 'Main branch', br2 = t(m.br2, 40) || 'Second branch', cur = t(m.cur, 6) || 'GH₵', biz = ['pharmacy', 'school'].includes(m.biz) ? m.biz : 'retail';
+  const nb = m.branches === 2 ? 2 : 1, br1 = t(m.br1, 40) || 'Main branch', br2 = t(m.br2, 40) || 'Second branch', cur = t(m.cur, 6) || 'GH₵', biz = ['pharmacy', 'school', 'restaurant', 'courier'].includes(m.biz) ? m.biz : 'retail';
   if (name.length < 2) return send(res, 400, { error: 'Type the name of your shop.', f: 'shopName' });
   if (!slugOK(slug)) return send(res, 400, { error: 'The shop link can use small letters, numbers and dashes (3 to 40), e.g. kofi-mart.', f: 'slug' });
   if (owner.length < 2) return send(res, 400, { error: 'Type your full name.', f: 'ownerName' });
