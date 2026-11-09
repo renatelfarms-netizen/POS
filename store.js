@@ -573,6 +573,19 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
           }
         }
         // Delivery SMS (rider job details, customer updates, instructions): any logged-in staff; the till writes the text.
+        if (req.method === 'POST' && url === '/api/store/admin/sms/bulk') { // school: fee reminders, payment receipts, absence notes (sent in the background)
+          if (!st || st.locked || ['delivery', 'warehouse', 'stock'].includes(st.role)) return send(res, 403, { error: 'You can’t send these messages.' });
+          if (!allow(req, 40, 'smsb')) return send(res, 429, { error: 'Too many batches of SMS from this device. Try again in an hour.' });
+          const m = await json(req) || {}, kind = String(m.kind || 'note').replace(/[^a-z]/g, '').slice(0, 12) || 'note';
+          const L = (Array.isArray(m.msgs) ? m.msgs.slice(0, 800) : []).map((x) => ({ to: normPhone(x && x.to), text: String(x && x.text || '').replace(/\s+\n/g, '\n').trim().slice(0, 459) })).filter((x) => x.to && x.text.length >= 5);
+          if (!L.length) return send(res, 400, { error: 'No valid phone numbers to send to.' });
+          if (!(await smsCfg()).token) return send(res, 400, { error: 'SMS is not set up for this shop yet.' });
+          send(res, 200, { queued: L.length });
+          (async () => { let ok = 0, bad = 0; for (const x of L) { try { await sendSms(x.to, x.text); ok++; } catch (e) { bad++; } }
+            const K = { fees: 'fee reminders', receipt: 'fee receipt', absent: 'absence notes', note: 'messages' };
+            serverLog('School SMS', (K[kind] || kind) + ' · ' + ok + ' sent' + (bad ? ' · ' + bad + ' failed' : ''), st); })().catch((e) => console.error('bulk sms', e.message));
+          return;
+        }
         if (req.method === 'POST' && url === '/api/store/admin/sms/dlv') {
           if (!st || st.locked) return send(res, 403, { error: 'Please log in again.' });
           if (!allow(req, 200, 'smsd')) return send(res, 429, { error: 'Too many SMS from this device. Try again later.' });
