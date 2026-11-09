@@ -95,7 +95,9 @@ module.exports = function store(d) {
     }
     prodAt = Date.now();
   }
-  const forSale = (p) => p && !p.hideOnline && p.price > 0;
+  const forSale = (p) => p && !p.hideOnline && p.price > 0 && !p.rx;
+  // pharmacy shops: stock past its expiry date (per batch) is never sold online
+  const avail = (p) => { const t = new Date().toISOString().slice(0, 10), x = (Array.isArray(p.lots) ? p.lots : []).filter((l) => l && l.exp && l.exp < t).reduce((a, l) => a + (+l.q || 0), 0); return Math.max(0, (p.stock || 0) - x); };
   async function listed(b, fresh) {
     if (fresh || Date.now() - prodAt > 5000) { if (!prodBusy) prodBusy = refreshProducts().finally(() => { prodBusy = null; }); await prodBusy; }
     return Object.values(prodDocs[brOf(b)]).filter(forSale);
@@ -509,7 +511,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         const ss = storeSet(shop);
         return send(res, 200, { store: { open: ss.open !== false, msg: ss.msg || '', pickup: ss.pickup !== false, delivery: ss.delivery !== false, dnote: ss.dnote || '' }, name: set.name || 'Renatel Shop', phone: set.phone || '', addr: b === 'kum' ? set.addr || '' : '', city: BR[b].city || (MULTI && b === 'kum' ? set.city || '' : ''), cur: set.cur || 'GH₵', mode: mode(),
           branch: b, branches: Object.fromEntries(brKeys().map((k) => [k, { name: names[k] || BR[k].name, city: BR[k].city || (MULTI && k === 'kum' ? set.city || '' : '') }])),
-          products: list.map((p) => ({ id: p.id, name: p.name, cat: p.cat || '', unit: p.unit || 'pcs', price: p.price, left: Math.max(0, p.stock || 0), img: /^[a-f0-9]{24}$/.test(p.img || '') ? p.img : '' })).sort((x, y) => x.name.localeCompare(y.name)) });
+          products: list.map((p) => ({ id: p.id, name: p.name, cat: p.cat || '', unit: p.unit || 'pcs', price: p.price, left: avail(p), img: /^[a-f0-9]{24}$/.test(p.img || '') ? p.img : '' })).sort((x, y) => x.name.localeCompare(y.name)) });
       }
       // ---- POS: online shop management (logged-in staff with the right permission) ----
       if (url.startsWith('/api/store/admin/')) {
@@ -783,7 +785,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         for (const [id, qty] of want) {
           const p = await getProd(branch, id);
           if (!forSale(p)) return send(res, 400, { error: 'One of the products is no longer sold online. Refresh the page.' });
-          if ((p.stock || 0) < qty) return send(res, 409, { error: 'Only ' + Math.max(0, p.stock || 0) + ' × ' + p.name + ' left. Change the quantity.' });
+          if (avail(p) < qty) return send(res, 409, { error: 'Only ' + avail(p) + ' × ' + p.name + ' left. Change the quantity.' });
           items.push({ id: p.id, name: p.name, price: p.price, qty }); total += p.price * qty;
         }
         total = r2(total);

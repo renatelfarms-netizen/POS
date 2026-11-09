@@ -595,7 +595,7 @@ async function signup(req, res) {
   let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
   const t = (v, n) => String(v || '').trim().slice(0, n);
   const name = t(m.shopName, 60), slug = t(m.slug, 40).toLowerCase(), owner = t(m.ownerName, 60), email = t(m.email, 120).toLowerCase(), phone = t(m.phone, 30), pw = String(m.password || '').slice(0, 200);
-  const nb = m.branches === 2 ? 2 : 1, br1 = t(m.br1, 40) || 'Main branch', br2 = t(m.br2, 40) || 'Second branch', cur = t(m.cur, 6) || 'GH₵';
+  const nb = m.branches === 2 ? 2 : 1, br1 = t(m.br1, 40) || 'Main branch', br2 = t(m.br2, 40) || 'Second branch', cur = t(m.cur, 6) || 'GH₵', biz = ['pharmacy', 'school'].includes(m.biz) ? m.biz : 'retail';
   if (name.length < 2) return send(res, 400, { error: 'Type the name of your shop.', f: 'shopName' });
   if (!slugOK(slug)) return send(res, 400, { error: 'The shop link can use small letters, numbers and dashes (3 to 40), e.g. kofi-mart.', f: 'slug' });
   if (owner.length < 2) return send(res, 400, { error: 'Type your full name.', f: 'ownerName' });
@@ -609,7 +609,7 @@ async function signup(req, res) {
   slugCache.delete(slug); listCache.at = 0;
   return ctx.run({ shop: rec }, async () => {
     const ownerRec = { id: 1, name: owner, role: 'owner', branch: 'both', pin: await mkHash(pw), email, emailOK: true, phone, mustChange: false, setupDone: true };
-    const main = { set: { name, phone, email, addr: '', cur, branches: nb, brNames: { kum: br1, acc: br2 }, created: Date.now() }, staff: [ownerRec], suppliers: [], seq: 10 };
+    const main = { set: { name, phone, email, addr: '', cur, branches: nb, brNames: { kum: br1, acc: br2 }, biz, created: Date.now() }, staff: [ownerRec], suppliers: [], seq: 10 };
     try { await sbCall('shop_db_put', { p_col: 'shop', p_id: 'main', p_data: main }); }
     catch (e) { console.error('signup main', e.message); return send(res, 502, { error: 'The shop was created but could not be opened. Try logging in at /' + slug + '.' }); }
     serverLog('Shop created', name + ' · on ' + PLATFORM, ownerRec);

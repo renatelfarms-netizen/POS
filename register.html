@@ -25,6 +25,7 @@
   <h1>Create your shop</h1>
   <p class="sub">You'll be the owner. You can change these details later in Settings.</p>
   <form id="su" novalidate>
+   <label>Type of business<select id="biz"><option value="retail">Shop / store (general goods)</option><option value="pharmacy">Pharmacy / chemical shop (drugs)</option></select></label>
    <label>Shop name<input id="shopName" maxlength="60" autocomplete="organization" placeholder="e.g. Kofi Mart" autofocus></label>
    <label>Your shop link
     <div class="linkin"><span id="hostp">site/</span><input id="slug" maxlength="40" autocapitalize="off" spellcheck="false" placeholder="kofi-mart"></div>
@@ -59,7 +60,7 @@ $('#shopName').addEventListener('input',()=>{if(!touched){$('#slug').value=slugi
 $('#slug').addEventListener('input',e=>{touched=true;e.target.value=e.target.value.toLowerCase().replace(/[^a-z0-9-]/g,'');later()});
 function msg(t,c){const m=$('#sum');m.textContent=t;m.className='msg '+(c||'')}
 $('#su').addEventListener('submit',async e=>{e.preventDefault();document.querySelectorAll('#su input').forEach(i=>i.classList.remove('bad'));const b=$('#sub');
- const body={shopName:$('#shopName').value,slug:$('#slug').value,ownerName:$('#ownerName').value,phone:$('#phone').value,email:$('#email').value,password:$('#password').value,cur:$('#cur').value};
+ const body={shopName:$('#shopName').value,slug:$('#slug').value,ownerName:$('#ownerName').value,phone:$('#phone').value,email:$('#email').value,password:$('#password').value,cur:$('#cur').value,biz:$('#biz').value};
  b.disabled=true;b.innerHTML='<span class="spin"></span> Creating your shop…';msg('');
  try{const r=await fetch('/api/platform/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));
   if(!r.ok){if(j.f&&$('#'+j.f)){$('#'+j.f).classList.add('bad');$('#'+j.f).focus()}throw new Error(j.error||'Could not create the shop ('+r.status+').')}
