@@ -582,7 +582,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
           if (!(await smsCfg()).token) return send(res, 400, { error: 'SMS is not set up for this shop yet.' });
           send(res, 200, { queued: L.length });
           (async () => { let ok = 0, bad = 0; for (const x of L) { try { await sendSms(x.to, x.text); ok++; } catch (e) { bad++; } }
-            const K = { fees: 'fee reminders', receipt: 'fee receipt', absent: 'absence notes', courier: 'delivery updates', note: 'messages' };
+            const K = { fees: 'fee reminders', receipt: 'fee receipt', absent: 'absence notes', courier: 'delivery updates', behaviour: 'behaviour report links', announce: 'announcements', note: 'messages' };
             serverLog('SMS sent', (K[kind] || kind) + ' · ' + ok + ' sent' + (bad ? ' · ' + bad + ' failed' : ''), st); })().catch((e) => console.error('bulk sms', e.message));
           return;
         }

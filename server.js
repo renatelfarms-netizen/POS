@@ -173,7 +173,7 @@ function sbSave(dev, name, raw, digest, cnt) {
 }
 
 // Collections the shop page stores (same list as COLS in index.html).
-const DB_COLS = new Set(['shop', 'devices', 'mailed', 'students', 'att', 'marks', 'rtabs', 'kot', 'jobs', 'remits', 'notes', 'products', 'customers', 'sales', 'expenses', 'deliveries', 'pos', 'moves', 'log', 'whMoves', 'transfers', 'trReq', 'whItems', 'whPos',
+const DB_COLS = new Set(['shop', 'devices', 'mailed', 'students', 'att', 'marks', 'rtabs', 'kot', 'jobs', 'remits', 'notes', 'bshare', 'products', 'customers', 'sales', 'expenses', 'deliveries', 'pos', 'moves', 'log', 'whMoves', 'transfers', 'trReq', 'whItems', 'whPos',
   'accra_products', 'accra_customers', 'accra_sales', 'accra_expenses', 'accra_deliveries', 'accra_pos', 'accra_moves']);
 
 // ---- online backups of the shared shop, made by the server ----
@@ -288,6 +288,9 @@ const nmz = (v) => String(v || '').toLowerCase().normalize('NFKD').replace(/[̀-
 // A name matches if it is the full name, the same words in any order ("Emmanuel Buckson"),
 // or one word of exactly one person's name ("Emmanuel").
 function findStaff(staff, v) {
+  // Tessa: staff log in with their email. A name still works only for an older account that has no email yet.
+  if (String(v || '').includes('@')) { const e = String(v).trim().toLowerCase(); return staff.find((x) => String(x.email || '').trim().toLowerCase() === e) || null; }
+  staff = staff.filter((x) => !String(x.email || '').includes('@'));
   const q = nmz(v); if (!q) return null;
   const words = (n) => nmz(n).split(' ').sort().join(' ');
   let L = staff.filter((x) => nmz(x.name) === q);
@@ -325,7 +328,7 @@ async function login(req, res) {
   const ip = 'ip:' + clientIp(req);
   let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
   const name = String(msg && msg.name || '').slice(0, 80), pw = String(msg && msg.password || '').slice(0, 200);
-  if (!name || !pw) return send(res, 400, { error: 'Type your name and password.' });
+  if (!name || !pw) return send(res, 400, { error: 'Type your email and password.' });
   const nk = SID() + ':name:' + nmz(name);
   const wait = tooMany(ip) || tooMany(nk);
   if (wait) return send(res, 429, { error: 'Too many wrong tries. Wait ' + wait + ' minute' + (wait > 1 ? 's' : '') + ', then try again.' });
@@ -335,7 +338,7 @@ async function login(req, res) {
   if (!s || !(await pwOK(pw, s.pin))) {
     console.log('login failed: ' + (s ? 'wrong password for ' + s.name : 'no staff member called "' + nmz(name) + '"'));
     serverLog('Failed login', s ? 'wrong password · on ' + SITE : 'name not recognised: “' + name.slice(0, 40) + '” · on ' + SITE, s);
-    failed(ip, 20); failed(nk, 6); return send(res, 401, { error: 'That name and password don’t match. Check how your name is spelled and try again.' }); }
+    failed(ip, 20); failed(nk, 6); return send(res, 401, { error: 'That email and password don’t match. Check the email and try again.' }); }
   if (s.locked) { serverLog('Failed login', 'account is locked · on ' + SITE, s); return send(res, 423, { error: s.name + '’s account is locked after too many wrong tries. Ask the owner or a manager to unlock it.' }); }
   loginFails.delete(nk);
   console.log('login ok: ' + s.name);
@@ -405,7 +408,7 @@ async function resetCode(req, res) {
   let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
   let shop; try { shop = await shopMain(true); } catch (e) { return send(res, 502, { error: 'Could not reach the shop database. Try again in a moment.' }); }
   const s = shop && findStaff(shop.staff || [], String(msg.name || '').slice(0, 80));
-  if (!s) { failed(ip, 10); return send(res, 400, { error: 'No staff member with that name. Type your name as the owner added it.' }); }
+  if (!s) { failed(ip, 10); return send(res, 400, { error: 'No staff account has that email. Use the email on your account.' }); }
   const st = store(), nm = (shop.set && shop.set.name) || PLATFORM, ph = st.normPhone(s.phone), smsOk = !!ph && await st.smsReady().catch(() => false);
   const via = msg.via === 'email' ? 'email' : msg.via === 'sms' ? 'sms' : (smsOk ? 'sms' : 'email');
   if (via === 'sms' && !smsOk) return send(res, 400, { error: ph ? 'SMS codes are not set up for this shop yet. Choose “Email me a code” or the recovery code.' : 'No phone number is saved for ' + s.name + '. Choose “Email me a code”, or ask the owner.' });
@@ -618,6 +621,20 @@ async function signup(req, res) {
       text: 'Hello ' + owner + ',\n\nYour shop "' + name + '" is ready.\n\nYour shop link: ' + (process.env.PLATFORM_HOST ? 'https://' + process.env.PLATFORM_HOST : '') + '/' + slug + '\nLog in with your name (' + owner + ') and the password you chose.\n\n'+PLATFORM+' is free to use.\nAdd your staff in Staff, and your products in Stock.\n\n-- \n' + PLATFORM }).catch((e) => console.error('welcome mail', e.message));
     return send(res, 200, { ok: true, slug, token: makeToken(1, cleanDev(m.dev)), sid: 1, name: owner, exp: Date.now() + SESSION_DAYS * 864e5 });
   });
+}
+
+// ---- school: behaviour report a parent opens from an SMS link ----
+async function behPage(req, res, code, rec) {
+  const h = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  let d = null; try { d = await sbCall('shop_db_get', { p_col: 'bshare', p_id: code }); } catch (e) { console.error('beh page', e.message); }
+  res.writeHead(d ? 200 : 404, Object.assign({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' }, HEADERS));
+  const top = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Behaviour report · ' + h(rec.name) + '</title><style>body{font-family:system-ui,sans-serif;background:#f6f5f1;color:#1d1d1b;margin:0;padding:16px}.c{max-width:560px;margin:0 auto;background:#fff;border-radius:16px;padding:20px;box-shadow:0 1px 3px #0001}h1{font-size:20px;margin:0}table{width:100%;border-collapse:collapse;margin-top:12px}td{padding:9px 4px;border-bottom:1px solid #eee}.s{font-weight:700;text-align:right;white-space:nowrap}.m{color:#666;font-size:14px}.b{display:inline-block;background:#e7f4ee;color:#0f6e56;border-radius:20px;padding:4px 12px;font-weight:700}.r{background:#fff7ed;border-radius:10px;padding:10px;margin-top:12px}</style></head><body><div class="c">';
+  if (!d) return res.end(top + '<h1>' + h(rec.name) + '</h1><p>This report link is not valid any more. Please contact the school.</p></div></body></html>');
+  const stars = (n) => '★'.repeat(n) + '☆'.repeat(5 - n), L = ['', 'Poor', 'Fair', 'Good', 'Very good', 'Excellent'];
+  res.end(top + '<h1>' + h(d.school || rec.name) + '</h1><p class="m">Behaviour report · ' + h(d.term) + '</p><p style="font-size:18px;margin:14px 0 4px"><b>' + h(d.name) + '</b> · ' + h(d.cls) + '</p>' +
+    (d.std ? '<p>Overall: <span class="b">' + h(d.std) + '</span> <span class="m">' + h(d.avg) + ' out of 5</span></p>' : '') +
+    '<table>' + (Array.isArray(d.r) ? d.r : []).map((x) => '<tr><td>' + h(x[0]) + '</td><td class="s">' + (x[1] ? '<span style="color:#d97706">' + stars(+x[1]) + '</span> <span class="m">' + L[+x[1]] + '</span>' : '<span class="m">not rated</span>') + '</td></tr>').join('') + '</table>' +
+    (d.rec ? '<div class="r"><b>Teacher’s recommendation</b><br>' + h(d.rec) + '</div>' : '') + '<p class="m" style="margin-top:14px">From ' + h(d.by || 'the class teacher') + ' · ' + h(new Date(d.ts || Date.now()).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })) + '. Please contact the school with any questions.</p></div></body></html>');
 }
 
 // ---- one login for every shop: email + password take you straight into your own shop ----
@@ -962,6 +979,8 @@ http.createServer(async (req, res) => {
     const iv = rest.match(/^\/i\/([A-Za-z0-9._-]{4,40})$/);
     if (iv && ['GET', 'HEAD', 'POST'].includes(req.method)) return await ctx.run({ shop: rec }, () => store().invoicePage(req, res, iv[1]));
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }); return res.end(); }
+    const bm = rest.match(/^\/b\/([A-Za-z0-9]{8,40})$/);
+    if (bm) return await ctx.run({ shop: rec }, () => behPage(req, res, bm[1], rec));
     const rm = rest.match(/^\/r\/([A-Za-z0-9._-]{4,40})$/);
     if (rm) return await ctx.run({ shop: rec }, () => store().receiptPage(req, res, rm[1]));
     const im = rest.match(/^\/img\/([a-f0-9]{24})(?:\.(?:jpg|png|webp))?$/);
