@@ -17,6 +17,8 @@ The POS runs online at https://renatel.shop/pos (renatel.shop itself is the cust
 
 On the website everything runs centrally from the host: nothing about the shop is stored on phones or computers, and devices are not registered or named. Staff open the shop with their own name and password (full name, either name, or the names in any order). `server.js` checks the login against the shop's staff list (`POST /api/login`) and gives that browser tab a signed session for one day; "Sign out every device" ends all sessions, and `POST /api/reset` resets a password with the shop recovery code. The shop lives in Supabase (`shop_docs`), reached only through locked-down database functions that accept the server's `SUPABASE_BACKUP_TOKEN`; record numbers come from a central sequence (`shop_ids`). Each person opens on their own branch (set on their staff record; the owner can use both).
 
+**Online only**: the POS works only while the device can reach renatel.shop. If the connection drops, a full-screen "No internet connection" lock covers the shop within a few seconds: nothing can be entered, changed or printed, and it unlocks by itself when the connection is back (a change made in the last moments before the drop is saved then). A receipt prints only after the sale is saved in the shop database.
+
 Backups are made by the server only: every 10 minutes, if anything changed, the whole shop is saved on the hosting (outside the website folder) and in Supabase; all backups from the last 2 days are kept, then one a day for 90 days. Owners and managers can press Back up now; only the owner can restore, which signs everyone out. Inside Claude, the page uses Claude's built-in shop database instead, and Gmail for emailed reports and reset codes.
 
 ## Online shop
