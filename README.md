@@ -16,6 +16,7 @@ A login token from one shop is refused by every other shop.
 - **SMS (USMS-GH)**: each shop uses its own USMS-GH token and sender ID. Receipt SMS, password reset codes, credit reminders and delivery texts.
 - **Credit reminders** (daily, once per customer per day; the platform runs the job for every open shop) and "I have paid" approval.
 - **Delivery SMS**: rider jobs, on the way, courier handover, delivered, instructions.
+- **Reminder SMS to shop owners** (platform, from the shared SMS account): owners who created a shop but added nothing (day 1, 3, 7), set it up but never used it (2, 5, 10 days after they were last seen) or went quiet after using it (7, 14, 30 days) get a short text with their shop link and the support WhatsApp number (`SUPPORT_WHATSAPP`, default 0244022727). Shops in use get nothing. Sent 9am to 6pm Ghana time, each message once (`mt_job_once`). Off until switched on at `/admin`, which shows who is due, the exact text, what was sent, and lets one shop be muted. Settings and the sent list are kept in `mt_kv` 'nudge'.
 - Customer logins, signed links, photos, keys, one-time codes and jobs are kept apart by shop (`schema_shop_features.sql`).
 
 ## Files

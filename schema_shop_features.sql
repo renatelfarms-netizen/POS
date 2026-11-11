@@ -95,9 +95,9 @@ grant execute on function mt_photo_put, mt_photo_get, mt_acct_get, mt_acct_put, 
 
 -- Shared SMS account (platform owner's USMS-GH, from site_secrets) for shops without their own; switch kept in mt_kv 'shared_sms'.
 create or replace function mt_kv_get(p_token text, p_k text) returns text language plpgsql security definer set search_path = public, extensions as $$
-begin perform _mt_check(p_token); if p_k not in ('admin_pw','shared_sms') then return null; end if; return (select v from mt_kv where k = p_k); end $$;
+begin perform _mt_check(p_token); if p_k not in ('admin_pw','shared_sms','nudge') then return null; end if; return (select v from mt_kv where k = p_k); end $$;
 create or replace function mt_kv_set(p_token text, p_k text, p_v text) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
-begin perform _mt_check(p_token); if p_k not in ('admin_pw','shared_sms') then raise exception 'unknown key'; end if;
+begin perform _mt_check(p_token); if p_k not in ('admin_pw','shared_sms','nudge') then raise exception 'unknown key'; end if;
   insert into mt_kv (k, v) values (p_k, p_v) on conflict (k) do update set v = excluded.v, updated_at = now();
   return jsonb_build_object('ok', true); end $$;
 create or replace function mt_shared_sms(p_token text) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
@@ -114,9 +114,9 @@ grant execute on function mt_shared_sms to anon;
 
 -- Shared payments: the platform owner's Paystack key (site_secrets) for shops without their own; switch, commission and details in mt_kv 'shared_pay'.
 create or replace function mt_kv_get(p_token text, p_k text) returns text language plpgsql security definer set search_path = public, extensions as $$
-begin perform _mt_check(p_token); if p_k not in ('admin_pw','shared_sms','shared_pay') then return null; end if; return (select v from mt_kv where k = p_k); end $$;
+begin perform _mt_check(p_token); if p_k not in ('admin_pw','shared_sms','shared_pay','nudge') then return null; end if; return (select v from mt_kv where k = p_k); end $$;
 create or replace function mt_kv_set(p_token text, p_k text, p_v text) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
-begin perform _mt_check(p_token); if p_k not in ('admin_pw','shared_sms','shared_pay') then raise exception 'unknown key'; end if;
+begin perform _mt_check(p_token); if p_k not in ('admin_pw','shared_sms','shared_pay','nudge') then raise exception 'unknown key'; end if;
   insert into mt_kv (k, v) values (p_k, p_v) on conflict (k) do update set v = excluded.v, updated_at = now();
   return jsonb_build_object('ok', true); end $$;
 create or replace function mt_shared_pay(p_token text) returns jsonb language plpgsql security definer set search_path = public, extensions as $$

@@ -172,9 +172,9 @@ grant execute on function mt_shop_create, mt_shop_by_slug, mt_shop_list, mt_shop
 create table if not exists mt_kv (k text primary key, v text not null, updated_at timestamptz not null default now());
 alter table mt_kv enable row level security;
 create or replace function mt_kv_get(p_token text, p_k text) returns text language plpgsql security definer set search_path = public, extensions as $$
-begin perform _mt_check(p_token); if p_k not in ('admin_pw') then return null; end if; return (select v from mt_kv where k = p_k); end $$;
+begin perform _mt_check(p_token); if p_k not in ('admin_pw','nudge') then return null; end if; return (select v from mt_kv where k = p_k); end $$;
 create or replace function mt_kv_set(p_token text, p_k text, p_v text) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
-begin perform _mt_check(p_token); if p_k not in ('admin_pw') then raise exception 'unknown key'; end if;
+begin perform _mt_check(p_token); if p_k not in ('admin_pw','nudge') then raise exception 'unknown key'; end if;
   insert into mt_kv (k, v) values (p_k, p_v) on conflict (k) do update set v = excluded.v, updated_at = now();
   return jsonb_build_object('ok', true); end $$;
 revoke all on function mt_kv_get, mt_kv_set from public, anon, authenticated;

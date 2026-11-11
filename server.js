@@ -845,6 +845,20 @@ async function platformApi(req, res, url) {
       if (v.token) { try { const r = await fetch((process.env.USMS_API || 'https://webapp.usmsgh.com/api') + '/balance', { headers: { Authorization: 'Bearer ' + v.token, Accept: 'application/json' }, signal: AbortSignal.timeout(10000) }); const j = await r.json(); balance = j.data && (j.data.remaining_balance ?? j.data.balance ?? null); } catch (e) {} }
       return send(res, 200, { ok: true, on: !!v.on, off: v.off || [], sender: v.sender || '', ready: !!v.ready, balance });
     }
+    // Reminder SMS to shop owners: on/off, mute one shop, who is due next, what was sent.
+    if (url === '/api/platform/admin/nudge') {
+      let v = await nudgeCfg(true); if (!v) return send(res, 502, { error: 'Could not read the reminder settings.' });
+      if (req.method === 'POST') {
+        let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+        if (typeof m.on === 'boolean') v.on = m.on;
+        if (m.id && typeof m.shopOn === 'boolean') { v.off = v.off.filter((x) => x !== m.id); if (!m.shopOn) v.off.push(String(m.id).slice(0, 40)); }
+        try { await nudgeSave(v); } catch (e) { console.error('nudge save', e.message); return send(res, 502, { error: 'Could not save.' }); }
+        console.log('reminder SMS: ' + (v.on ? 'on' : 'off') + ', muted for ' + v.off.length + ' shop(s)');
+        v = await nudgeCfg(true);
+      }
+      const sh = await sharedCfg(true);
+      return send(res, 200, { ok: true, on: !!v.on, off: v.off, ready: !!(sh && sh.token && sh.sender), help: HELP_WA, due: await nudgeRun(true), log: (v.log || []).slice(-30).reverse().map((x) => ({ ts: x.ts, name: x.name, slug: x.slug, stage: x.stage, n: x.n, ok: x.ok, err: x.err })) });
+    }
     if (req.method === 'GET' && url === '/api/platform/admin/view') {
       const r = ((await sbCall('mt_shop_list', {})) || []).find((x) => x.id === q.get('id')); if (!r) return send(res, 404, { error: 'Shop not found.' });
       try { return send(res, 200, Object.assign({ ok: true }, await shopView(r))); } catch (e) { console.error('view', e.message); return send(res, 502, { error: 'Could not load the shop.' }); }
@@ -938,6 +952,101 @@ async function remindAll() {
   }
 }
 if (sbOn()) { setTimeout(remindAll, 30000).unref(); setInterval(remindAll, +process.env.REMIND_EVERY_MS || 600000).unref(); }
+
+// ---- Reminder SMS to shop owners: people who created a shop but stopped part-way, or went quiet ----
+// Sent from the platform's shared SMS account, 9am to 6pm Ghana time, each message once only (mt_job_once).
+// Shops that are being used are left alone. Off until the admin switches it on at /admin, where one shop can also be muted.
+const HELP_WA = process.env.SUPPORT_WHATSAPP || '0244022727';
+const nPhone = (v) => { let d = String(v || '').replace(/\D/g, ''); if (d.startsWith('233') && d.length === 12) d = '0' + d.slice(3); else if (d.length === 9) d = '0' + d; return /^0\d{9}$/.test(d) ? d : ''; };
+const NUDGE_STEPS = { setup: [1, 3, 7], first: [2, 5, 10], quiet: [7, 14, 30] };
+const NUDGE_LBL = { setup: 'Created, nothing added yet', first: 'Set up, not used yet', quiet: 'Used before, now quiet' };
+let nudgeC = { at: 0, v: null };
+async function nudgeCfg(fresh) {
+  if (fresh || Date.now() - nudgeC.at > 30000) {
+    try { const s = await sbCall('mt_kv_get', { p_k: 'nudge' }); let j = {}; try { j = s ? JSON.parse(s) : {}; } catch (e) {}
+      nudgeC = { at: Date.now(), v: { on: j.on === true, off: Array.isArray(j.off) ? j.off : [], log: Array.isArray(j.log) ? j.log : [] } }; }
+    catch (e) { console.error('nudge settings', e.message); nudgeC = { at: Date.now(), v: null }; }
+  }
+  return nudgeC.v;
+}
+async function nudgeSave(v) { await sbCall('mt_kv_set', { p_k: 'nudge', p_v: JSON.stringify({ on: !!v.on, off: (v.off || []).slice(0, 2000), log: (v.log || []).slice(-80) }) }); nudgeC = { at: 0, v: null }; }
+// Where a shop has got to, and the message that fits. null = leave this shop alone.
+function nudgePlan(rec, docs, now) {
+  const main = docs['shop/main'] || {}, set = main.set || {}, biz = set.biz || 'retail', DAY = 864e5;
+  const keys = Object.keys(docs), has = (c) => keys.some((k) => k.startsWith(c + '/'));
+  const recs = (c) => keys.filter((k) => k.startsWith(c + '/')).flatMap((k) => (docs[k] && docs[k].recs) || []);
+  const sales = recs('sales').concat(recs('accra_sales'));
+  const items = biz === 'school' ? has('students') : biz === 'courier' ? has('jobs') : (has('products') || has('accra_products'));
+  const used = sales.length > 0 || (biz === 'school' && (has('att') || has('marks') || keys.some((k) => k.startsWith('students/') && ((docs[k] || {}).pays || []).length))) || (biz === 'courier' && has('jobs')) || (biz === 'restaurant' && has('kot'));
+  const created = Date.parse(rec.created_at) || now;
+  const lastAct = Math.max(created, ...recs('log').filter((x) => x && x.who && x.who !== '—').map((x) => +x.ts || 0), ...sales.map((x) => +x.ts || 0));
+  const since = (t) => Math.floor((now - t) / DAY);
+  let stage, days, tag = '';
+  if (!items) { stage = 'setup'; days = since(created); }
+  else if (!used) { stage = 'first'; days = since(lastAct); }
+  else if (since(lastAct) >= 7) { stage = 'quiet'; days = since(lastAct); tag = ':' + new Date(lastAct).toISOString().slice(0, 10); }
+  else return null; // in use: no reminders
+  const steps = NUDGE_STEPS[stage], n = steps.filter((s) => days >= s).length;
+  if (!n || days > steps[steps.length - 1] + 3) return null; // too early, or gone too long to chase
+  const owner = (main.staff || []).find((x) => x.role === 'owner') || {};
+  const f = String(rec.owner_name || owner.name || '').trim().split(/\s+/)[0].slice(0, 14) || 'Hello';
+  const shop = String(rec.name || 'your shop').replace(/\s+/g, ' ').trim().slice(0, 24), link = hostName() + '/' + rec.slug, H = HELP_WA;
+  const kind = { school: 'school', restaurant: 'restaurant', courier: 'delivery service' }[biz] || 'shop';
+  const firstStep = { pharmacy: 'Add your first drug to start selling', restaurant: 'Add your menu to start taking orders', school: 'Add your classes and students to begin', courier: 'Add your first delivery to begin' }[biz] || 'Add your first product to start selling';
+  const useStep = { restaurant: 'take your first order', school: 'take attendance or record a fee payment' }[biz] || 'record your first sale';
+  const T = {
+    setup: [
+      `Hi ${f}, ${shop} is ready on Tessa POS. ${firstStep}: ${link} Need help? WhatsApp ${H}`,
+      `${f}, ${shop} is not set up yet. It takes 2 minutes: ${link} Guide: ${hostName()}/help or WhatsApp ${H}`,
+      `${f}, we are still keeping ${shop} for you. What stopped you? WhatsApp ${H} and we will set it up with you. ${link}`],
+    first: [
+      `Well done ${f}! ${shop} is set up. Next, ${useStep}: ${link} Stuck? WhatsApp ${H}`,
+      `${f}, ${shop} is ready but not in use yet. Log in, ${useStep} and fill in your ${kind} details: ${link} Help: WhatsApp ${H}`,
+      `${f}, is anything stopping you from using ${shop}? WhatsApp ${H} and we will help. Continue here: ${link}`],
+    quiet: [
+      `Hi ${f}, we have not seen ${shop} for a week. Your records are safe and waiting: ${link} Any problem? WhatsApp ${H}`,
+      `${f}, ${shop} has been quiet for 2 weeks. Log in to keep your records up to date: ${link} Help: WhatsApp ${H}`,
+      `${f}, it is a month since you used ${shop}. If something is not working for you, tell us on WhatsApp ${H}. ${link}`] };
+  return { stage, n, days, key: 'nudge:' + stage + tag + ':' + steps[n - 1], text: T[stage][n - 1].replace('Tessa POS', PLATFORM), phone: nPhone(rec.phone) || nPhone(owner.phone) };
+}
+async function nudgeSend(token, sender, phone, text) {
+  const r = await fetch((process.env.USMS_API || 'https://webapp.usmsgh.com/api') + '/sms/send', { method: 'POST', headers: { Authorization: 'Bearer ' + token, Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipient: '233' + phone.slice(1), sender_id: sender, type: 'plain', message: text.slice(0, 459) }), signal: AbortSignal.timeout(20000) });
+  const t = await r.text(); let j = {}; try { j = JSON.parse(t); } catch (e) {}
+  if (!r.ok || (j.status && j.status !== 'success')) throw new Error(j.message || ('USMS-GH answered ' + r.status));
+}
+let nudgeBusy = false;
+// dry = true only lists who is due (for the admin page); nothing is sent or marked.
+async function nudgeRun(dry) {
+  if (nudgeBusy && !dry) return []; const out = [];
+  try {
+    if (!dry) nudgeBusy = true;
+    const cfg = await nudgeCfg(true); if (!cfg || (!cfg.on && !dry)) return out;
+    const hr = +new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Accra', hour: '2-digit', hour12: false }).format(new Date());
+    if (!dry && (hr < 9 || hr >= 18)) return out;
+    const sh = await sharedCfg(true); if (!dry && !(sh && sh.token && sh.sender)) return out;
+    const sent = [];
+    for (const r of (await allShops(true)) || []) {
+      if (r.status !== 'active') continue;
+      try {
+        const muted = cfg.off.includes(r.id);
+        const p = nudgePlan(r, await ctx.run({ shop: r }, () => allDocs()), Date.now()); if (!p) continue;
+        const row = { id: r.id, slug: r.slug, name: r.name, stage: p.stage, n: p.n, days: p.days, text: p.text, phone: !!p.phone, muted };
+        if (dry) { row.done = !!(cfg.log || []).find((x) => x.id === r.id && x.key === p.key); out.push(row); continue; }
+        if (muted || !p.phone) continue;
+        if (!(await ctx.run({ shop: r }, () => sbCall('job_once', { p_k: p.key })))) continue; // already sent (by this or another server process)
+        const e = { ts: Date.now(), id: r.id, slug: r.slug, name: r.name, stage: p.stage, n: p.n, key: p.key, ok: true };
+        try { await nudgeSend(sh.token, sh.sender, p.phone, p.text); ctx.run({ shop: r }, () => serverLog('Reminder SMS from ' + PLATFORM, NUDGE_LBL[p.stage] + ' · message ' + p.n + ' · to ' + p.phone.slice(0, 3) + '****' + p.phone.slice(-3))); }
+        catch (x) { e.ok = false; e.err = String(x.message || x).slice(0, 120); console.error('nudge ' + r.slug, e.err); }
+        sent.push(e); out.push(e);
+      } catch (x) { console.error('nudge ' + r.slug, x.message); }
+    }
+    if (sent.length) { try { const c = await nudgeCfg(true); if (c) { c.log = (c.log || []).concat(sent); await nudgeSave(c); } } catch (x) { console.error('nudge log', x.message); } console.log('reminder SMS: ' + sent.filter((x) => x.ok).length + ' sent, ' + sent.filter((x) => !x.ok).length + ' failed'); }
+  } catch (x) { console.error('nudge run', x.message); } finally { if (!dry) nudgeBusy = false; }
+  return out;
+}
+if (sbOn()) { setTimeout(nudgeRun, 120000).unref(); setInterval(nudgeRun, +process.env.NUDGE_EVERY_MS || 1800000).unref(); }
+if (process.env.NUDGE_TEST) module.exports = { nudgePlan, nPhone };
 
 function shopPage(req, res, rec) {
   const info = { slug: rec.slug, name: rec.name, plan: planState(rec), platform: PLATFORM };
