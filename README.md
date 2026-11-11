@@ -5,6 +5,7 @@ Built from the Renatel Shop app. Many shops each run their own shop on one websi
 - `/` platform page: main page; `/register` create a shop (free to use); `/login` find your shop
 - `/<shop-link>` a shop's app, e.g. `/kofi-mart`. Staff log in there with name + password.
 - `/admin` platform admin: every shop, pause / open, notes
+- `/help` help page: step-by-step guides with pictures and the support WhatsApp number (`help.html`)
 
 Each shop's data, staff, logins, backups and limits are kept apart by shop id.
 A login token from one shop is refused by every other shop.

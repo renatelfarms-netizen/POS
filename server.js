@@ -24,7 +24,7 @@ const SID = () => (T().shop || {}).id || '-';
 const PLATFORM = process.env.PLATFORM_NAME || 'Tessa POS';
 const SITE = process.env.PLATFORM_HOST || 'tessapos.shop';
 
-const PAGE = path.join(__dirname, 'index.html'), LANDING = path.join(__dirname, 'landing.html'), ADMIN = path.join(__dirname, 'admin.html'), LOGIN = path.join(__dirname, 'login.html'), REGISTER = path.join(__dirname, 'register.html'), CSS = path.join(__dirname, 'site.css');
+const PAGE = path.join(__dirname, 'index.html'), LANDING = path.join(__dirname, 'landing.html'), ADMIN = path.join(__dirname, 'admin.html'), LOGIN = path.join(__dirname, 'login.html'), HELP = path.join(__dirname, 'help.html'), REGISTER = path.join(__dirname, 'register.html'), CSS = path.join(__dirname, 'site.css');
 const PORT = process.env.PORT || 3000;
 const BACKUP_DIR = process.env.BACKUP_DIR || path.join(os.homedir(), 'shop-backups');
 const MAX_BODY = 25 * 1024 * 1024;
@@ -954,7 +954,7 @@ http.createServer(async (req, res) => {
   try {
     const url = (req.url || '/').split('?')[0];
     if (url.startsWith('/api/platform/')) return await platformApi(req, res, url);
-    if (url === '/robots.txt') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('User-agent: *\nAllow: /$\nDisallow: /\n'); }
+    if (url === '/robots.txt') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('User-agent: *\nAllow: /$\nAllow: /help$\nDisallow: /\n'); }
     if (ICONS[url]) {
       return fs.readFile(path.join(__dirname, 'icons', ICONS[url]), (e, buf) => {
         if (e) { res.writeHead(404); return res.end(); }
@@ -965,6 +965,7 @@ http.createServer(async (req, res) => {
     if (!parts.length) return (req.method === 'GET' || req.method === 'HEAD') ? landing(req, res) : send(res, 405, { error: 'Not allowed.' });
     if (parts[0] === 'admin' && parts.length === 1) return html(res, req, file(ADMIN).replace('<!--PLAT-->', platInfo()));
     if (parts.length === 1 && parts[0] === 'login') return landing(req, res, null, 200, LOGIN);
+    if (parts.length === 1 && (parts[0] === 'help' || parts[0] === 'support')) return landing(req, res, null, 200, HELP);
     if (parts.length === 1 && (parts[0] === 'register' || parts[0] === 'signup')) return landing(req, res, null, 200, REGISTER);
     if (url === '/assets/site.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=300' }); return res.end(file(CSS)); }
     const slug = parts[0].toLowerCase();

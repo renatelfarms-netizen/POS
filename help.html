@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Help · Tessa POS</title>
+<meta name="description" content="Step-by-step help for Tessa POS: create your shop, sell, manage stock, staff, reports and the online shop. Chat with us on WhatsApp if you get stuck.">
+<meta name="theme-color" content="#0f6e56">
+<link rel="icon" href="/icon-192.png">
+<link rel="stylesheet" href="/assets/site.css">
+<!--PLAT-->
+<style>
+.hero{background:linear-gradient(150deg,#0f6e56,#0b4f3e);color:#fff;padding:54px 0 60px;position:relative;overflow:hidden}
+.hero h1{font-size:clamp(1.9rem,4.5vw,2.9rem);line-height:1.12;margin:0 0 10px;text-wrap:balance}
+.hero p{margin:0 0 22px;max-width:560px;opacity:.9;font-size:1.05rem}
+.hero .orb{position:absolute;border-radius:50%;background:rgba(255,255,255,.07)}
+.hero .acts{display:flex;gap:10px;flex-wrap:wrap}
+.wa{background:#25d366;border-color:#25d366;color:#06301a}.wa:hover{background:#1fbd5a}
+.wa svg{width:20px;height:20px;flex:0 0 auto}
+.toc{display:flex;gap:8px;flex-wrap:wrap;margin:26px 0 6px}
+.toc a{padding:8px 14px;border-radius:999px;border:1px solid var(--bd);background:var(--card);color:var(--tx);text-decoration:none;font-weight:600;font-size:.92rem}
+.toc a:hover{border-color:var(--ac);color:var(--ac)}
+section.topic{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:34px;align-items:center;padding:44px 0;border-bottom:1px solid var(--bd);scroll-margin-top:76px}
+section.topic:nth-of-type(even) .pic{order:-1}
+.topic h2{font-size:clamp(1.35rem,2.6vw,1.75rem);margin:0 0 6px;line-height:1.2}
+.topic .lead{color:var(--mut);margin:0 0 16px}
+.kick{display:inline-block;font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ac);margin-bottom:6px}
+ol.steps{list-style:none;counter-reset:s;padding:0;margin:0;display:grid;gap:12px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:32px 1fr;gap:12px;align-items:start}
+ol.steps li::before{content:counter(s);display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:color-mix(in srgb,var(--ac) 12%,transparent);color:var(--ac);font-weight:700;font-size:.95rem}
+ol.steps b{font-weight:650}
+.tip{margin:16px 0 0;padding:12px 14px;border-radius:12px;background:#fff7ed;border:1px solid #fed7aa;color:#7c2d12;font-size:.93rem}
+kbd{font:inherit;font-weight:650;font-size:.9em;padding:1px 7px;border-radius:7px;border:1px solid var(--bd);background:#fff;white-space:nowrap}
+/* small drawings of the app's screens */
+.pic{display:flex;justify-content:center}
+.ph{width:min(100%,290px);border-radius:28px;background:#14201b;padding:9px;box-shadow:0 30px 60px -34px rgba(15,110,86,.55)}
+.sc{border-radius:20px;background:var(--bg);overflow:hidden;font-size:12.5px;line-height:1.35}
+.sc .bar{display:flex;align-items:center;gap:7px;padding:10px 12px;background:#fff;border-bottom:1px solid var(--bd);font-weight:700}
+.sc .bar i{width:20px;height:20px;border-radius:6px;background:var(--ac);display:block}
+.sc .bar span{margin-left:auto;font-weight:500;color:var(--mut);font-size:11px}
+.sc .in{padding:12px;display:grid;gap:9px}
+.bx{background:#fff;border:1px solid var(--bd);border-radius:12px;padding:10px}
+.bx b{display:block;margin-bottom:6px}
+.gr{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.pr{background:#fff;border:1px solid var(--bd);border-radius:10px;padding:8px}
+.pr.on{border-color:var(--ac);background:color-mix(in srgb,var(--ac) 8%,#fff)}
+.pr small,.rw small{display:block;color:var(--mut);font-size:11px}
+.rw{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px dashed var(--bd)}.rw:last-of-type{border:0}
+.chs{display:flex;gap:5px;flex-wrap:wrap}
+.ch{padding:4px 9px;border-radius:999px;border:1px solid var(--bd);background:#fff;font-size:11px}.ch.on{background:var(--ac);border-color:var(--ac);color:#fff}
+.go{background:var(--ac);color:#fff;border-radius:10px;padding:9px;text-align:center;font-weight:700}
+.fld{border:1px solid var(--bd);border-radius:9px;padding:7px 9px;background:#fff;color:var(--mut)}
+.pill{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:700;background:#fee2e2;color:#991b1b}
+.pill.ok{background:#dcfce7;color:#166534}
+.nv{display:grid;grid-template-columns:repeat(5,1fr);background:#fff;border-top:1px solid var(--bd);text-align:center;font-size:10px;color:var(--mut);padding:7px 2px}
+.nv u{display:block;text-decoration:none;font-size:15px;line-height:1.2}.nv .on{color:var(--ac);font-weight:700}
+.rc{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;background:#fff;border:1px solid var(--bd);border-radius:6px;padding:12px}
+.rc hr{border:0;border-top:1px dashed #9aa5a0;margin:7px 0}.rc .c{text-align:center}
+.bars{display:flex;align-items:flex-end;gap:6px;height:70px}.bars i{flex:1;background:var(--ac2);border-radius:5px 5px 0 0;display:block}
+/* business types and questions */
+.types{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}
+.ty{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);padding:20px}
+.ty h3{margin:0 0 4px;font-size:1.1rem}.ty p{margin:0 0 10px;color:var(--mut);font-size:.95rem}
+.ty ul{margin:0;padding-left:18px;display:grid;gap:5px;font-size:.95rem}
+.blk{padding:44px 0;border-bottom:1px solid var(--bd);scroll-margin-top:76px}
+.blk h2{font-size:clamp(1.35rem,2.6vw,1.75rem);margin:0 0 6px}
+details{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:0 16px;margin-top:10px}
+summary{cursor:pointer;font-weight:650;padding:14px 0;list-style:none;display:flex;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";margin-left:auto;color:var(--mut);font-size:1.3rem;line-height:1}
+details[open] summary::after{content:"–"}
+details p{margin:0 0 14px;color:#33413b}
+.contact{margin:44px 0;border-radius:24px;background:linear-gradient(150deg,#0f6e56,#0b4f3e);color:#fff;padding:36px 30px;display:grid;grid-template-columns:1fr auto;gap:24px;align-items:center;scroll-margin-top:76px}
+.contact h2{margin:0 0 6px;font-size:clamp(1.4rem,3vw,1.9rem)}.contact p{margin:0;opacity:.9;max-width:520px}
+.contact .num{font-size:1.5rem;font-weight:750;letter-spacing:.02em;margin:10px 0 0}
+.contact .acts{display:grid;gap:10px;min-width:230px}
+.contact .btn.line{background:transparent;border-color:rgba(255,255,255,.45);color:#fff}
+footer a{color:inherit}
+@media (max-width:820px){section.topic{grid-template-columns:1fr;gap:22px;padding:34px 0}section.topic:nth-of-type(even) .pic{order:0}.types{grid-template-columns:1fr}.contact{grid-template-columns:1fr;padding:28px 22px}.contact .acts{min-width:0}}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+ <a class="logo" href="/"><i><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 5 4h14l2 5.5"/><path d="M3 9.5a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12.5V20h14v-7.5"/><path d="M10 20v-5h4v5"/></svg></i><span class="pname">Tessa POS</span></a>
+ <nav><a class="btn ghost" href="/">Home</a><a class="btn" href="/login">Log in</a><a class="btn pri" href="/register">Create a shop</a></nav>
+</div></header>
+
+<div class="hero"><div class="wrap">
+ <i class="orb" style="width:300px;height:300px;right:-90px;top:-110px"></i><i class="orb" style="width:170px;height:170px;right:22%;bottom:-90px"></i>
+ <h1>How to use <span class="pname">Tessa POS</span></h1>
+ <p>Short, step-by-step guides with pictures. If you get stuck at any point, message us on WhatsApp and we will help you.</p>
+ <div class="acts">
+  <a class="btn wa" href="https://wa.me/233244022727?text=Hello%2C%20I%20need%20help%20with%20Tessa%20POS." target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.7-5.1A8.5 8.5 0 1 1 21 11.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg>Chat on WhatsApp</a>
+  <a class="btn" href="#start">Read the guides</a>
+ </div>
+</div></div>
+
+<main class="wrap">
+ <nav class="toc" aria-label="On this page">
+  <a href="#start">Getting started</a><a href="#sell">Selling</a><a href="#stock">Stock</a><a href="#customers">Customers &amp; credit</a><a href="#staff">Staff</a><a href="#reports">Expenses &amp; reports</a><a href="#online">Online shop</a><a href="#types">Your type of business</a><a href="#faq">Common problems</a><a href="#contact">Contact us</a>
+ </nav>
+
+ <section class="topic" id="start">
+  <div>
+   <span class="kick">1 · Getting started</span>
+   <h2>Create your shop and log in</h2>
+   <p class="lead">It takes about two minutes and works on any phone, tablet or computer. There is nothing to install.</p>
+   <ol class="steps">
+    <li><div>Open <a href="/register">Create a shop</a> and choose your <b>type of business</b>: shop, pharmacy, school, restaurant or delivery service.</div></li>
+    <li><div>Type your <b>shop name</b>. You get your own link, for example <kbd>tessapos.shop/kofi-mart</kbd>.</div></li>
+    <li><div>Enter your name, email and a password with letters and numbers, then create the shop. You are the <b>owner</b>.</div></li>
+    <li><div>Next time, go to <a href="/login">Log in</a> and use your email and password. Staff can also open the shop link and log in with their name and password.</div></li>
+   </ol>
+   <p class="tip"><b>Tip:</b> in your phone's browser menu choose <b>Add to Home screen</b>. The shop then opens like an app with one tap.</p>
+  </div>
+  <div class="pic" aria-hidden="true"><div class="ph"><div class="sc">
+   <div class="bar"><i></i>Create your shop</div>
+   <div class="in">
+    <div class="bx"><b>Type of business</b><div class="fld">Shop / store ▾</div></div>
+    <div class="bx"><b>Shop name</b><div class="fld">Kofi Mart</div><small style="color:var(--ac);display:block;margin-top:6px">✓ tessapos.shop/kofi-mart</small></div>
+    <div class="bx"><b>Email</b><div class="fld">kofi@example.com</div></div>
+    <div class="go">Create my shop</div>
+   </div>
+  </div></div></div>
+ </section>
+
+ <section class="topic" id="sell">
+  <div>
+   <span class="kick">2 · Selling</span>
+   <h2>Make a sale and give a receipt</h2>
+   <p class="lead">Everything happens on the <b>🛒 Sell</b> page.</p>
+   <ol class="steps">
+    <li><div>Tap <b>Sell</b>, then tap each product the customer is buying. Tap again to add one more. Use the search box to find a product quickly.</div></li>
+    <li><div>Check the <b>Current sale</b> list. You can change a quantity, remove an item or give a discount.</div></li>
+    <li><div>Choose how the customer pays: <kbd>Cash</kbd> <kbd>MoMo</kbd> <kbd>Card</kbd> or <kbd>Credit</kbd>. A sale can be split between two methods.</div></li>
+    <li><div>Tap <b>Charge</b>. The receipt opens: tap <b>🖨️ Print</b>, or <b>📱 SMS</b> to text it to the customer.</div></li>
+   </ol>
+   <p class="tip"><b>Made a mistake?</b> Open <b>🧾 Receipts</b>, find the sale and choose refund. The stock goes back by itself.</p>
+  </div>
+  <div class="pic" aria-hidden="true"><div class="ph"><div class="sc">
+   <div class="bar"><i></i>Kofi Mart<span>☁️ Saved</span></div>
+   <div class="in">
+    <div class="gr">
+     <div class="pr on">Milk 400g<small>GH₵ 28.00 · 14 left</small></div><div class="pr">Rice 5kg<small>GH₵ 95.00 · 8 left</small></div>
+     <div class="pr on">Sugar 1kg<small>GH₵ 18.00 · 30 left</small></div><div class="pr">Soap<small>GH₵ 6.00 · 52 left</small></div>
+    </div>
+    <div class="bx"><b>Current sale</b>
+     <div class="rw"><span>Milk 400g × 2</span><span>56.00</span></div>
+     <div class="rw"><span>Sugar 1kg × 1</span><span>18.00</span></div>
+     <div class="chs" style="margin:8px 0"><span class="ch on">Cash</span><span class="ch">MoMo</span><span class="ch">Card</span><span class="ch">Credit</span></div>
+     <div class="go">Charge GH₵ 74.00</div>
+    </div>
+   </div>
+   <div class="nv"><span><u>🏠</u>Home</span><span class="on"><u>🛒</u>Sell</span><span><u>🧾</u>Receipts</span><span><u>📦</u>Stock</span><span><u>☰</u>More</span></div>
+  </div></div></div>
+ </section>
+
+ <section class="topic" id="stock">
+  <div>
+   <span class="kick">3 · Stock</span>
+   <h2>Add products and keep stock right</h2>
+   <p class="lead">Stock goes down by itself with every sale. You only record what comes in.</p>
+   <ol class="steps">
+    <li><div>Open <b>📦 Stock</b> and tap <b>+ Add product</b>.</div></li>
+    <li><div>Enter the name, <b>cost price</b>, <b>selling price</b> and how many you have. You can add a photo, a category and an expiry date.</div></li>
+    <li><div>When new goods arrive, tap <b>Restock</b> beside the product and type how many came in.</div></li>
+    <li><div>Products that are running out are marked <span class="pill">⚠ low</span> so you know what to buy.</div></li>
+   </ol>
+   <p class="tip"><b>Buying from suppliers?</b> Use <b>📥 Purchases</b> to record an order, receive it into stock and track what you still owe the supplier.</p>
+  </div>
+  <div class="pic" aria-hidden="true"><div class="ph"><div class="sc">
+   <div class="bar"><i></i>Stock<span>+ Add product</span></div>
+   <div class="in">
+    <div class="fld">🔍 Search products</div>
+    <div class="bx">
+     <div class="rw"><span>Milk 400g<small>Cost 22.00 · Sells 28.00</small></span><span>12</span></div>
+     <div class="rw"><span>Rice 5kg<small>Cost 80.00 · Sells 95.00</small></span><span>3 <span class="pill">⚠ low</span></span></div>
+     <div class="rw"><span>Sugar 1kg<small>Cost 14.00 · Sells 18.00</small></span><span>29</span></div>
+     <div class="rw"><span>Soap<small>Cost 4.00 · Sells 6.00</small></span><span>52</span></div>
+    </div>
+    <div class="chs"><span class="ch on">Restock</span><span class="ch">Price</span><span class="ch">Edit</span></div>
+   </div>
+  </div></div></div>
+ </section>
+
+ <section class="topic" id="customers">
+  <div>
+   <span class="kick">4 · Customers &amp; credit</span>
+   <h2>Sell on credit and get paid</h2>
+   <p class="lead">Keep every customer's balance in one place, and let the app remind them.</p>
+   <ol class="steps">
+    <li><div>Open <b>👥 Customers</b> and add the customer's name and phone number.</div></li>
+    <li><div>At the till, choose the customer, pick <kbd>Credit</kbd> as the payment and set a <b>pay-by date</b> (7, 14 or 30 days, or any date).</div></li>
+    <li><div>When the customer pays, open their name in Customers and record the amount. The balance goes down.</div></li>
+    <li><div>With SMS switched on, the customer gets a text with the amount and the pay-by date, and a reminder when it is due.</div></li>
+   </ol>
+  </div>
+  <div class="pic" aria-hidden="true"><div class="ph"><div class="sc">
+   <div class="bar"><i></i>Customers</div>
+   <div class="in">
+    <div class="bx"><b>Ama Serwaa</b><div class="rw"><span>Owes</span><span><b style="display:inline;color:var(--bad)">GH₵ 240.00</b></span></div><div class="rw"><span>Pay by</span><span>28 Nov</span></div><div class="go" style="margin-top:8px">Record payment</div></div>
+    <div class="bx"><div class="rw"><span>Yaw Boateng<small>024 000 0000</small></span><span><span class="pill ok">Paid</span></span></div><div class="rw"><span>Esi Mensah<small>020 000 0000</small></span><span>GH₵ 60.00</span></div></div>
+   </div>
+  </div></div></div>
+ </section>
+
+ <section class="topic" id="staff">
+  <div>
+   <span class="kick">5 · Staff</span>
+   <h2>Give each worker their own login</h2>
+   <p class="lead">Never share your owner password. Each person gets their own name, password and role.</p>
+   <ol class="steps">
+    <li><div>Open <b>🔐 Staff</b> and add the person's name, a first password and their <b>role</b>.</div></li>
+    <li><div>Pick the role that fits: <b>Manager</b>, <b>Accountant</b>, <b>Cashier</b>, <b>Stock keeper</b>, <b>Warehouse keeper</b> or <b>Delivery</b>. Each role only sees the pages it needs.</div></li>
+    <li><div>Use <b>🔑 Access</b> to give or remove single pages for one person.</div></li>
+    <li><div>The <b>activity trail</b> on the same page shows who did what and when: sales, refunds, price changes and logins.</div></li>
+   </ol>
+   <p class="tip"><b>Cashiers</b> see only their own sales and cannot see customer records, cost prices or reports.</p>
+  </div>
+  <div class="pic" aria-hidden="true"><div class="ph"><div class="sc">
+   <div class="bar"><i></i>Staff<span>+ Add staff</span></div>
+   <div class="in">
+    <div class="bx">
+     <div class="rw"><span>Kofi Mensah<small>Owner · everything</small></span><span class="pill ok">Active</span></div>
+     <div class="rw"><span>Abena Osei<small>Cashier · sells only</small></span><span class="pill ok">Active</span></div>
+     <div class="rw"><span>Kwame Adu<small>Stock keeper</small></span><span class="pill ok">Active</span></div>
+    </div>
+    <div class="bx"><b>Today's activity</b><div class="rw"><span>Sale #214 · Abena</span><span>10:42</span></div><div class="rw"><span>Restocked Rice · Kwame</span><span>09:15</span></div></div>
+   </div>
+  </div></div></div>
+ </section>
+
+ <section class="topic" id="reports">
+  <div>
+   <span class="kick">6 · Expenses &amp; reports</span>
+   <h2>See how the business is doing</h2>
+   <p class="lead">Record what you spend, then read your profit in a few taps.</p>
+   <ol class="steps">
+    <li><div>Open <b>💸 Expenses</b> and record each cost with its type: rent, salaries, transport, utilities and so on.</div></li>
+    <li><div>Open <b>📊 Reports</b> and choose the period: today, this week, this month or your own dates.</div></li>
+    <li><div>Read sales, profit, best sellers, stock value, customers who owe and staff performance.</div></li>
+    <li><div>Save any report as a <b>PDF</b> to keep or share.</div></li>
+   </ol>
+  </div>
+  <div class="pic" aria-hidden="true"><div class="ph"><div class="sc">
+   <div class="bar"><i></i>Reports<span>This week</span></div>
+   <div class="in">
+    <div class="gr"><div class="pr">Sales<small style="color:var(--tx);font-size:14px;font-weight:700">GH₵ 4,820</small></div><div class="pr">Profit<small style="color:var(--ac);font-size:14px;font-weight:700">GH₵ 1,130</small></div></div>
+    <div class="bx"><b>Sales by day</b><div class="bars"><i style="height:45%"></i><i style="height:62%"></i><i style="height:38%"></i><i style="height:80%"></i><i style="height:66%"></i><i style="height:100%"></i><i style="height:54%"></i></div></div>
+    <div class="go">Save as PDF</div>
+   </div>
+  </div></div></div>
+ </section>
+
+ <section class="topic" id="online">
+  <div>
+   <span class="kick">7 · Online shop</span>
+   <h2>Let customers order and pay online</h2>
+   <p class="lead">Every shop gets its own online shop at <kbd>tessapos.shop/your-shop/shop</kbd>, showing your products, prices and live stock.</p>
+   <ol class="steps">
+    <li><div>Open <b>🌐 Online shop → Settings</b> to open or close the shop for orders, and to switch pickup and delivery on or off.</div></li>
+    <li><div>To take real payments, paste your <b>Paystack</b> secret key under Payments. Customers can then pay with Mobile Money or a card.</div></li>
+    <li><div>Add photos to your products. Tick <b>Hide from the online shop</b> on any product you do not want to show.</div></li>
+    <li><div>New orders appear under <b>Orders</b>. Mark each one ready, then collected or delivered.</div></li>
+   </ol>
+   <p class="tip"><b>SMS receipts and reminders</b> use your own USMS-GH account. Paste its token and sender ID in Online shop → Settings.</p>
+  </div>
+  <div class="pic" aria-hidden="true"><div class="ph"><div class="sc">
+   <div class="bar"><i></i>Kofi Mart · Shop<span>🛒 2</span></div>
+   <div class="in">
+    <div class="gr">
+     <div class="pr"><div style="height:44px;border-radius:7px;background:#dff3ec;margin-bottom:6px"></div>Milk 400g<small>GH₵ 28.00</small></div>
+     <div class="pr"><div style="height:44px;border-radius:7px;background:#fdeed8;margin-bottom:6px"></div>Rice 5kg<small>GH₵ 95.00</small></div>
+    </div>
+    <div class="bx"><b>Your order</b><div class="rw"><span>2 items</span><span>GH₵ 123.00</span></div><div class="chs" style="margin:8px 0"><span class="ch on">Pickup</span><span class="ch">Delivery</span></div><div class="go">Pay with MoMo or card</div></div>
+   </div>
+  </div></div></div>
+ </section>
+
+ <div class="blk" id="types">
+  <span class="kick">8 · Your type of business</span>
+  <h2>Extra tools for pharmacies, schools, restaurants and delivery services</h2>
+  <p class="small" style="font-size:1rem;margin:0">The type you chose when you created the shop adds its own pages on top of everything above.</p>
+  <div class="types">
+   <div class="ty"><h3>💊 Pharmacy</h3><p>Batches and expiry dates for every drug.</p><ul><li>Open a product and tap <b>🧪 Batches &amp; expiry</b> to add each batch with its expiry date.</li><li>The oldest batch is sold first, and expired stock cannot be sold.</li><li><b>💊 Expiry watch</b> lists what expires soon.</li><li>Mark prescription-only medicines on the product.</li></ul></div>
+   <div class="ty"><h3>🎓 School</h3><p>Students, fees, attendance and results on the <b>School</b> page.</p><ul><li>Set the academic year, term, classes and subjects (a ready Ghana list is included).</li><li>Add students one by one, or paste a whole class list.</li><li>Bill a class, then <b>💵 Record a payment</b> when fees are paid.</li><li>Take attendance, enter marks and print report cards.</li><li>Send announcements to parents by SMS.</li></ul></div>
+   <div class="ty"><h3>🍽️ Restaurant</h3><p>Tables, open bills and a kitchen screen.</p><ul><li>Tap a table to open its bill and add what the guests order.</li><li>Orders go to the <b>👨‍🍳 Kitchen</b> page. The kitchen taps <b>Start cooking</b>, then <b>Ready</b>.</li><li>Move a bill to another table or split it between guests.</li><li>Use <b>🥡 New takeaway</b> or <b>🚚 New delivery order</b> for orders with no table.</li><li>Print the bill and take payment when the guests finish.</li></ul></div>
+   <div class="ty"><h3>📦 Delivery service</h3><p>Parcel jobs, riders and cash on delivery on the <b>Dispatch</b> page.</p><ul><li>Set your <b>zones and prices</b> once, and add your riders and regular clients.</li><li>Tap <b>+ New delivery</b>, enter sender, receiver, item and any cash to collect.</li><li>Assign a rider. The rider marks <b>Picked up</b>, <b>On my way</b> and <b>Delivered</b>.</li><li>Record the cash riders hand in, and their payouts.</li></ul></div>
+  </div>
+ </div>
+
+ <div class="blk" id="faq">
+  <span class="kick">9 · Common problems</span>
+  <h2>Quick answers</h2>
+  <details><summary>I forgot my password</summary><p>On the <a href="/login">Log in</a> page tap <b>Forgot password?</b>, enter your email and we send you a 6-digit code. Type the code and choose a new password. Staff with no email on their account should ask the owner to reset it in Staff.</p></details>
+  <details><summary>I can't remember my shop link</summary><p>You don't need it. Go to <a href="/login">Log in</a> and use your email and password. We take you straight to your shop.</p></details>
+  <details><summary>The page says "Offline" or "Not saved yet"</summary><p>The app needs the internet to save your work. Check your data or Wi-Fi, and keep the page open: your changes are saved as soon as the connection is back. Do not close the page while it still says "Not saved yet".</p></details>
+  <details><summary>My receipt will not print</summary><p>Connect the printer to the phone or computer first (USB, Bluetooth or Wi-Fi). The first time you tap <b>🖨️ Print</b>, choose your printer in the print window. In <b>Settings → Receipt printing</b> pick the right paper: 80 mm roll, 58 mm roll or A4. Use <b>Print a test receipt</b> to check.</p></details>
+  <details><summary>A staff member is locked out</summary><p>After several wrong passwords an account is locked for safety. The owner can unlock it and set a new password in <b>Staff</b>.</p></details>
+  <details><summary>My stock number is wrong</summary><p>Open the product in <b>Stock</b> and adjust the count, choosing the reason (damaged, expired, lost, correction). Every change is kept in the stock history so you can see what happened.</p></details>
+  <details><summary>Is my data safe if my phone is lost?</summary><p>Yes. Nothing is kept on the phone. Your shop is saved online and backed up automatically, so you can log in from any other device and carry on.</p></details>
+  <details><summary>Can I use it on more than one device?</summary><p>Yes. Open your shop on as many phones, tablets and computers as you like, at the same time. Everyone sees the same stock and sales.</p></details>
+ </div>
+
+ <div class="contact" id="contact">
+  <div>
+   <h2>Still need help? Talk to us</h2>
+   <p>Send a WhatsApp message with your shop name and what you were trying to do. A screenshot helps us fix it faster.</p>
+   <p class="num">024 402 2727</p>
+  </div>
+  <div class="acts">
+   <a class="btn wa" href="https://wa.me/233244022727?text=Hello%2C%20I%20need%20help%20with%20Tessa%20POS." target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.7-5.1A8.5 8.5 0 1 1 21 11.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg>Chat on WhatsApp</a>
+   <a class="btn line" href="tel:+233244022727">Call 024 402 2727</a>
+  </div>
+ </div>
+</main>
+
+<footer><div class="wrap"><span>© 2026 by Zoe &amp; Tessa</span><span><a href="/">Home</a> · <a href="/login">Log in</a> · <a href="/register">Create a shop</a></span><span class="pname">Tessa POS</span></div></footer>
+</body>
+</html>
