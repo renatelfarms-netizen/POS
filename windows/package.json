@@ -4,13 +4,42 @@
   "description": "Mictobystar POS for Windows",
   "author": "Mictobystar",
   "main": "main.js",
-  "scripts": { "dist": "electron-builder --win --x64 --publish never" },
-  "devDependencies": { "electron": "33.2.1", "electron-builder": "25.1.8" },
+  "scripts": {
+    "dist": "electron-builder --win --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
   "build": {
     "appId": "com.mictobystar.pos",
     "productName": "Mictobystar",
-    "files": ["main.js", "offline.html", "site.txt", "build/icon.png"],
-    "win": { "target": ["nsis"], "icon": "build/icon.ico", "artifactName": "Mictobystar-Setup.exe" },
-    "nsis": { "oneClick": true, "perMachine": false, "createDesktopShortcut": true, "createStartMenuShortcut": true, "shortcutName": "Mictobystar" }
+    "files": [
+      "main.js",
+      "offline.html",
+      "site.txt",
+      "build/icon.png"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "Mictobystar-Setup.exe"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Mictobystar"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "renatelfarms-netizen",
+        "repo": "POS"
+      }
+    ]
   }
 }
