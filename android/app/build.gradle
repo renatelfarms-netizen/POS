@@ -1,0 +1,33 @@
+plugins { id 'com.android.application' }
+
+// The site the app opens (one line in site.txt at the top of this branch).
+def site = rootProject.file('../site.txt').text.trim()
+def ks = new Properties()
+rootProject.file('keystore.properties').withInputStream { ks.load(it) }
+
+android {
+    namespace 'com.mictobystar.pos'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'com.mictobystar.pos'
+        minSdk 21
+        targetSdk 34
+        versionCode((System.getenv('GITHUB_RUN_NUMBER') ?: '1') as int)
+        versionName '1.0.' + (System.getenv('GITHUB_RUN_NUMBER') ?: '1')
+        manifestPlaceholders = [site: site]
+        resValue 'string', 'site_url', 'https://' + site + '/pos?app=android'
+        resValue 'string', 'asset_statements', '[{ \\"relation\\": [\\"delegate_permission/common.handle_all_urls\\"], \\"target\\": { \\"namespace\\": \\"web\\", \\"site\\": \\"https://' + site + '\\" } }]'
+    }
+    signingConfigs {
+        release {
+            storeFile rootProject.file('mictobystar.keystore')
+            storePassword ks['storePassword']
+            keyAlias ks['keyAlias']
+            keyPassword ks['keyPassword']
+        }
+    }
+    buildTypes { release { minifyEnabled false; signingConfig signingConfigs.release } }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    lint { abortOnError false; checkReleaseBuilds false }
+}
+dependencies { implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0' }

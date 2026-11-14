@@ -4,14 +4,75 @@ on:
     branches: [mictobystar-apps]
 permissions:
   contents: write
+env:
+  GH_TOKEN: ${{ github.token }}
 jobs:
-  probe:
+  prep:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: |
-          echo "built $(date -u) on $GITHUB_SHA" > probe.txt
+      - name: Start the build log
+        run: |
+          echo "Build $GITHUB_RUN_NUMBER of $GITHUB_SHA started $(date -u)" > start.txt
           gh release delete build-logs --yes --cleanup-tag || true
-          gh release create build-logs probe.txt --title "Build logs" --notes "Automatic build output." --prerelease
-        env:
-          GH_TOKEN: ${{ github.token }}
+          sleep 3
+          gh release create build-logs start.txt --title "Build logs" --notes "Automatic build output for the Mictobystar apps." --prerelease --target "$GITHUB_SHA"
+
+  windows:
+    needs: prep
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Build the Windows installer
+        shell: bash
+        working-directory: windows
+        run: |
+          set -o pipefail
+          (npm install --no-audit --no-fund && npx electron-builder --win --x64 --publish never) 2>&1 | tee ../windows-log.txt
+      - name: Upload the log
+        if: always()
+        shell: bash
+        run: gh release upload build-logs windows-log.txt --clobber || true
+      - name: Keep the installer for the release
+        uses: actions/upload-artifact@v4
+        with: { name: windows, path: windows/dist/Mictobystar-Setup.exe, if-no-files-found: error }
+
+  android:
+    needs: prep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: '8.9' }
+      - name: Build the Android app
+        working-directory: android
+        run: |
+          set -o pipefail
+          (gradle --no-daemon assembleRelease && ls -la app/build/outputs/apk/release && "$ANDROID_HOME"/build-tools/$(ls "$ANDROID_HOME"/build-tools | sort -V | tail -1)/apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk) 2>&1 | tee ../android-log.txt
+          cp app/build/outputs/apk/release/app-release.apk ../Mictobystar.apk
+      - name: Upload the log
+        if: always()
+        run: gh release upload build-logs android-log.txt --clobber || true
+      - name: Keep the app for the release
+        uses: actions/upload-artifact@v4
+        with: { name: android, path: Mictobystar.apk, if-no-files-found: error }
+
+  release:
+    needs: [windows, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: out, merge-multiple: true }
+      - name: Publish the downloads
+        run: |
+          ls -la out
+          gh release delete mictobystar-apps --yes --cleanup-tag || true
+          sleep 3
+          gh release create mictobystar-apps out/Mictobystar-Setup.exe out/Mictobystar.apk --title "Mictobystar apps" --target "$GITHUB_SHA" --notes "Mictobystar POS for Windows (Mictobystar-Setup.exe) and Android (Mictobystar.apk). Build $GITHUB_RUN_NUMBER. Both open the Mictobystar POS and keep working without internet after the first login."
+          echo "released build $GITHUB_RUN_NUMBER $(date -u)" > done.txt
+          gh release upload build-logs done.txt --clobber || true
