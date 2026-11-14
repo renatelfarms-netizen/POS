@@ -255,6 +255,11 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 let BR={},curB='kum';const BRS=['kum','acc'],BPFX={kum:'',acc:'accra_'},BKEYS=['products','customers','sales','expenses','deliveries','pos','moves'],BLISTS={sales:'d',expenses:'m',deliveries:'m',pos:'m',moves:'m'},SLISTS={log:'d',whMoves:'m',transfers:'m',trReq:'m',whPos:'m'};
 let buyer={phone:'',name:''},me=null,db={products:[],customers:[],sales:[],staff:[],log:[],seq:1},tab='sell',cart=[],q='',range='today',pay='Cash',cust='',split=null,tend='',sdisc='';
 const WEB0=/^https?:$/.test(location.protocol)&&!/claude\.(ai|site)|claudeusercontent|anthropic/.test(location.hostname);
+/* App mode. The Windows and Android apps open /pos?app=…, which marks that device. In app mode the device keeps a copy of the shop
+   (IndexedDB), so the POS opens and works without internet, and everything done offline is merged into the shop when the internet is back.
+   In an ordinary browser nothing is kept on the device and the shop locks while it is offline, as before. */
+let APPM=false;try{const q=new URLSearchParams(location.search).get('app');if(WEB0&&q)localStorage.setItem('mb-app',String(q).replace(/[^a-z]/g,'').slice(0,12)||'app');APPM=WEB0&&!!localStorage.getItem('mb-app')}catch(e){}
+const OFF={have:false,ok:false,on:false,cred:null,t:null,merged:0};
 if(WEB0)try{['','-before-cloud','-before-restore','-dev','-bk','-br','-sess','-auto','-lastu'].forEach(x=>localStorage.removeItem(K+x))}catch(e){}
 if(!WEB0)try{const s=localStorage.getItem(K);if(s){db=JSON.parse(s);if(db.__BR){BR=db.__BR;curB=db.__curB||'kum';delete db.__BR;delete db.__curB}}}catch(e){}
 if(!WEB0&&!db.products.length&&!db.sales.length){db.products=[
@@ -263,7 +268,7 @@ const DEF={name:'Mictobystar',addr:'',phone:'',footer:'Thank you!',cur:'GH₵',t
 function norm(){db.products=db.products||[];db.customers=db.customers||[];db.sales=db.sales||[];db.staff=db.staff||[];db.log=db.log||[];db.expenses=db.expenses||[];db.deliveries=db.deliveries||[];db.moves=db.moves||[];db.suppliers=db.suppliers||[];db.pos=db.pos||[];db.whMoves=db.whMoves||[];db.transfers=db.transfers||[];db.trReq=db.trReq||[];db.quotes=db.quotes||[];db.set=Object.assign({},DEF,db.set||{});['rcpts','scheds','rq'].forEach(k=>db.set[k]=db.set[k]||[]);db.seq=db.seq||1;db.whItems=db.whItems||[];db.whPos=db.whPos||[];syncCats();brNorm();whNorm('main')}norm();
 function syncCats(){const s=db.set;s.pcats=[...(s.pcats||[])];db.products.forEach(p=>{if(p.cat&&!s.pcats.includes(p.cat))s.pcats.push(p.cat)})}
 const lsSave=()=>{if(window.__rst||WEB0)return;try{syncBR();localStorage.setItem(K,JSON.stringify(Object.assign({},db,{__BR:BR,__curB:curB})))}catch(e){}};
-const save=()=>{whNorm(curWh||'main');(db.products||[]).forEach(p=>{if(p.svc)p.stock=0});lsSave();cloudSave();try{bkDirty()}catch(e){}};
+const save=()=>{whNorm(curWh||'main');(db.products||[]).forEach(p=>{if(p.svc)p.stock=0});lsSave();cloudSave();offPut();try{bkDirty()}catch(e){}};
 const logit=(a,d)=>{db.log.push({ts:Date.now(),sid:me?me.id:null,who:me?me.name:'—',a,d:d||'',b:curB});if(db.log.length>2000)db.log.shift();try{ackLog(a,d)}catch(e){}};
 const hash=async p=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('renatel:'+p)))].map(b=>b.toString(16).padStart(2,'0')).join('');
 const id=()=>{if(WEB0)return takeId();if(!DEV.dn)return db.seq++;const n=++DEV.seq;try{localStorage.setItem(K+'-dev',JSON.stringify(DEV))}catch(e){}return (DEV.dn>1?DEV.dn*1e6:0)+n};
@@ -283,35 +288,61 @@ function chunks(){const out={'shop/main':{set:db.set,staff:db.staff,suppliers:db
 function assemble(m){const g=p=>m[p]?JSON.parse(m[p]):undefined,sh=g('shop/main')||{},list=c=>Object.keys(m).filter(p=>p.startsWith(c+'/')).map(g);
  db={set:sh.set,staff:sh.staff||[],suppliers:sh.suppliers||[],seq:sh.seq||1,products:list('products').sort((a,b)=>a.id-b.id),customers:list('customers').sort((a,b)=>a.id-b.id)};
  Object.keys(LISTS).forEach(k=>db[k]=list(k).flatMap(x=>x.recs||[]).sort((a,b)=>(a.ts||0)-(b.ts||0)));norm()}
-function syncUI(){const e=$('#sync');if(!e)return;if(WEB0&&(cstate=='off'||!cloud)){e.textContent='';e.title='';return}if(cstate=='saving'||cstate=='connecting'){e.innerHTML=RING()+(cstate=='saving'?' Saving…':' Connecting…')}else e.textContent={connecting:'⏳ Connecting…',off:'💾 On this device',offline:'⚠️ Offline',saving:'☁️ Saving…',saved:'☁️ Saved',error:'⚠️ Not saved yet'}[cstate]||'';e.title={connecting:'Connecting to the shop database',off:'The database isn’t available here, so data is saved only in this browser',offline:WEB0?'Can’t reach the shop right now. The shop is locked until the connection is back':'Can’t reach the database. Changes are kept on this device and saved when the connection is back',saving:'Saving to the shop database',saved:'Everything is saved to the shop database',error:'Some changes aren’t in the database yet. Retrying.'}[cstate]||''}
+/* ---- app mode: the copy of the shop kept on this device ---- */
+function offIdb(){return new Promise((ok,no)=>{const r=indexedDB.open('mb-offline',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}
+async function offGet(){if(!APPM)return null;try{const d=await offIdb();return await new Promise((ok,no)=>{const q=d.transaction('kv').objectStore('kv').get('state');q.onsuccess=()=>ok(q.result||null);q.onerror=()=>no(q.error)})}catch(e){return null}}
+async function offPutNow(){clearTimeout(OFF.t);if(!APPM||!OFF.ok||!db.staff.length)return;try{const cur=chunks(),loc={};for(const p in cur)loc[p]=cj(cur[p]);const d=await offIdb();d.transaction('kv','readwrite').objectStore('kv').put({loc,last,ids:IDS.slice(0,300),at:Date.now()},'state')}catch(e){}}
+function offPut(){if(!APPM||!OFF.ok)return;clearTimeout(OFF.t);OFF.t=setTimeout(offPutNow,400)}
+const offNow=()=>APPM&&(OFF.on||netBad||cstate=='offline'||!cloud||!ready);
+/* Three-way merge of one stored document: b = as last seen in the shop, l = this device, r = the shop now. Used when both changed
+   while this device was offline. Stock and customer balances are moved by the difference, so nobody's change is lost. */
+const M3D={products:['stock'],customers:['owed','adv'],whItems:['wh']};
+function m3obj(b,l,r,dk){b=b||{};l=l||{};r=r||{};const o=Object.assign({},r);new Set([...Object.keys(l),...Object.keys(b)]).forEach(k=>{if(cj(l[k])===cj(b[k]))return;
+  if(dk.includes(k)&&(typeof l[k]=='number'||typeof b[k]=='number'))o[k]=r2((+r[k]||0)+(+l[k]||0)-(+b[k]||0));
+  else if(k=='advLog'&&Array.isArray(l[k])&&Array.isArray(r[k])){const s=new Set(r[k].map(x=>cj(x)));o[k]=r[k].concat(l[k].filter(x=>!s.has(cj(x)))).sort((a,c)=>(a.ts||0)-(c.ts||0))}
+  else if(l[k]===undefined)delete o[k];else o[k]=l[k]});return o}
+function m3list(b,l,r,key){const ix=a=>{const m=new Map();(a||[]).forEach(x=>m.set(key(x),x));return m},B=ix(b),L=ix(l),R=ix(r),out=[];
+  new Set([...R.keys(),...L.keys()]).forEach(k=>{const x=L.get(k),y=R.get(k),z=B.get(k);let v;if(cj(x)===cj(z))v=y;else if(cj(y)===cj(z))v=x;else v=x&&y?m3obj(z,x,y,[]):(x||y);if(v!==undefined)out.push(v)});return out}
+function merge3(p,b,l,r){try{if(l===undefined)return r;if(r===undefined)return l;
+  const B=b?JSON.parse(b):null,L=JSON.parse(l),R=JSON.parse(r),col=p.slice(0,p.indexOf('/')).replace(/^accra_/,'');
+  if(Array.isArray(L.recs)&&Array.isArray(R.recs)){const key=x=>x.id!=null?'i'+x.id:'t'+x.ts+'|'+(x.a||'')+'|'+(x.d||'');return cj({recs:m3list(B&&B.recs,L.recs,R.recs,key).sort((a,c)=>(a.ts||0)-(c.ts||0))})}
+  if(p=='shop/main'){const bb=B||{},o=Object.assign({},R);o.set=m3obj(bb.set,L.set,R.set,[]);o.staff=m3list(bb.staff,L.staff,R.staff,x=>x.id);o.suppliers=m3list(bb.suppliers,L.suppliers,R.suppliers,x=>x.id);o.seq=Math.max(+L.seq||1,+R.seq||1);return cj(o)}
+  return cj(m3obj(B,L,R,M3D[col]||[]))}catch(e){return l}}
+function syncUI(){const e=$('#sync');if(!e)return;if(APPM&&offNow()&&db.staff.length){e.textContent='📴 Offline';e.title='No internet. This device is working from its own copy of the shop. Everything you do is kept here and sent to the shop when the internet is back.';return}
+if(WEB0&&(cstate=='off'||!cloud)){e.textContent='';e.title='';return}if(cstate=='saving'||cstate=='connecting'){e.innerHTML=RING()+(cstate=='saving'?' Saving…':' Connecting…')}else e.textContent={connecting:'⏳ Connecting…',off:'💾 On this device',offline:'⚠️ Offline',saving:'☁️ Saving…',saved:'☁️ Saved',error:'⚠️ Not saved yet'}[cstate]||'';e.title={connecting:'Connecting to the shop database',off:'The database isn’t available here, so data is saved only in this browser',offline:WEB0?'Can’t reach the shop right now. The shop is locked until the connection is back':'Can’t reach the database. Changes are kept on this device and saved when the connection is back',saving:'Saving to the shop database',saved:'Everything is saved to the shop database',error:'Some changes aren’t in the database yet. Retrying.'}[cstate]||''}
 function cloudSave(){dirty=true;clearTimeout(stT);stT=setTimeout(flush,500)}
 async function flush(){if(!cloud||!ready||syncing)return;syncing=true;dirty=false;const cur=chunks(),ops=[];
  for(const p in cur){const j=cj(cur[p]);if(last[p]!==j)ops.push([p,j,cur[p]])}for(const p in last)if(!(p in cur)&&!p.startsWith('devices/'))ops.push([p,null]);
  if(!ops.length){syncing=false;if(cstate!='saved'){cstate='saved';syncUI()}return}
  cstate='saving';syncUI();let fail=null;
  for(const [p,j,b] of ops){try{if(j)await cloud.doc(p).set(JSON.parse(j));else await cloud.doc(p).delete();if(j)last[p]=j;else delete last[p]}catch(e){fail=e;if(e&&e.code=='quota_exceeded'&&!qAlert){qAlert=true;uiAlert('The shop database is full ('+e.message+'). Use Settings → Danger zone to clear old history, or make a backup.')}if(e&&['revoked','not_granted','invalid_argument'].includes(e.code)&&p=='shop/main'){cloud=null;cstate='off';syncUI();syncing=false;return}}}
- syncing=false;cstate=fail?'error':'saved';syncUI();if(fail)setTimeout(flush,15000);else if(dirty)cloudSave()}
+ syncing=false;cstate=fail?'error':'saved';syncUI();offPut();if(!fail&&OFF.merged){OFF.merged=0;toast('☁️ Offline work sent','Everything done on this device without internet is now in the shop.')}if(fail)setTimeout(flush,15000);else if(dirty)cloudSave()}
 function maxIdFor(dn){const lo=dn>1?dn*1e6:0,hi=dn>1?lo+1e6:1e6;let m=0;const chk=x=>{if(typeof x=='number'&&x>=lo&&x<hi)m=Math.max(m,x-lo)};
  ['products','customers','sales','expenses','deliveries','pos','suppliers','staff'].forEach(k=>db[k].forEach(r=>{chk(r.id);(r.refunds||[]).forEach(f=>chk(f.id))}));return m}
 function register(){if(WEB0)return;const mine=remote['devices/'+DEV.id];if(mine&&DEV.dn){}else if(mine){DEV.dn=JSON.parse(mine).dn}
  else{const dns=Object.keys(remote).filter(p=>p.startsWith('devices/')).map(p=>JSON.parse(remote[p]).dn||0);DEV.dn=dns.length?Math.max(...dns)+1:1;DEV.seq=0}
  DEV.seq=Math.max(DEV.seq||0,maxIdFor(DEV.dn),DEV.dn==1?db.seq:0);try{localStorage.setItem(K+'-dev',JSON.stringify(DEV))}catch(e){}}
 function busy(){const a=document.activeElement;if(a&&a.closest&&a.closest('#app,#dlg')&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))return true;return [...document.querySelectorAll('#app input:not([readonly]):not([type=checkbox]):not(#q):not(#iq),#app textarea:not([readonly])')].some(x=>x.value&&x.value!=x.defaultValue)||$('#dlg').classList.contains('on')}
-function afterRemote(){setTimeout(sessCheck,0);if(me)me=db.staff.find(s=>s.id==me.id)||null;cart=cart.filter(l=>prod(l.id));lsSave();if(busy()){pendR=true;return}render()}
+function afterRemote(){setTimeout(sessCheck,0);if(me)me=db.staff.find(s=>s.id==me.id)||null;cart=cart.filter(l=>prod(l.id));lsSave();offPut();if(busy()){pendR=true;return}render()}
 document.addEventListener('focusout',()=>setTimeout(()=>{if(pendR&&!busy()){pendR=false;render()}},400));
 function firstLoad(){ready=true;const has=!!remote['shop/main'];
+ if(has&&APPM&&OFF.have){const loc={},cur=chunks(),out={};let n=0;for(const p in cur)loc[p]=cj(cur[p]);
+  new Set([...Object.keys(remote),...Object.keys(loc),...Object.keys(last)]).forEach(p=>{if(p.startsWith('devices/'))return;const r=remote[p],l=loc[p],b=last[p];let v;if(l===b)v=r;else{n++;v=r===b?l:merge3(p,b,l,r)}if(v!==undefined)out[p]=v});
+  last={...remote};assemble(out);OFF.on=false;OFF.merged=n;OFF.ok=OFF.have=true;cstate=n?'saving':'saved';syncUI();if(!me)autoIn();afterRemote();flush();return}
+ if(APPM)OFF.ok=OFF.have=true;
  if(has){const loc=chunks(),same=Object.keys(remote).every(p=>p.startsWith('devices/')||cj(JSON.parse(remote[p]))===cj(loc[p]));if(!WEB0&&!same&&db.staff.length&&(db.sales.length||db.staff.length)){try{localStorage.setItem(K+'-before-cloud',JSON.stringify(db))}catch(e){}}
   last={...remote};assemble(remote);register();cstate='saved'}
  else{last={...remote};register();cstate='saving'}
  syncUI();autoIn();afterRemote();flush()}
 function applyRemote(changed){const loc={},cur=chunks();for(const p in cur)loc[p]=cj(cur[p]);let any=false;
- changed.forEach(p=>{const r=remote[p];if(r===last[p])return;if(loc[p]===last[p]||(loc[p]===undefined&&last[p]===undefined)){if(r===undefined){delete loc[p];delete last[p]}else{loc[p]=r;last[p]=r}any=true}});
- if(any){assemble(loc);afterRemote()}}
+ let mg=false;changed.forEach(p=>{const r=remote[p];if(r===last[p])return;if(loc[p]===last[p]||(loc[p]===undefined&&last[p]===undefined)){if(r===undefined){delete loc[p];delete last[p]}else{loc[p]=r;last[p]=r}any=true}
+  else if(APPM){const v=merge3(p,last[p],loc[p],r);if(v===undefined)delete loc[p];else loc[p]=v;if(r===undefined)delete last[p];else last[p]=r;any=mg=true}});
+ if(any){assemble(loc);afterRemote();if(mg)cloudSave()}}
 /* ---------- online only (website): the shop locks while the website can't be reached ---------- */
 let netBad=false,netT=null;
-const netLocked=()=>WEB0&&netBad;
+const netLocked=()=>WEB0&&netBad&&!APPM;
 function netSet(b){b=!!b;if(!WEB0||b==netBad)return;netBad=b;netUI();if(!b&&cloud&&ready)cloudSave()}
-function netUI(){let e=document.getElementById('netlock');
+function netUI(){let e=document.getElementById('netlock');if(APPM){syncUI();if(netBad&&!netT)netT=setInterval(netRetry,5000);if(!netBad){clearInterval(netT);netT=null}return}
  if(!netBad){if(e)e.remove();[...document.body.children].forEach(x=>{if(x.dataset&&x.dataset.nl){x.inert=false;delete x.dataset.nl}});clearInterval(netT);netT=null;return}
  if(!e){e=document.createElement('div');e.id='netlock';e.setAttribute('role','alertdialog');e.setAttribute('aria-live','assertive');e.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(12,18,16,.95);color:#fff;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center';document.body.appendChild(e);
   try{if(document.activeElement&&document.activeElement.blur)document.activeElement.blur()}catch(x){}
@@ -331,8 +362,9 @@ if(WEB0){addEventListener('offline',()=>netSet(true));addEventListener('online',
  if(navigator.onLine===false)netSet(true)}
 /* Website: the same database API, served by the website (Supabase behind it). Devices join with the shop code. */
 let IDS=[],idBusy=false;
-async function idFill(){if(idBusy||IDS.length>=20||!SESS())return;idBusy=true;try{const r=await fetch('/api/ids',{cache:'no-store',headers:authH()});const j=await r.json();if(r.ok&&Array.isArray(j.ids))IDS.push(...j.ids.map(Number))}catch(e){}idBusy=false}
-function takeId(){const v=IDS.length?IDS.shift():Date.now()*100+Math.floor(Math.random()*100);if(IDS.length<20)idFill();return v}
+const IDMIN=()=>APPM?150:20;
+async function idFill(){if(idBusy||IDS.length>=IDMIN()||!SESS())return;idBusy=true;let got=false;try{const r=await fetch('/api/ids',{cache:'no-store',headers:authH()});const j=await r.json();if(r.ok&&Array.isArray(j.ids)){IDS.push(...j.ids.map(Number));got=true}}catch(e){}idBusy=false;if(got){offPut();if(IDS.length<IDMIN())setTimeout(idFill,300)}}
+function takeId(){const v=IDS.length?IDS.shift():Date.now()*100+Math.floor(Math.random()*100);if(IDS.length<IDMIN())idFill();return v}
 function webDb(){idFill();const subs={},errs=[];let since=0,first=true,stop=false,timer=null,busyP=false;
  async function call(p,o){let r;try{r=await fetch(p,Object.assign({cache:'no-store'},o||{},{headers:Object.assign(authH(),{'Content-Type':'application/json'})}))}catch(e){netSet(true);const x=new Error('offline');x.code='unavailable';throw x}
   netSet(r.status>=502&&r.status<=504);let j={};try{j=await r.json()}catch(e){}
@@ -349,14 +381,28 @@ function webDb(){idFill();const subs={},errs=[];let since=0,first=true,stop=fals
  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!stop)poll()});setTimeout(poll,0);
  return {web:true,refresh:async()=>{if(stop)return;for(let k=0;busyP&&k<50;k++)await new Promise(r=>setTimeout(r,100));await poll()},collection:c=>({onSnapshot:(f,e)=>{(subs[c]=subs[c]||[]).push(f);if(e&&!errs.includes(e))errs.push(e)}}),
   doc:p=>{const i=p.indexOf('/'),c=p.slice(0,i),id=p.slice(i+1);return {set:d=>call('/api/db/put',{method:'POST',body:JSON.stringify({c,id,d})}),delete:()=>call('/api/db/del',{method:'POST',body:JSON.stringify({c,id})})}}}}
-(async()=>{await 0;let c=null;try{c=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){}
- if(!c&&ONWEB&&webAuth())c=webDb();
- if(!c){cstate='off';syncUI();render();return}
- cloud=c;const seen=new Set(),pend=new Set();let to=setTimeout(()=>{if(!ready){if(seen.size){firstLoad()}else{cstate='offline';syncUI();render()}}},10000);
+function cloudStart(c){if(cloud||!c)return;
+ cloud=c;const seen=new Set(),pend=new Set();let to=setTimeout(()=>{if(!ready){if(seen.size){firstLoad()}else{cstate='offline';if(APPM&&OFF.have){OFF.on=true;if(!me)autoIn()}syncUI();render()}}},APPM&&OFF.have?6000:10000);
  COLS.forEach(col=>cloud.collection(col).onSnapshot(snap=>{const ch=[];snap.docChanges().forEach(d=>{const p=col+'/'+d.doc.id;if(d.type=='removed')delete remote[p];else remote[p]=cj(d.doc.data());ch.push(p)});
   if(!snap.metadata.fromCache)seen.add(col);
   if(!ready){ch.forEach(p=>pend.add(p));if(seen.size==COLS.length){clearTimeout(to);firstLoad()}}else if(ch.length)applyRemote(ch)},
-  e=>{if(e&&(e.code=='revoked'||e.code=='not_granted')){cloud=null;cstate='off';syncUI()}else{cstate='offline';syncUI()}}))})();
+  e=>{if(e&&(e.code=='revoked'||e.code=='not_granted')){cloud=null;cstate='off';syncUI()}else{cstate='offline';if(APPM&&OFF.have&&!ready&&!OFF.on){OFF.on=true;if(!me)autoIn();render()}syncUI()}}))}
+(async()=>{await 0;
+ if(APPM){const s=await offGet();if(s&&s.loc&&s.loc['shop/main']){try{last=s.last||{};assemble(s.loc);IDS=(s.ids||[]).map(Number);OFF.have=OFF.ok=true}catch(e){last={};OFF.have=OFF.ok=false}}
+  if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  if(OFF.have&&!webAuth()&&navigator.onLine===false)OFF.on=true}
+ let c=null;try{c=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){}
+ if(!c&&ONWEB&&webAuth())c=webDb();
+ if(!c){cstate='off';syncUI();render();return}
+ cloudStart(c);if(APPM&&OFF.have)render()})();
+/* app mode: back online after working offline. Log in to the shop again by itself (with the password typed at the offline login,
+   kept in memory only), then start the shop database; firstLoad merges this device's work into the shop. */
+let offBusy=false;
+async function offTick(){if(!APPM||!OFF.have||cloud||offBusy||navigator.onLine===false)return;offBusy=true;
+ try{if(!webAuth()){if(!OFF.cred||!me){offBusy=false;return}
+   try{await webLoginCall(OFF.cred.n,OFF.cred.p)}catch(e){if(!/fetch|network|reach/i.test(e.message||'')&&!(e instanceof TypeError)){OFF.cred=null;OFF.on=false;me=null;cart=[];render();uiAlert('The internet is back. Log in again to send the work done offline to the shop. ('+e.message+')')}offBusy=false;return}}
+  cloudStart(webDb())}catch(e){}offBusy=false}
+if(APPM){setInterval(offTick,8000);addEventListener('online',()=>setTimeout(offTick,500));addEventListener('pagehide',()=>{offPutNow()});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')offPutNow()})}
 
 const prod=i=>db.products.find(p=>p.id==i), cu=i=>db.customers.find(c=>c.id==i);
 
@@ -367,7 +413,8 @@ function render(){document.body.classList.remove('lgmode');setTimeout(meSave,0);
  const ok=t=>!!me&&staffTabs(me).includes(t);
  if(me){brCheck();const ob=staffBranches(me).length>1;$('#brsw').hidden=false;$('#brsw').textContent='📍 '+BRN()+(ob?' ▾':'');$('#brsw').style.cursor=ob?'pointer':'default'}else $('#brsw').hidden=true;
  if(me)navHTML();else{$('#tabs').innerHTML='';$('#bnav').innerHTML=''}
- syncUI();let jv=false;try{jv=ONWEB&&!cloud&&!webAuth()}catch(e){}if(jv)return $('#app').innerHTML=webLoginView();
+ syncUI();let jv=false;try{jv=ONWEB&&!cloud&&!webAuth()&&!(APPM&&OFF.have&&OFF.on)}catch(e){}if(jv)return $('#app').innerHTML=webLoginView();
+ if(APPM&&OFF.have&&cloud&&!ready&&!me&&!OFF.on)return $('#app').innerHTML=box('Opening your shop…','<div class="rbig">'+RING()+'</div><span class="mut">Checking the internet connection.</span>');
  if(!db.staff.length&&cloud&&!ready)return $('#app').innerHTML=box(cstate=='offline'?'Can’t reach your shop':'Opening your shop…',(cstate=='offline'?'':'<div class="rbig">'+RING()+'</div>')+'<span class="mut">'+(cstate=='offline'?'Check the internet connection. Your shop opens as soon as the Mictobystar website can be reached.':'Loading your shop’s data from the database.')+'</span>');
  if(!db.staff.length&&cstate=='connecting')return $('#app').innerHTML=box('Opening your shop…','<div class="rbig">'+RING()+'</div><span class="mut">Loading your shop’s data from the database.</span>');
  if(!db.staff.length)return $('#app').innerHTML=setup();
@@ -610,7 +657,8 @@ async function doWebLogin(){const n=($('#wu').value||'').trim(),p=$('#wp').value
  if(!n){pwShow('wu','wmsg',false,'Type your name first.');return $('#wu').focus()}if(!p){pwShow('wp','wmsg',false,'Type your password too.');return $('#wp').focus()}
  b.disabled=true;b.innerHTML=RING()+' Checking…';m.className='msg';m.textContent='';
  try{const j=await webLoginCall(n,p);try{sessionStorage.setItem(K+'-auto',JSON.stringify({sid:j.sid,ts:Date.now()}))}catch(e){}b.innerHTML=RING()+' Opening your shop…';pwShow('wp','wmsg',true,'✔ Welcome, '+j.name+'!');setTimeout(()=>location.reload(),300)}
- catch(e){b.disabled=false;b.textContent='Log in';$('#wp').value='';pwShow('wp','wmsg',false,'✖ '+(e.message==='Failed to fetch'?'Can’t reach the Mictobystar website. Check the internet connection.':e.message));$('#wp').focus()}}
+ catch(e){if(APPM&&OFF.have&&(e instanceof TypeError||navigator.onLine===false)){OFF.on=true;render();const u=$('#lu'),q=$('#lp');if(u&&q){u.value=n;q.value=p;doLogin()}return}
+  b.disabled=false;b.textContent='Log in';$('#wp').value='';pwShow('wp','wmsg',false,'✖ '+(e.message==='Failed to fetch'?'Can’t reach the Mictobystar website. Check the internet connection.':e.message));$('#wp').focus()}}
 function webRelogin(n,p){if(!n||!p)return;webLoginCall(n,p).catch(()=>{})}
 function meSave(){if(!WEB0)return;try{if(me&&SESS())sessionStorage.setItem(K+'-me',JSON.stringify({sid:me.id,at:loginAt,act:lastAct,tab,sset,b:curB,y:window.scrollY||0}))}catch(e){}}
 addEventListener('pagehide',meSave);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')meSave()});
@@ -651,7 +699,7 @@ function loginShell(o){document.body.classList.add('lgmode');const h=new Date().
   </form></div>
   <p class="lg2-foot">${LGI.shield}${esc(o.foot)}</p><p class="lg2-copy">© 2026 by Zoe &amp; Tessa</p></div>`}
 function loginView(){const pre=lsel&&db.staff.find(x=>x.id==lsel);
- let where='Saved on this device';try{if(WEB0)where='Secure login · everything runs online';else if(cloud)where='Saved in the shop database'}catch(e){}
+ let where='Saved on this device';try{if(WEB0)where=APPM&&offNow()?'📴 No internet · working from the copy on this device':'Secure login · everything runs online';else if(cloud)where='Saved in the shop database'}catch(e){}
  return loginShell({u:'lu',p:'lp',msg:'lmsg',btn:'lbtn',go:'doLogin',forgot:'forgotDlg',name:pre?pre.name:'',foot:where})}
 function eyeFor(b,id){const i=$('#'+id);if(!i)return;const show=i.type=='password';i.type=show?'text':'password';b.textContent=show?'🙈':'👁️';b.setAttribute('aria-label',show?'Hide password':'Show password');b.title=show?'Hide password':'Show password';i.focus()}
 function lpEye(b){const i=$('#lp');if(!i)return;const show=i.type=='password';i.type=show?'text':'password';b.textContent=show?'🙈':'👁️';b.setAttribute('aria-label',show?'Hide password':'Show password');b.title=b.getAttribute('aria-label');i.focus()}
@@ -694,7 +742,7 @@ async function newRc(first){const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',r=crypto.
 function pwShow(inp,box,ok,t){const i=inp&&$('#'+inp),m=$('#'+box);if(i){i.classList.remove('pw-bad','pw-ok');void i.offsetWidth;i.classList.add(ok?'pw-ok':'pw-bad')}if(m){m.className='msg '+(ok?'ok':'bad');m.textContent=t}}
 function pwClear(inp,box){const i=$('#'+inp),m=$('#'+box);if(i)i.classList.remove('pw-bad','pw-ok');if(m&&!m.classList.contains('ok')){m.className='msg';m.textContent=''}}
 let lbusy=false,ufail=0,unext=0;
-async function doLogin(){if(lbusy)return;const nm=($('#lu').value||'').trim();if(!nm)return pwShow('lu','lmsg',false,'Type your name first.');
+async function doLogin(){if(lbusy)return;const nm=($('#lu').value||'').trim();if(APPM&&nm&&$('#lp').value)OFF.cred={n:nm,p:$('#lp').value};if(!nm)return pwShow('lu','lmsg',false,'Type your name first.');
  if(unext>Date.now())return pwShow('lp','lmsg',false,'⏳ Too many wrong tries. Wait '+Math.ceil((unext-Date.now())/1000)+' seconds, then try again.');
  const s=findStaff(nm);if(!s){if(!$('#lp').value)return pwShow('lp','lmsg',false,'Type your password / PIN too.');ufail++;unext=Date.now()+(DELAYS[Math.min(ufail,DELAYS.length-1)]||0)*1000;$('#lp').value='';db.log.push({ts:Date.now(),sid:null,who:'—',a:'Failed login',d:'name not recognised'});save();
   return pwShow('lp','lmsg',false,'✖ That name and password don’t match. Check how your name is spelled and try again.')}
@@ -776,7 +824,7 @@ function settingsView(){
  ${rxCard()}${prnCard()}${brCard()}<div class="card"><b>Appearance</b><p class="mut ln" style="margin:4px 0 0">Colour themes, fonts and text size are in the 🎨 Themes section.</p></div>`,lists:` ${listEdit('methods','Payment methods')}${listEdit('pcats','Product categories')}<div class="card"><b>Expense types</b><p class="mut ln" style="margin:4px 0 8px">${db.set.cats.length} types: ${db.set.cats.map(esc).join(', ')}.</p><button class="btn" onclick="go('exp',()=>{window.__etOpen=true})">Add or edit expense types</button></div>
  <div class="card"><b>Product codes (SKU)</b><p class="mut ln" style="margin:4px 0 8px">Shop SKUs look like <b>${esc(skuPre())}-DRI-0001</b>: your prefix, the first 3 letters of the category, then a number. You can still scan or type a maker’s barcode instead.</p><div class="form" style="flex-direction:column"><label class="fl"><span class="mut">SKU prefix (blank = shop initials)</span><input id="s_skp" value="${esc(s.skuPre||'')}" maxlength="6" placeholder="${esc(skuPre())}" style="width:120px"></label><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="s_ska" ${s.skuAuto?'checked':''}> Create a SKU automatically when a new product’s SKU is left blank</label><button class="btn" onclick="db.set.skuPre=$('#s_skp').value.replace(/[^A-Za-z0-9]/g,'').toUpperCase();db.set.skuAuto=$('#s_ska').checked;logit('Settings changed','SKU options');save();render()">Save SKU options</button><button class="btn" onclick="skuFill()">Create SKUs for products that have none</button></div></div>`,security:` <div class="card"><b>Staff</b><p class="mut">Add cashiers, reset PINs and view the activity trail.</p><button class="btn" onclick="go('staff')">Open Staff &amp; activity</button></div>
  ${secCard()}
- <div class="card"><b>Password recovery</b><p class="mut ln" style="margin:4px 0 8px">Staff who forget their password can reset it from the login screen, approved by an owner or manager, or with the shop recovery code. Accounts lock after ${MAXF} wrong tries in a row. ${me&&me.emailOK?'':'<br>📧 <a href="#" onclick="myDetails();return false">Add your own email</a> so you can also reset your password by email.'} ${s.rc?"✅ A recovery code is set up.":"<span class=\"bad\">⚠️ No recovery code yet. Create one so an owner can never be locked out for good.</span>"}</p><button class="btn" onclick="(async()=>{if(!db.set.rc||await uiConfirm('Create a new recovery code? The old one will stop working.','Create new code',false))newRc()})()">${s.rc?"Create a new recovery code":"Create recovery code"}</button></div>`,reports:` ${gmCard()}`,data:` ${bkCard()}<div class="card"><b>Shop database</b><p class="mut ln" style="margin:4px 0 8px">${cloud?(cstate=="offline"?(WEB0?"⚠️ Can’t reach the shop right now. The shop is locked until the connection is back.":"⚠️ Can’t reach the database right now. Changes are kept on this device and saved when the connection is back."):(cloud.web?"☁️ Everything (products, sales, customers, staff, expenses, deliveries, purchases, settings and the activity trail) is saved in the shop’s online database and appears on every phone or computer where staff log in to the Mictobystar website.":"☁️ Everything (products, sales, customers, staff, expenses, deliveries, purchases, settings and the activity trail) is saved in this page’s own database and appears on every device where you open this page signed in to Claude.")):(ONWEB?"💾 On the website, each phone or computer keeps its own copy of the shop data. Online backup (above) copies it to your hosting and Supabase.":"💾 The database isn’t available here, so data is saved only in this browser. Open this page inside Claude while signed in to use the shop database.")}</p>${cloud&&!cloud.web?`<button class="btn" onclick="cloudSave()">Save to database now</button> <span class="mut ln">This device: #${DEV.dn||"?"}</span>`:""}</div>
+ <div class="card"><b>Password recovery</b><p class="mut ln" style="margin:4px 0 8px">Staff who forget their password can reset it from the login screen, approved by an owner or manager, or with the shop recovery code. Accounts lock after ${MAXF} wrong tries in a row. ${me&&me.emailOK?'':'<br>📧 <a href="#" onclick="myDetails();return false">Add your own email</a> so you can also reset your password by email.'} ${s.rc?"✅ A recovery code is set up.":"<span class=\"bad\">⚠️ No recovery code yet. Create one so an owner can never be locked out for good.</span>"}</p><button class="btn" onclick="(async()=>{if(!db.set.rc||await uiConfirm('Create a new recovery code? The old one will stop working.','Create new code',false))newRc()})()">${s.rc?"Create a new recovery code":"Create recovery code"}</button></div>`,reports:` ${gmCard()}`,data:` ${appsCard()}${bkCard()}<div class="card"><b>Shop database</b><p class="mut ln" style="margin:4px 0 8px">${cloud?(cstate=="offline"?(WEB0?"⚠️ Can’t reach the shop right now. The shop is locked until the connection is back.":"⚠️ Can’t reach the database right now. Changes are kept on this device and saved when the connection is back."):(cloud.web?"☁️ Everything (products, sales, customers, staff, expenses, deliveries, purchases, settings and the activity trail) is saved in the shop’s online database and appears on every phone or computer where staff log in to the Mictobystar website.":"☁️ Everything (products, sales, customers, staff, expenses, deliveries, purchases, settings and the activity trail) is saved in this page’s own database and appears on every device where you open this page signed in to Claude.")):(ONWEB?"💾 On the website, each phone or computer keeps its own copy of the shop data. Online backup (above) copies it to your hosting and Supabase.":"💾 The database isn’t available here, so data is saved only in this browser. Open this page inside Claude while signed in to use the shop database.")}</p>${cloud&&!cloud.web?`<button class="btn" onclick="cloudSave()">Save to database now</button> <span class="mut ln">This device: #${DEV.dn||"?"}</span>`:""}</div>
  <div class="card"><b>Data &amp; backup</b><p class="mut">${db.products.length} products · ${db.customers.length} customers · ${db.sales.length} sales · ${db.expenses.length} expenses · ${db.suppliers.length} suppliers · ${db.pos.length} purchase orders · ${db.staff.length} staff</p>${ONWEB?'<p class="mut ln" style="margin:0">Everything runs online from the host. Nothing is stored on this phone or computer.</p>':`<div class="form"><button class="btn" onclick="showBackup()">Create &amp; copy backup</button></div><textarea id="bk" rows="3" readonly placeholder="Your backup appears here"></textarea><p class="mut" style="margin-bottom:4px">Restore from a backup (replaces everything):</p><textarea id="rs" rows="3" placeholder="Paste backup here"></textarea><div class="form" style="margin-top:6px"><button class="btn" onclick="restoreData()">Restore</button></div>`}</div>
  <div class="card"><b>Danger zone</b><div class="form" style="margin-top:8px"><button class="btn del" onclick="clearLog()">Clear activity trail</button><button class="btn del" onclick="resetShop('sales')">Reset sales &amp; expenses</button><button class="btn del" onclick="resetShop('all')">Erase everything</button></div></div>`,look:lookSettings()},LB={shop:'🏪 Shop',lists:'🗂️ Lists & products',reports:'📤 Reports & email',security:'🔐 Security',data:'💾 Data & backup',look:'🎨 Themes'};
  if(!SEC[sset])sset='shop';return `<div class="stack"><div class="chips">${Object.keys(LB).map(k=>`<button class="${k==sset?'on':''}" onclick="sset='${k}';render()">${LB[k]}</button>`).join('')}</div>${SEC[sset]}</div>`}
@@ -2121,7 +2169,7 @@ function rxPrint(){const r=$('#receipt');r.className='';r.innerHTML=rcptHtml(rxS
 new MutationObserver(()=>{if(!$('#dlg').classList.contains('on'))$('#dlgc').classList.remove('wide')}).observe(document.getElementById('dlg'),{attributes:true,attributeFilter:['class']});
 /* ---------- receipt printing (website) ---------- */
 async function printRcpt(){const r=$('#receipt');if(!r||!r.innerHTML.trim())return;
- if(WEB0&&cloud&&cloud.web){if(netLocked())return;if(!await netSaved())return toast('⚠️ Not printed','This is not saved in the shop yet, so it can’t be printed. Check the internet connection and try again.')}
+ if(WEB0&&cloud&&cloud.web&&!APPM){if(netLocked())return;if(!await netSaved())return toast('⚠️ Not printed','This is not saved in the shop yet, so it can’t be printed. Check the internet connection and try again.')}
  const pz=db.set.paper||'80',inv=r.classList.contains('inv'),W={'80':'72mm','58':'48mm'}[pz];
  let st=$('#prnSt');if(!st){st=document.createElement('style');st.id='prnSt';document.head.appendChild(st)}
  r.classList.toggle('invroll',!!(inv&&W));st.textContent='@media print{@page{'+(W?'margin:0':'size:A4;margin:12mm')+'}#receipt{'+(W?'width:'+W+'!important;margin:0 '+(pz=='58'?'5mm':'4mm')+'!important;padding:3mm 0!important;font-size:'+(pz=='58'?'10.5px':'12px')+'!important':(inv?'width:100%!important':'width:90mm!important;margin:0 auto!important'))+'}}';
@@ -2172,6 +2220,10 @@ async function sbkRestore(src,idv,at){if(!me||me.role!='owner')return;
  if(!await uiConfirm(`Replace the WHOLE shop, for everyone, with the backup from ${fdt(Date.parse(at))}? A backup of the shop as it is now is made first. Everyone, on every phone and computer, will need to log in again.`,'Restore this backup'))return;
  try{logit('Restored online backup','from '+fdt(Date.parse(at)));save();await sleep(800);const j=await bkFetch('/api/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:src,id:idv})});
   await uiAlert('✔ The shop was restored from the backup of '+fdt(Date.parse(at))+'. Log in again.');sessClear();location.reload()}catch(e){uiAlert('⚠️ Restore failed: '+e.message)}}
+/* the Windows and Android apps (built from the mictobystar-apps branch) */
+const APPDL='https://github.com/renatelfarms-netizen/POS/releases/download/mictobystar-apps/';
+function appsCard(){if(!ONWEB)return '';let w='';try{w=localStorage.getItem('mb-app')||''}catch(e){}
+ return `<div class="card"><b>📲 Apps for Windows and Android</b><p class="mut ln" style="margin:4px 0 8px">The apps open this same shop and keep working without internet: sales and other work done offline are kept on that device and sent to the shop when the internet is back. Open the app once with internet and log in before using it offline.</p><div class="form"><a class="btn" href="${APPDL}Mictobystar-Setup.exe" target="_blank" rel="noopener">💻 Download for Windows</a><a class="btn" href="${APPDL}Mictobystar.apk" target="_blank" rel="noopener">📱 Download for Android</a></div><p class="mut ln" style="margin:8px 0 0">${APPM?'✔ This device is using the '+(w=='windows'?'Windows':w=='android'?'Android':'')+' app. It keeps a copy of the shop for offline use.':'This is the website in a browser: it needs internet and keeps nothing on the device.'}</p></div>`}
 function bkCard(){if(ONWEB){const can=me&&['owner','manager'].includes(me.role),own=me&&me.role=='owner';
  return `<div class="card"><b>🌐 Online backup (hosting + Supabase)</b><p class="mut ln" style="margin:4px 0 8px">The website backs up the whole shop by itself every 10 minutes when something has changed, on your Hostinger hosting and in Supabase. Nothing is backed up on phones or computers. Backups from the last 2 days are all kept, then one a day for 90 days.</p>
  ${can?`<div class="form"><button class="btn" onclick="sbkNow(this)">Back up now</button><button class="btn" onclick="sbkShow()">${own?'Restore from online backup':'See online backups'}</button></div><div id="bklist" style="margin-top:8px">${sbkHtml()}</div>`:'<p class="mut ln" style="margin:0">Only the owner or a manager can see the backups.</p>'}</div>`}

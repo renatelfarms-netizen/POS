@@ -620,6 +620,16 @@ http.createServer((req, res) => {
       ]
     }));
   }
+  // The Windows and Android apps: their service worker (keeps the page on the device for offline use) and the
+  // file that lets the Android app show this site full screen.
+  if (url === '/sw.js' || url === '/.well-known/assetlinks.json') {
+    try {
+      const sw = url === '/sw.js';
+      const buf = fs.readFileSync(path.join(__dirname, sw ? 'sw.js' : 'assetlinks.json'));
+      res.writeHead(200, Object.assign({ 'Content-Type': sw ? 'text/javascript; charset=utf-8' : 'application/json', 'Cache-Control': 'no-cache' }, sw ? { 'Service-Worker-Allowed': '/' } : {}, HEADERS));
+      return res.end(req.method === 'HEAD' ? undefined : buf);
+    } catch (e) { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('Not found'); }
+  }
   // The staff POS (a single-page app) at /pos; any other address goes there.
   if (!(url === '/pos' || url.startsWith('/pos/'))) { res.writeHead(302, { Location: '/pos' }); return res.end(); }
   try {
