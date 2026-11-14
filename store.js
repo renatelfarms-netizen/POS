@@ -594,8 +594,8 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
           if (!to) return send(res, 400, { error: 'That phone number is not valid.' });
           if (text.length < 5) return send(res, 400, { error: 'Type the message.' });
           try { await sendSms(to, fill(text, {})); } catch (e) { console.log('delivery sms: ' + e.message); return send(res, 502, { error: e.message }); }
-          const L = { rider: 'job sent to rider', out: 'customer told: on the way', courier: 'customer told: sent via courier', courierjob: 'job sent to courier', done: 'customer told: delivered', note: 'instructions sent' };
-          serverLog('Delivery SMS', '#' + did + ' · ' + (L[kind] || kind) + ' · to ' + mask(to) + ' · “' + text.slice(0, 70) + (text.length > 70 ? '…' : '') + '”', st);
+          const L = { rider: 'job sent to rider', out: 'customer told: on the way', courier: 'customer told: sent via courier', courierjob: 'job sent to courier', done: 'customer told: delivered', note: 'instructions sent', adv: 'customer told: payment received' };
+          serverLog(kind === 'adv' ? 'Advance payment SMS' : 'Delivery SMS', (kind === 'adv' ? 'customer #' : '#') + did + ' · ' + (L[kind] || kind) + ' · to ' + mask(to) + ' · “' + text.slice(0, 70) + (text.length > 70 ? '…' : '') + '”', st);
           return send(res, 200, { sent: true, to: mask(to) });
         }
         const need = url.includes('/order') ? 'orders' : url.includes('/customer') ? 'customers' : url.endsWith('/pay') || url.includes('/sms') ? 'pay' : '';
