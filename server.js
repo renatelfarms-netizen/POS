@@ -1,6 +1,8 @@
 'use strict';
 // Web server for the Mictobystar shop (a separate shop with its own database, on its own website).
-// - / is the online shop (store.html, store.js); the staff POS (index.html) is at /pos.
+// - POS only: there is no online shop. The staff POS (index.html) is at /pos, and every other page goes there.
+//   store.js is still loaded because the POS uses it for SMS (receipts, reminders, delivery texts) and for the
+//   receipt (/r/…) and invoice (/i/…) pages customers open from those texts.
 // - Shared shop database: devices that joined with the shop code read and write one
 //   live copy of the shop in Supabase through /api/db.
 // - Online backup: the shop sends its data here; the server keeps a copy on the
@@ -557,16 +559,17 @@ async function photoServe(req, res, key) {
 }
 
 // ---- online shop (/store): see store.js ----
-const shopStore = require('./store')({ sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS, caller });
+const shopStore = require('./store')({ sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS, caller, posOnly: true });
+// The only parts of the shop API this POS uses: SMS settings and texts, and credit payments to approve.
+const POS_STORE_API = /^\/api\/store\/admin\/(sms(\/(receipt|dlv|test))?|claims|claim|credit)$/;
 
 http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0];
   if (url.startsWith('/api/store/')) {
+    if (!POS_STORE_API.test(url)) return send(res, 404, { error: 'This shop has no online shop.' });
     shopStore.api(req, res, url).catch((e) => { console.error(e); send(res, 500, { error: 'Server error.' }); });
     return;
   }
-  // The home page is the online shop; the staff POS is at /pos. Old /store links keep working.
-  if ((url === '/' || url === '/store' || url.startsWith('/store/')) && (req.method === 'GET' || req.method === 'HEAD')) return shopStore.page(req, res);
   const rm = url.match(/^\/r\/([A-Za-z0-9._-]{4,40})$/);
   if (rm && (req.method === 'GET' || req.method === 'HEAD')) { shopStore.receiptPage(req, res, rm[1]).catch((e) => { console.error(e); res.writeHead(500); res.end(); }); return; }
   const iv = url.match(/^\/i\/([A-Za-z0-9._-]{4,40})$/);
@@ -582,9 +585,9 @@ http.createServer((req, res) => {
     return res.end();
   }
   if (url === '/robots.txt') {
-    // Search engines may list the shop once real payments are on; the POS and the API are never listed.
+    // A staff-only site: search engines are asked not to list it.
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    return res.end(shopStore.isLive() ? 'User-agent: *\nAllow: /$\nDisallow: /pos\nDisallow: /api/\nDisallow: /store/\n' : 'User-agent: *\nDisallow: /\n');
+    return res.end('User-agent: *\nDisallow: /\n');
   }
   // App icon and "Add to Home screen" details
   const ICONS = { '/icon-192.png': 'icon-192.png', '/icon-512.png': 'icon-512.png', '/apple-touch-icon.png': 'apple-touch-icon.png', '/apple-touch-icon-precomposed.png': 'apple-touch-icon.png', '/favicon.ico': 'icon-192.png' };
@@ -617,8 +620,8 @@ http.createServer((req, res) => {
       ]
     }));
   }
-  // The staff POS (a single-page app) at /pos; any other address goes to the shop.
-  if (!(url === '/pos' || url.startsWith('/pos/'))) { res.writeHead(302, { Location: '/' }); return res.end(); }
+  // The staff POS (a single-page app) at /pos; any other address goes there.
+  if (!(url === '/pos' || url.startsWith('/pos/'))) { res.writeHead(302, { Location: '/pos' }); return res.end(); }
   try {
     const body = page();
     res.writeHead(200, Object.assign({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }, HEADERS));

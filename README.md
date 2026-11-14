@@ -1,6 +1,6 @@
 # Mictobystar POS
 
-This branch (`mictobystar`) is the Mictobystar shop: a separate shop from Renatel Shop, with its own website, its own Supabase project (`mictobystar`) and its own backups and photos on the hosting (`~/mictobystar-backups`, `~/mictobystar-photos`). It shares no data with renatel.shop. Every push to this branch deploys to the Mictobystar website only. `SITE_URL` on the hosting must be the shop's address (it is used in SMS receipt and invoice links): change it when the domain changes.
+This branch (`mictobystar`) is the Mictobystar shop: a separate shop from Renatel Shop, with its own website, its own Supabase project (`mictobystar`) and its own backups and photos on the hosting (`~/mictobystar-backups`, `~/mictobystar-photos`). It shares no data with renatel.shop. **Mictobystar is POS only: there is no online shop.** The home page opens the POS (`/pos`), the customer shop pages and their API are switched off in `server.js` (`posOnly`), and the old 🌐 Online shop menu is a 📱 SMS menu for the owner (SMS receipts, credit reminders, delivery texts). The Online shop, customer accounts and Paystack sections below describe the main POS and do not apply here; receipt (`/r/…`) and invoice (`/i/…`) links in texts still work. Every push to this branch deploys to the Mictobystar website only. `SITE_URL` on the hosting must be the shop's address (it is used in SMS receipt and invoice links): change it when the domain changes.
 
 A point-of-sale system for a small retail shop, in a single file (`index.html`). No build step.
 

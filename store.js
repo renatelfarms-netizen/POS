@@ -33,6 +33,7 @@ module.exports = function store(d) {
   // each shop's signed links and customer logins apart, and the platform runs the reminder job (d.noTimers).
   const MULTI = !!d.multi, BASE = () => (d.base ? d.base() : ''), SCOPE = () => (d.scope ? d.scope() : '');
   const SHOPURL = () => BASE() + (MULTI ? '/shop' : '/');
+  const POS_ONLY = !!d.posOnly; // no online shop: receipts and invoices carry no "Shop online" link
   const ENVKEY = MULTI ? '' : (process.env.PAYSTACK_SECRET_KEY || '');
   const DEFHOST = d.host || 'localhost';
   // Shop settings kept in the POS (Settings saved in shop/main: set.store).
@@ -247,7 +248,7 @@ module.exports = function store(d) {
       ${line('Served by', sale.byName || '—', 'mut')}
       ${refunded < sale.total && credOf(sale) > 0 && sale.cust ? `<div class="note">Part of this receipt is on credit. <a href="${BASE()}/i/${invCode(k.b, sale.cust)}"><b>See what is left to pay</b></a></div>` : `<div class="paid">${refunded >= sale.total ? 'Refunded' : (sale.online ? '✓ Paid online' : '✓ Paid')}</div>`}
       <p class="thanks">${e(set.footer || 'Thank you!')}</p></div>
-      <p class="shopon"><a href="${SHOPURL()}">🛍️ Shop online at ${e(String(hostOf(req)).replace(/^https:\/\//, ''))}</a></p>`;
+      ${POS_ONLY ? '' : `<p class="shopon"><a href="${SHOPURL()}">🛍️ Shop online at ${e(String(hostOf(req)).replace(/^https:\/\//, ''))}</a></p>`}`;
     return html(200, body, 'Receipt #' + sale.id + ' · ' + (set.name || 'Mictobystar'));
   }
   const LOGO = (set) => MULTI ? `<span style="display:grid;place-items:center;width:52px;height:52px;border-radius:12px;background:#0b7a4b;color:#fff;font-weight:800;font-size:24px;flex:none">${String(set.name || 'S').trim().charAt(0).toUpperCase().replace(/[<&"]/g, '')}</span>` : '<img src="/logo-icon.svg" alt="" width="52" height="52">';
@@ -373,7 +374,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
       <div class="r b"><span>Balance to pay</span><span>${e(m(Math.max(0, ci.owed)))}</span></div>
       ${ci.owed > 0.004 && ci.due ? `<div class="r"><span>Pay by</span><span>${ci.due < today ? `<span class="bad">${e(dayStr(ci.due))} (overdue)</span>` : e(dayStr(ci.due))}</span></div>` : ''}
       ${tail}</div>
-      <p class="shopon"><a href="${SHOPURL()}">🛍️ Shop online at ${e(String(hostOf(req)).replace(/^https:\/\//, ''))}</a></p>`;
+      ${POS_ONLY ? '' : `<p class="shopon"><a href="${SHOPURL()}">🛍️ Shop online at ${e(String(hostOf(req)).replace(/^https:\/\//, ''))}</a></p>`}`;
     return html(err ? 400 : 200, body, 'Invoice · ' + (set.name || 'Mictobystar'));
   }
 
