@@ -1,8 +1,8 @@
 {
-  "name": "renatel-shop-web",
+  "name": "mictobystar-web",
   "version": "1.0.0",
   "private": true,
-  "description": "Serves the Renatel Shop POS page on the web",
+  "description": "Serves the Mictobystar POS page on the web",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

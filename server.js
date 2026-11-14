@@ -1,6 +1,6 @@
 'use strict';
-// Web server for renatel.shop.
-// - renatel.shop/ is the online shop (store.html, store.js); the staff POS (index.html) is at /pos.
+// Web server for the Mictobystar shop (a separate shop with its own database, on its own website).
+// - / is the online shop (store.html, store.js); the staff POS (index.html) is at /pos.
 // - Shared shop database: devices that joined with the shop code read and write one
 //   live copy of the shop in Supabase through /api/db.
 // - Online backup: the shop sends its data here; the server keeps a copy on the
@@ -10,8 +10,8 @@
 //   SUPABASE_URL           e.g. https://xxxx.supabase.co
 //   SUPABASE_KEY           the project's publishable key (not secret)
 //   SUPABASE_BACKUP_TOKEN  secret token; Supabase only accepts backups with it
-//   BACKUP_DIR             optional, defaults to ~/renatel-backups
-//   PHOTO_DIR              optional, defaults to ~/renatel-photos (cache of product photos)
+//   BACKUP_DIR             optional, defaults to ~/mictobystar-backups
+//   PHOTO_DIR              optional, defaults to ~/mictobystar-photos (cache of product photos)
 //   PAYSTACK_SECRET_KEY    optional; turns on real online payments in the online shop (store.js)
 const http = require('http');
 const fs = require('fs');
@@ -23,7 +23,7 @@ const crypto = require('crypto');
 
 const PAGE = path.join(__dirname, 'index.html');
 const PORT = process.env.PORT || 3000;
-const BACKUP_DIR = process.env.BACKUP_DIR || path.join(os.homedir(), 'renatel-backups');
+const BACKUP_DIR = process.env.BACKUP_DIR || path.join(os.homedir(), 'mictobystar-backups');
 const MAX_BODY = 25 * 1024 * 1024;
 
 const HEADERS = {
@@ -301,9 +301,9 @@ async function login(req, res) {
   const s = findStaff(shop.staff || [], name);
   if (!s || !(await pwOK(pw, s.pin))) {
     console.log('login failed: ' + (s ? 'wrong password for ' + s.name : 'no staff member called "' + nmz(name) + '"'));
-    serverLog('Failed login', s ? 'wrong password · on renatel.shop' : 'name not recognised: “' + name.slice(0, 40) + '” · on renatel.shop', s);
+    serverLog('Failed login', s ? 'wrong password · on the website' : 'name not recognised: “' + name.slice(0, 40) + '” · on the website', s);
     failed(ip, 20); failed(nk, 6); return send(res, 401, { error: 'That name and password don’t match. Check how your name is spelled and try again.' }); }
-  if (s.locked) { serverLog('Failed login', 'account is locked · on renatel.shop', s); return send(res, 423, { error: s.name + '’s account is locked after too many wrong tries. Ask the owner or a manager to unlock it.' }); }
+  if (s.locked) { serverLog('Failed login', 'account is locked · on the website', s); return send(res, 423, { error: s.name + '’s account is locked after too many wrong tries. Ask the owner or a manager to unlock it.' }); }
   loginFails.delete(nk);
   console.log('login ok: ' + s.name);
   const dev = cleanDev(msg.dev);
@@ -323,13 +323,13 @@ async function resetPw(req, res) {
   const s = findStaff(shop.staff || [], name);
   if (!s) return send(res, 400, { error: 'No staff member with that name. Type the name exactly as the owner added it.' });
   if (!shop.set || !shop.set.rc) return send(res, 400, { error: 'This shop has no recovery code yet. Ask the owner.' });
-  if (!code || !(await pwOK('rc:' + code, shop.set.rc))) { console.log('reset failed: wrong recovery code for ' + s.name); serverLog('Failed recovery code', 'on renatel.shop', s); failed(ip, 5); return send(res, 401, { error: 'That recovery code is not right.' }); }
+  if (!code || !(await pwOK('rc:' + code, shop.set.rc))) { console.log('reset failed: wrong recovery code for ' + s.name); serverLog('Failed recovery code', 'on the website', s); failed(ip, 5); return send(res, 401, { error: 'That recovery code is not right.' }); }
   const rule = pwRule(pw, shop.set); if (rule) return send(res, 400, { error: rule });
   await setPin(shop, s.id, pw);
-  console.log('password reset with the recovery code: ' + s.name); serverLog('Password reset', 'with the shop recovery code · on renatel.shop', s);
+  console.log('password reset with the recovery code: ' + s.name); serverLog('Password reset', 'with the shop recovery code · on the website', s);
   return send(res, 200, { ok: true, token: makeToken(s.id, cleanDev(msg.dev)), sid: s.id, name: s.name, exp: Date.now() + SESSION_DAYS * 864e5 });
 }
-// ---- email from the shop's own mailbox (shop@renatel.shop) through the Hostinger Mail API ----
+// ---- email from the shop's own mailbox through the Hostinger Mail API ----
 // The API key and mailbox id are kept privately in Supabase (site_secrets), read with the server token.
 let mailCache = { at: 0, cfg: null };
 async function mailCfg() {
@@ -344,7 +344,7 @@ const maskEmail = (e) => { const [u, d] = String(e).split('@'); return (u || '')
 async function sendEmail({ to, subject, text, html, attachments }) {
   const cfg = await mailCfg();
   if (!cfg) throw new Error('The shop email is not set up.');
-  let shopName = 'Renatel Shop'; try { const sh = await shopMain(false); if (sh && sh.set && sh.set.name) shopName = sh.set.name; } catch (e) {}
+  let shopName = 'Mictobystar'; try { const sh = await shopMain(false); if (sh && sh.set && sh.set.name) shopName = sh.set.name; } catch (e) {}
   const body = { to, subject: String(subject || '').slice(0, 200), displayName: shopName };
   if (text) body.text = text; if (html) body.html = html;
   if (attachments && attachments.length) body.attachments = attachments.map((a) => ({ filename: String(a.filename || 'file').slice(0, 120), content: a.content, contentType: a.contentType || a.mimeType || 'application/octet-stream' }));
@@ -373,7 +373,7 @@ async function resetCode(req, res) {
   let shop; try { shop = await shopMain(true); } catch (e) { return send(res, 502, { error: 'Could not reach the shop database. Try again in a moment.' }); }
   const s = shop && findStaff(shop.staff || [], String(msg.name || '').slice(0, 80));
   if (!s) { failed(ip, 10); return send(res, 400, { error: 'No staff member with that name. Type your name as the owner added it.' }); }
-  const nm = (shop.set && shop.set.name) || 'Renatel Shop', ph = shopStore.normPhone(s.phone), smsOk = !!ph && await shopStore.smsReady().catch(() => false);
+  const nm = (shop.set && shop.set.name) || 'Mictobystar', ph = shopStore.normPhone(s.phone), smsOk = !!ph && await shopStore.smsReady().catch(() => false);
   const via = msg.via === 'email' ? 'email' : msg.via === 'sms' ? 'sms' : (smsOk ? 'sms' : 'email');
   if (via === 'sms' && !smsOk) return send(res, 400, { error: ph ? 'SMS codes are not set up yet. Choose “Email me a code” or the recovery code.' : 'No phone number is saved for ' + s.name + '. Choose “Email me a code”, or ask the owner.' });
   if (via === 'email' && !emailOK(s.email)) return send(res, 400, { error: 'No email is saved for ' + s.name + '.' + (smsOk ? ' Choose “Text me a code” instead.' : ' Use the recovery code, or ask the owner or a manager.') });
@@ -382,7 +382,7 @@ async function resetCode(req, res) {
   try {
     if (via === 'sms') await shopStore.sendSms(ph, shopStore.otpSms(nm, code));
     else await sendEmail({ to: [s.email], subject: nm + ' - password reset code: ' + code,
-      text: 'Hello ' + s.name + ',\n\nSomeone asked to reset your password for ' + nm + '. Your reset code is:\n\n    ' + code + '\n\nIt expires in 15 minutes. If this wasn’t you, ignore this email and tell the shop owner.\n\n-- \nshop@renatel.shop' });
+      text: 'Hello ' + s.name + ',\n\nSomeone asked to reset your password for ' + nm + '. Your reset code is:\n\n    ' + code + '\n\nIt expires in 15 minutes. If this wasn’t you, ignore this email and tell the shop owner.\n\n-- \n' + nm });
   } catch (e) { await sbCall('otp_mark', { p_k: 'staff:' + s.id, p_try: false }).catch(() => {}); console.log('reset code ' + via + ': ' + e.message); return send(res, 502, { error: 'The code could not be sent' + (via === 'sms' ? ' by SMS' : ' by email') + '. Try again, or use the recovery code.' }); }
   const to = via === 'sms' ? ph.slice(0, 3) + '•••' + ph.slice(-3) : maskEmail(s.email);
   serverLog('Reset code ' + (via === 'sms' ? 'sent by SMS' : 'emailed'), 'to ' + to, s);
@@ -398,9 +398,9 @@ async function resetByEmail(req, res) {
   const r = await shopStore.otpCheck('staff:' + s.id, msg.code);
   if (r === 'expired') return send(res, 400, { error: 'That code has expired or was never sent. Send a new code.' });
   if (r === 'locked') return send(res, 429, { error: 'Too many wrong codes. Send a new code.' });
-  if (r !== 'ok') { serverLog('Failed reset code', r + ' tries left · on renatel.shop', s); return send(res, 401, { error: r > 0 ? 'That code is not right. ' + r + (r === 1 ? ' try' : ' tries') + ' left.' : 'That code is not right, and that was the last try. Send a new code.' }); }
+  if (r !== 'ok') { serverLog('Failed reset code', r + ' tries left · on the website', s); return send(res, 401, { error: r > 0 ? 'That code is not right. ' + r + (r === 1 ? ' try' : ' tries') + ' left.' : 'That code is not right, and that was the last try. Send a new code.' }); }
   await setPin(shop, s.id, pw);
-  console.log('password reset by code: ' + s.name); serverLog('Password reset', 'with a one-time code · on renatel.shop', s);
+  console.log('password reset by code: ' + s.name); serverLog('Password reset', 'with a one-time code · on the website', s);
   return send(res, 200, { ok: true, token: makeToken(s.id, cleanDev(msg.dev)), sid: s.id, name: s.name, exp: Date.now() + SESSION_DAYS * 864e5 });
 }
 // Who is calling: a logged-in staff member (session token) or a device with the shop code.
@@ -539,7 +539,7 @@ async function api(req, res, url) {
 }
 
 // ---- product photos served at /img/<key> (cached on the hosting, outside the website folder) ----
-const PHOTO_DIR = process.env.PHOTO_DIR || path.join(os.homedir(), 'renatel-photos');
+const PHOTO_DIR = process.env.PHOTO_DIR || path.join(os.homedir(), 'mictobystar-photos');
 const PHOTO_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 function photoCacheSave(key, mime, buf) {
   fsp.mkdir(PHOTO_DIR, { recursive: true }).then(() => fsp.writeFile(path.join(PHOTO_DIR, key + '.' + PHOTO_EXT[mime]), buf)).catch((e) => console.error('photo cache', e.message));
@@ -556,7 +556,7 @@ async function photoServe(req, res, key) {
   } catch (e) { console.error('photo get', e.message); res.writeHead(502); return res.end(); }
 }
 
-// ---- online shop (renatel.shop/store): see store.js ----
+// ---- online shop (/store): see store.js ----
 const shopStore = require('./store')({ sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS, caller });
 
 http.createServer((req, res) => {
@@ -565,7 +565,7 @@ http.createServer((req, res) => {
     shopStore.api(req, res, url).catch((e) => { console.error(e); send(res, 500, { error: 'Server error.' }); });
     return;
   }
-  // renatel.shop is the online shop; the staff POS is at /pos. Old /store links keep working.
+  // The home page is the online shop; the staff POS is at /pos. Old /store links keep working.
   if ((url === '/' || url === '/store' || url.startsWith('/store/')) && (req.method === 'GET' || req.method === 'HEAD')) return shopStore.page(req, res);
   const rm = url.match(/^\/r\/([A-Za-z0-9._-]{4,40})$/);
   if (rm && (req.method === 'GET' || req.method === 'HEAD')) { shopStore.receiptPage(req, res, rm[1]).catch((e) => { console.error(e); res.writeHead(500); res.end(); }); return; }
@@ -588,7 +588,7 @@ http.createServer((req, res) => {
   }
   // App icon and "Add to Home screen" details
   const ICONS = { '/icon-192.png': 'icon-192.png', '/icon-512.png': 'icon-512.png', '/apple-touch-icon.png': 'apple-touch-icon.png', '/apple-touch-icon-precomposed.png': 'apple-touch-icon.png', '/favicon.ico': 'icon-192.png' };
-  // Renatel Shop logo (SVG): /logo.svg, /logo-white.svg, /logo-icon.svg
+  // Mictobystar logo (SVG): /logo.svg, /logo-white.svg, /logo-icon.svg
   const LOGOS = { '/logo.svg': 'logo.svg', '/logo-white.svg': 'logo-white.svg', '/logo-icon.svg': 'logo-icon.svg' };
   if (LOGOS[url]) {
     fs.readFile(path.join(__dirname, 'icons', LOGOS[url]), (e, buf) => {
@@ -609,7 +609,7 @@ http.createServer((req, res) => {
   if (url === '/manifest.webmanifest') {
     res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'public, max-age=86400' });
     return res.end(JSON.stringify({
-      name: 'Renatel Shop POS', short_name: 'Renatel POS', start_url: '/pos', scope: '/', display: 'standalone',
+      name: 'Mictobystar POS', short_name: 'Mictobystar', start_url: '/pos', scope: '/', display: 'standalone',
       background_color: '#f6f5f1', theme_color: '#0f6e56',
       icons: [
         { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
@@ -628,4 +628,4 @@ http.createServer((req, res) => {
     res.writeHead(500, { 'Content-Type': 'text/plain' });
     res.end('The shop page is missing.');
   }
-}).listen(PORT, () => console.log('Renatel Shop running on port ' + PORT + (process.env.BACKUP_CODE ? ', online backup on' : ', online backup not set up')));
+}).listen(PORT, () => console.log('Mictobystar running on port ' + PORT + (process.env.BACKUP_CODE ? ', online backup on' : ', online backup not set up')));

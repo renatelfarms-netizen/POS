@@ -1,5 +1,5 @@
 'use strict';
-// Online shop at renatel.shop (also /store).
+// Mictobystar online shop (also /store).
 // Customers pick products, pay online, and the server records the sale in the POS exactly like a till sale:
 //   - stock is deducted from the product (same `stock` field the tills use)
 //   - a sale record is added (seller: "Online shop", method: "Online")
@@ -34,7 +34,7 @@ module.exports = function store(d) {
   const MULTI = !!d.multi, BASE = () => (d.base ? d.base() : ''), SCOPE = () => (d.scope ? d.scope() : '');
   const SHOPURL = () => BASE() + (MULTI ? '/shop' : '/');
   const ENVKEY = MULTI ? '' : (process.env.PAYSTACK_SECRET_KEY || '');
-  const DEFHOST = d.host || 'renatel.shop';
+  const DEFHOST = d.host || 'localhost';
   // Shop settings kept in the POS (Settings saved in shop/main: set.store).
   const storeSet = (shop) => Object.assign({ open: true, msg: '', pickup: true, delivery: true, dnote: '' }, (shop && shop.set && shop.set.store) || {});
   // Staff permissions for the online shop: the owner has all; others as granted in Staff → Access (perms.web).
@@ -198,7 +198,7 @@ module.exports = function store(d) {
     await sbCall('otp_mark', { p_k: key, p_try: false });
     return 'ok';
   }
-  const otpSms = (shopName, code) => (shopName || 'Renatel Shop') + ': your password reset code is ' + code + '. It expires in 15 minutes. Never share this code with anyone.';
+  const otpSms = (shopName, code) => (shopName || 'Mictobystar') + ': your password reset code is ' + code + '. It expires in 15 minutes. Never share this code with anyone.';
   const smsReady = async () => { const c = await smsCfg(false); return !!(c.token && c.sender); };
   const DEF_SMS = 'Thank you for shopping at {shop}, {name}! Receipt #{no}, GHS {total}. View it here: {link}';
   // Thank-you SMS with the receipt link. Returns {sent, to} or throws.
@@ -208,13 +208,13 @@ module.exports = function store(d) {
     const cr = credOf(sale);
     if (cr > 0 && sale.cust) { // a sale on credit: the SMS says how much is owed, by when, and links to the invoice
       const c = await custDoc(b, sale.cust), due = sale.due || (c && c.due) || '', ilink = host + BASE() + '/i/' + invCode(b, sale.cust);
-      const msg = fill(set.credSaleMsg || DEF_CRED_SALE, { shop: set.name || 'Renatel Shop', name: first, no: sale.id, total: Number(sale.total || 0).toFixed(2), credit: cr.toFixed(2), owed: Number((c && c.owed) || cr).toFixed(2), due: due ? dayStr(due) : 'the agreed date', link: ilink });
+      const msg = fill(set.credSaleMsg || DEF_CRED_SALE, { shop: set.name || 'Mictobystar', name: first, no: sale.id, total: Number(sale.total || 0).toFixed(2), credit: cr.toFixed(2), owed: Number((c && c.owed) || cr).toFixed(2), due: due ? dayStr(due) : 'the agreed date', link: ilink });
       await sendSms(phone, msg);
       const ph = normPhone(phone);
       serverLog('Credit SMS sent', '#' + sale.id + ' · GHS ' + cr.toFixed(2) + ' on credit' + (due ? ', pay by ' + dayStr(due) : '') + ' · to ' + mask(ph) + ' · ' + (b === 'acc' ? 'Accra' : 'Kumasi') + ' branch', by || WHO);
       return { sent: true, to: mask(ph), link: ilink, credit: true };
     }
-    const msg = String(set.smsMsg || DEF_SMS).replace(/\{shop\}/g, set.name || 'Renatel Shop').replace(/\{name\}/g, first).replace(/\{no\}/g, sale.id).replace(/\{total\}/g, Number(sale.total || 0).toFixed(2)).replace(/\{link\}/g, link)
+    const msg = String(set.smsMsg || DEF_SMS).replace(/\{shop\}/g, set.name || 'Mictobystar').replace(/\{name\}/g, first).replace(/\{no\}/g, sale.id).replace(/\{total\}/g, Number(sale.total || 0).toFixed(2)).replace(/\{link\}/g, link)
       .replace(/₵/g, 'S').replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
     await sendSms(phone, msg);
     const ph = normPhone(phone);
@@ -238,7 +238,7 @@ module.exports = function store(d) {
     const refunded = (sale.refunds || []).reduce((t, r) => t + (Number(r.amt || r.total || 0)), 0);
     const pays = (sale.pays || []).filter((p) => p.amt > 0);
     const bn = (set.brNames || {})[k.b] || (k.b === 'acc' ? 'Accra branch' : 'Kumasi branch');
-    const body = `<div class="box"><div class="head">${LOGO(set)}<div><h1>${e(set.name || 'Renatel Shop')}</h1><div class="mut">${e(bn)}${k.b === 'kum' && set.addr ? ' · ' + e(set.addr) : ''}${set.phone ? ' · <a href="tel:' + e(String(set.phone).replace(/[^\d+]/g, '')) + '">' + e(set.phone) + '</a>' : ''}</div></div></div>
+    const body = `<div class="box"><div class="head">${LOGO(set)}<div><h1>${e(set.name || 'Mictobystar')}</h1><div class="mut">${e(bn)}${k.b === 'kum' && set.addr ? ' · ' + e(set.addr) : ''}${set.phone ? ' · <a href="tel:' + e(String(set.phone).replace(/[^\d+]/g, '')) + '">' + e(set.phone) + '</a>' : ''}</div></div></div>
       <div class="meta"><div><b>Receipt #${e(sale.id)}</b><br><span class="mut">${e(when)}</span></div>${sale.custName ? `<div style="text-align:right"><span class="mut">Customer</span><br><b>${e(sale.custName)}</b></div>` : ''}</div>
       <table>${rows}</table>
       ${sale.disc ? line('Discount', '−' + m(sale.disc)) : ''}${sale.dfee ? line('Delivery fee', m(sale.dfee)) : ''}${line('Total', m(sale.total), 'b')}
@@ -248,7 +248,7 @@ module.exports = function store(d) {
       ${refunded < sale.total && credOf(sale) > 0 && sale.cust ? `<div class="note">Part of this receipt is on credit. <a href="${BASE()}/i/${invCode(k.b, sale.cust)}"><b>See what is left to pay</b></a></div>` : `<div class="paid">${refunded >= sale.total ? 'Refunded' : (sale.online ? '✓ Paid online' : '✓ Paid')}</div>`}
       <p class="thanks">${e(set.footer || 'Thank you!')}</p></div>
       <p class="shopon"><a href="${SHOPURL()}">🛍️ Shop online at ${e(String(hostOf(req)).replace(/^https:\/\//, ''))}</a></p>`;
-    return html(200, body, 'Receipt #' + sale.id + ' · ' + (set.name || 'Renatel Shop'));
+    return html(200, body, 'Receipt #' + sale.id + ' · ' + (set.name || 'Mictobystar'));
   }
   const LOGO = (set) => MULTI ? `<span style="display:grid;place-items:center;width:52px;height:52px;border-radius:12px;background:#0b7a4b;color:#fff;font-weight:800;font-size:24px;flex:none">${String(set.name || 'S').trim().charAt(0).toUpperCase().replace(/[<&"]/g, '')}</span>` : '<img src="/logo-icon.svg" alt="" width="52" height="52">';
   const RPAGE = (title, body) => `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${title.replace(/</g, '&lt;')}</title>${MULTI ? '' : '<link rel="icon" href="/logo-icon.svg">'}
@@ -269,7 +269,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
   const dayStr = (v) => { if (!isDay(v)) return ''; const [y, m, dd] = v.split('-').map(Number); return new Date(Date.UTC(y, m - 1, dd)).toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' }); };
   const DEF_CRED_SALE = 'Thank you for shopping at {shop}, {name}! Receipt #{no}, GHS {total}. GHS {credit} is on credit, to pay by {due}. Your invoice: {link}';
   const DEF_REMIND = 'Hello {name}, this is {shop}. Your credit balance of GHS {owed} {when}. Please pay, then tap I have paid on your invoice: {link}';
-  const SITE = () => (MULTI ? (d.siteUrl ? d.siteUrl() : 'https://' + DEFHOST) + BASE() : (process.env.SITE_URL || 'https://renatel.shop').replace(/\/+$/, ''));
+  const SITE = () => (MULTI ? (d.siteUrl ? d.siteUrl() : 'https://' + DEFHOST) + BASE() : (process.env.SITE_URL || 'http://localhost:3000').replace(/\/+$/, ''));
   const isig = (b, id) => crypto.createHmac('sha256', rsecret()).update('inv:' + b + ':' + id).digest('base64url').slice(0, 10);
   const invCode = (b, id) => (b === 'acc' ? 'a' : 'k') + Number(id).toString(36) + '.' + isig(b === 'acc' ? 'acc' : 'kum', Number(id));
   function readInv(code) {
@@ -293,7 +293,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
   }
   const pendingClaim = (b, id) => Object.values(claimDocs).find((x) => x && x.b === b && +x.cust === +id && x.status === 'pending' && Date.now() - x.ts < 3 * 864e5) || null;
   const whenText = (due, today) => (!due ? 'is now due' : due < today ? 'was due on ' + dayStr(due) : due === today ? 'is due today' : 'is due on ' + dayStr(due));
-  const remindText = (set, c, ci, link) => fill(set.credMsg || DEF_REMIND, { shop: set.name || 'Renatel Shop', name: String(c.name || '').trim().split(/\s+/)[0] || 'customer', owed: ci.owed.toFixed(2), due: ci.due ? dayStr(ci.due) : '', when: whenText(ci.due, accraDay(Date.now())), link, phone: set.phone || '' });
+  const remindText = (set, c, ci, link) => fill(set.credMsg || DEF_REMIND, { shop: set.name || 'Mictobystar', name: String(c.name || '').trim().split(/\s+/)[0] || 'customer', owed: ci.owed.toFixed(2), due: ci.due ? dayStr(ci.due) : '', when: whenText(ci.due, accraDay(Date.now())), link, phone: set.phone || '' });
   const mask = (ph) => ph.slice(0, 3) + '•••' + ph.slice(-3);
 
   // Every 10 minutes: from the reminder hour (Ghana time), text each customer whose credit is due or overdue,
@@ -367,14 +367,14 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         <label>Paid by<select name="method">${opts}</select></label>
         <label>Transaction ID or note (optional)<input name="ref" maxlength="80" placeholder="e.g. MoMo transaction ID"></label>
         <button type="submit">I have paid</button><p class="mut" style="font-size:13px;margin:8px 0 0">The shop checks the payment and confirms it. Reminders stop once it is confirmed.</p></form>`;
-    const body = `<div class="box"><div class="head">${LOGO(set)}<div><h1>${e(set.name || 'Renatel Shop')}</h1><div class="mut">${e(bn)}${set.phone ? ' · <a href="tel:' + e(String(set.phone).replace(/[^\d+]/g, '')) + '">' + e(set.phone) + '</a>' : ''}</div></div></div>
+    const body = `<div class="box"><div class="head">${LOGO(set)}<div><h1>${e(set.name || 'Mictobystar')}</h1><div class="mut">${e(bn)}${set.phone ? ' · <a href="tel:' + e(String(set.phone).replace(/[^\d+]/g, '')) + '">' + e(set.phone) + '</a>' : ''}</div></div></div>
       <div class="meta"><div><b>Credit invoice</b><br><span class="mut">${e(date(Date.now()))}</span></div><div style="text-align:right"><span class="mut">Customer</span><br><b>${e(c.name)}</b></div></div>
       ${rows ? '<table>' + rows + '</table>' : ''}
       <div class="r b"><span>Balance to pay</span><span>${e(m(Math.max(0, ci.owed)))}</span></div>
       ${ci.owed > 0.004 && ci.due ? `<div class="r"><span>Pay by</span><span>${ci.due < today ? `<span class="bad">${e(dayStr(ci.due))} (overdue)</span>` : e(dayStr(ci.due))}</span></div>` : ''}
       ${tail}</div>
       <p class="shopon"><a href="${SHOPURL()}">🛍️ Shop online at ${e(String(hostOf(req)).replace(/^https:\/\//, ''))}</a></p>`;
-    return html(err ? 400 : 200, body, 'Invoice · ' + (set.name || 'Renatel Shop'));
+    return html(err ? 400 : 200, body, 'Invoice · ' + (set.name || 'Mictobystar'));
   }
 
   // ---- orders (kept in their own collection; the tills ignore it) ----
@@ -463,8 +463,8 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
     if (o.phone) smsReceipt(b, sale, o.phone, o.host || 'https://' + DEFHOST).then((r) => { o.sms = r.to; }).catch((e) => console.log('order sms: ' + e.message));
     if (o.email) {
       const lines = items.map((i) => i.qty + ' × ' + i.name + '  ' + money(i.price * i.qty)).join('\n');
-      sendEmail({ to: [o.email], subject: (set.name || 'Renatel Shop') + ' - order ' + ref + ' confirmed',
-        text: 'Hello ' + o.name + ',\n\nThank you for your order. Receipt #' + saleId + '\n\n' + lines + '\n\nTotal paid: ' + money(o.total) + '\n' + (o.mode === 'delivery' ? 'We will call you on ' + o.phone + ' to arrange delivery to: ' + o.addr : 'Pick it up at our ' + BR[b].name + (b === 'kum' && set.addr ? ': ' + set.addr : '') + '. Show this email or your order number.') + '\n\n-- \n' + (set.name || 'Renatel Shop') + (set.phone ? ' · ' + set.phone : '') })
+      sendEmail({ to: [o.email], subject: (set.name || 'Mictobystar') + ' - order ' + ref + ' confirmed',
+        text: 'Hello ' + o.name + ',\n\nThank you for your order. Receipt #' + saleId + '\n\n' + lines + '\n\nTotal paid: ' + money(o.total) + '\n' + (o.mode === 'delivery' ? 'We will call you on ' + o.phone + ' to arrange delivery to: ' + o.addr : 'Pick it up at our ' + BR[b].name + (b === 'kum' && set.addr ? ': ' + set.addr : '') + '. Show this email or your order number.') + '\n\n-- \n' + (set.name || 'Mictobystar') + (set.phone ? ' · ' + set.phone : '') })
         .catch((e) => console.error('order email', e.message));
     }
     return o;
@@ -509,7 +509,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         const b = brOf(new URL(req.url, 'http://x').searchParams.get('b')), names = set.brNames || {};
         const list = await listed(b, false);
         const ss = storeSet(shop);
-        return send(res, 200, { store: { open: ss.open !== false, msg: ss.msg || '', pickup: ss.pickup !== false, delivery: ss.delivery !== false, dnote: ss.dnote || '' }, name: set.name || 'Renatel Shop', phone: set.phone || '', addr: b === 'kum' ? set.addr || '' : '', city: BR[b].city || (MULTI && b === 'kum' ? set.city || '' : ''), cur: set.cur || 'GH₵', mode: mode(),
+        return send(res, 200, { store: { open: ss.open !== false, msg: ss.msg || '', pickup: ss.pickup !== false, delivery: ss.delivery !== false, dnote: ss.dnote || '' }, name: set.name || 'Mictobystar', phone: set.phone || '', addr: b === 'kum' ? set.addr || '' : '', city: BR[b].city || (MULTI && b === 'kum' ? set.city || '' : ''), cur: set.cur || 'GH₵', mode: mode(),
           branch: b, branches: Object.fromEntries(brKeys().map((k) => [k, { name: names[k] || BR[k].name, city: BR[k].city || (MULTI && k === 'kum' ? set.city || '' : '') }])),
           products: list.map((p) => ({ id: p.id, name: p.name, cat: p.cat || '', unit: p.unit || 'pcs', price: p.price, left: avail(p), img: /^[a-f0-9]{24}$/.test(p.img || '') ? p.img : '' })).sort((x, y) => x.name.localeCompare(y.name)) });
       }
@@ -550,8 +550,8 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
             Object.assign(cl, { status: ok ? 'approved' : 'rejected', by: st.name, at: Date.now() }); if (ok) cl.got = amt; else cl.why = String(m.why || '').trim().slice(0, 120);
             await sbCall('shop_db_put', { p_col: CLM, p_id: 'cl' + id, p_data: cl }); claimDocs['cl' + id] = cl;
             const first = String(cl.name || '').trim().split(/\s+/)[0] || 'customer', bal = r2(Math.max(0, +m.bal || 0));
-            const text = ok ? fill('Thank you {name}! {shop} has received your payment of GHS {amt}. {rest}', { name: first, shop: set.name || 'Renatel Shop', amt: amt.toFixed(2), rest: bal > 0.004 ? 'Balance left: GHS ' + bal.toFixed(2) + '.' : 'Your account is fully paid.' })
-              : fill('Hello {name}, {shop} could not confirm your payment of GHS {amt}{why}. Please call {phone} or pay and tap I have paid again: {link}', { name: first, shop: set.name || 'Renatel Shop', amt: Number(cl.amt).toFixed(2), why: cl.why ? ' (' + cl.why + ')' : '', phone: set.phone || 'the shop', link: hostOf(req) + BASE() + '/i/' + invCode(cl.b, cl.cust) });
+            const text = ok ? fill('Thank you {name}! {shop} has received your payment of GHS {amt}. {rest}', { name: first, shop: set.name || 'Mictobystar', amt: amt.toFixed(2), rest: bal > 0.004 ? 'Balance left: GHS ' + bal.toFixed(2) + '.' : 'Your account is fully paid.' })
+              : fill('Hello {name}, {shop} could not confirm your payment of GHS {amt}{why}. Please call {phone} or pay and tap I have paid again: {link}', { name: first, shop: set.name || 'Mictobystar', amt: Number(cl.amt).toFixed(2), why: cl.why ? ' (' + cl.why + ')' : '', phone: set.phone || 'the shop', link: hostOf(req) + BASE() + '/i/' + invCode(cl.b, cl.cust) });
             let sms = false, smsErr = '';
             if (normPhone(cl.phone)) { try { await sendSms(cl.phone, text); sms = true; } catch (e) { smsErr = e.message; } }
             serverLog(ok ? 'Payment claim approved' : 'Payment claim rejected', cl.name + ' · ' + (ok ? 'received GHS ' + amt.toFixed(2) + ' (' + cl.method + (cl.ref ? ', ' + cl.ref : '') + ')' : 'claimed GHS ' + Number(cl.amt).toFixed(2) + (cl.why ? ' · ' + cl.why : '')) + (sms ? ' · customer told by SMS' : ''), st);
@@ -613,7 +613,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
           const token = m.token === undefined ? null : String(m.token).replace(/\s+/g, ''), sender = m.sender === undefined ? null : String(m.sender).trim();
           console.log('sms: settings change by ' + st.name + (token ? ' (new token ' + token.split('|')[0] + '|…, ' + token.length + ' chars)' : '') + (sender !== null ? ' sender "' + sender + '"' : ''));
           if (token && !/^[0-9]+\|[A-Za-z0-9]{20,120}$/.test(token)) return send(res, 400, { error: 'That doesn’t look like a USMS-GH API token. It looks like 1234|AbCd… : copy it with the copy icon on the USMS-GH Developers page.' });
-          if (sender !== null && sender && !/^[A-Za-z0-9 ]{2,11}$/.test(sender)) return send(res, 400, { error: 'The sender ID must be 2–11 letters or numbers (for example Renatelshop), exactly as approved in USMS-GH.' });
+          if (sender !== null && sender && !/^[A-Za-z0-9 ]{2,11}$/.test(sender)) return send(res, 400, { error: 'The sender ID must be 2–11 letters or numbers (for example Mictobystar), exactly as approved in USMS-GH.' });
           if (token) { try { await usms('/balance', null, token); } catch (e) { return send(res, 400, { error: 'USMS-GH did not accept this token (' + e.message + '). Regenerate it in USMS-GH → Developers and copy it again.' }); } }
           try {
             if (token !== null) await sbCall('site_secret_set', { p_name: 'usms_token', p_value: token });
@@ -674,7 +674,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
             for (const id of docIds) { const cur = await sbCall('shop_db_get', { p_col: col, p_id: id }); if (!cur) break; const r = (cur.recs || []).find((x) => x.id === o.dlvId); if (r) { was = r.status; r.status = 'Delivered'; r.deliveredTs = r.doneTs = Date.now(); await sbCall('shop_db_put', { p_col: col, p_id: id, p_data: cur }); break; } }
             const set = ((await shopMain(false)) || {}).set || {};
             if (was && was !== 'Delivered' && set.dlvDone !== false && normPhone(o.phone)) {
-              const msg = fill('Hello {name}, your {shop} order{no} has been delivered to {addr}. Thank you for shopping with us!', { name: String(o.name || '').split(/\s+/)[0] || 'customer', shop: set.name || 'Renatel Shop', no: o.saleId ? ' #' + o.saleId : '', addr: [o.addr, o.city].filter(Boolean).join(', ').slice(0, 90) || 'your address' });
+              const msg = fill('Hello {name}, your {shop} order{no} has been delivered to {addr}. Thank you for shopping with us!', { name: String(o.name || '').split(/\s+/)[0] || 'customer', shop: set.name || 'Mictobystar', no: o.saleId ? ' #' + o.saleId : '', addr: [o.addr, o.city].filter(Boolean).join(', ').slice(0, 90) || 'your address' });
               sendSms(o.phone, msg).then(() => serverLog('Delivery SMS', 'order ' + ref + ' · customer told: delivered · to ' + mask(normPhone(o.phone)), st)).catch((e) => console.log('delivered sms: ' + e.message));
             }
           }
@@ -749,7 +749,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         const m = await json(req); const ph = m && normPhone(m.phone);
         if (!ph) return send(res, 400, { error: 'Enter the phone number of your account.' });
         if (!allow(req, 10, 'rc')) return send(res, 429, { error: 'Too many tries. Try again later.' });
-        const a = await acctGet(ph), shop = await shopMain(false), nm = (shop && shop.set && shop.set.name) || 'Renatel Shop', sp = (shop && shop.set && shop.set.phone) || '';
+        const a = await acctGet(ph), shop = await shopMain(false), nm = (shop && shop.set && shop.set.name) || 'Mictobystar', sp = (shop && shop.set && shop.set.phone) || '';
         if (!a) return send(res, 404, { error: 'No account uses that phone number. Create an account instead.' });
         const sms = await smsReady(), via = m.via === 'email' || !sms ? 'email' : 'sms';
         if (via === 'email' && !a.email) return send(res, 400, { error: sms ? 'This account has no email. Choose “Text me a code” instead.' : 'This account has no email for a reset code.' + (sp ? ' Call the shop on ' + sp + ' for help.' : ' Call the shop for help.') });
@@ -841,7 +841,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         let ev; try { ev = JSON.parse(raw); } catch (e) { return send(res, 400, {}); }
         if (ev.event === 'charge.success' && ev.data && REF_RX.test(String(ev.data.reference))) {
           let found = null; try { found = await verifyPaystack(ev.data.reference); } catch (e) { console.error('webhook', e.message); }
-          // Renatel's Paystack account also takes payments for Tessa POS shops: pass those on, signed as received.
+          // Not used by Mictobystar (it has no Tessa shops); kept so the code stays the same as the main POS.
           const md = ev.data.metadata || {}, slug = String(md.tessa || '');
           if (!MULTI && !found && /^[a-z0-9-]{3,40}$/.test(slug)) {
             const to = (process.env.TESSA_URL || 'https://tessapos.shop').replace(/\/+$/, '') + '/' + slug + '/api/store/paystack';

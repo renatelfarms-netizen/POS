@@ -229,7 +229,7 @@ input.f:focus,textarea.f:focus{border-color:var(--g);box-shadow:0 0 0 3px var(--
 <div class="drawer" id="drawer" onclick="if(event.target==this)closeCart()"><div class="pane" id="pane"></div></div>
 <script>
 'use strict';
-// Multi-shop platform: the server sets window.STORE={base:'/<shop-link>',slug,name}; on renatel.shop it is not set.
+// Multi-shop platform: the server sets window.STORE={base:'/<shop-link>',slug,name}; on a single-shop site it is not set.
 const MS=window.STORE||null,BASE=MS?MS.base:'',SK=MS?':'+MS.slug:'',HOME=MS?BASE+'/shop':'/',PATH=()=>location.pathname.slice(BASE.length);
 if(MS){const f0=window.fetch.bind(window);window.fetch=(u,o)=>f0(typeof u=='string'&&u.startsWith('/api/')?BASE+u:u,o);document.addEventListener('DOMContentLoaded',()=>{const l=document.querySelector('.logo');if(l){l.href=HOME;const i=l.querySelector('img');if(i)i.outerHTML='<span class="mslogo">'+String(MS.name||'S').trim().charAt(0).toUpperCase()+'</span>'}const pb=document.getElementById('posbtn');if(pb)pb.href=BASE})}
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
