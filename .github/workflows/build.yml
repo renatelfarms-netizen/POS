@@ -1,0 +1,17 @@
+name: Build Mictobystar apps
+on:
+  push:
+    branches: [mictobystar-apps]
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          echo "built $(date -u) on $GITHUB_SHA" > probe.txt
+          gh release delete build-logs --yes --cleanup-tag || true
+          gh release create build-logs probe.txt --title "Build logs" --notes "Automatic build output." --prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
