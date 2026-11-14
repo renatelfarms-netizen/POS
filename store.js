@@ -612,8 +612,8 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
             catch (e) { return send(res, 400, { error: e.message }); }
           }
           const token = m.token === undefined ? null : String(m.token).replace(/\s+/g, ''), sender = m.sender === undefined ? null : String(m.sender).trim();
-          console.log('sms: settings change by ' + st.name + (token ? ' (new token ' + token.split('|')[0] + '|…, ' + token.length + ' chars)' : '') + (sender !== null ? ' sender "' + sender + '"' : ''));
-          if (token && !/^[0-9]+\|[A-Za-z0-9]{20,120}$/.test(token)) return send(res, 400, { error: 'That doesn’t look like a USMS-GH API token. It looks like 1234|AbCd… : copy it with the copy icon on the USMS-GH Developers page.' });
+          console.log('sms: settings change by ' + st.name + (token ? ' (new token' + (token.includes('|') ? ' ' + token.split('|')[0] + '|…' : '') + ', ' + token.length + ' chars)' : '') + (sender !== null ? ' sender "' + sender + '"' : ''));
+          if (token && !/^([0-9]+\|)?[A-Za-z0-9]{20,120}$/.test(token)) return send(res, 400, { error: 'That doesn’t look like a USMS-GH API token. It is a long line of letters and numbers, sometimes starting with a number and a bar (1234|AbCd…): copy it with the copy icon on the USMS-GH Developers page.' });
           if (sender !== null && sender && !/^[A-Za-z0-9 ]{2,11}$/.test(sender)) return send(res, 400, { error: 'The sender ID must be 2–11 letters or numbers (for example Mictobystar), exactly as approved in USMS-GH.' });
           if (token) { try { await usms('/balance', null, token); } catch (e) { return send(res, 400, { error: 'USMS-GH did not accept this token (' + e.message + '). Regenerate it in USMS-GH → Developers and copy it again.' }); } }
           try {
