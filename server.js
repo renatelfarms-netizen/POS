@@ -804,6 +804,14 @@ async function platformApi(req, res, url) {
       }
       return send(res, 200, { ok: true, on: !!v.on, off: v.off || [], pct: v.pct != null ? +v.pct : 5, rates: v.rates || {}, me: v.me || {}, ready: !!v.ready, live: !!v.live });
     }
+    // Withdrawal requests from shop owners that are waiting to be paid, oldest first (the bell on /admin).
+    if (req.method === 'GET' && url === '/api/platform/admin/withdrawals') {
+      let L; try { L = (await sbCall('mt_wd_list', {})) || []; } catch (e) { console.error('withdrawals', e.message); return send(res, 502, { error: 'Could not read the withdrawal requests.' }); }
+      const open = [];
+      for (const s of L) for (const x of Array.isArray(s.recs) ? s.recs : []) if (x && x.status === 'open') open.push({ shop: s.id, name: s.name, slug: s.slug, phone: s.phone || '', id: x.id, at: +x.at || 0, amt: +x.amt || 0, by: x.by || '', acct: x.acct || null });
+      open.sort((a, b) => a.at - b.at);
+      return send(res, 200, { ok: true, open, hours: 24 });
+    }
     if (url === '/api/platform/admin/payouts' || url === '/api/platform/admin/payout' || url === '/api/platform/admin/payacct') {
       const L = (await sbCall('mt_shop_list', {})) || [];
       if (req.method === 'GET' && !q.get('id')) { // money owed to every shop
@@ -819,8 +827,12 @@ async function platformApi(req, res, url) {
           if (url === '/api/platform/admin/payacct' && req.method === 'POST') await st.setAcct(m.acct);
           if (url === '/api/platform/admin/payout' && req.method === 'POST') {
             if (m.del) await st.delPayout(m.del);
-            else {
-              const rec = await st.addPayout({ amt: m.amt, method: m.method, ref: m.ref, note: m.note, by: 'Platform admin' });
+            else if (m.decline) { // a withdrawal request that can't be paid (e.g. wrong account): closed, and the owner is told
+              const x = await st.wdDecline(m.decline, m.note);
+              const sh = await shopMain(false), ph = st.normPhone((sh && sh.set && sh.set.phone) || r.phone);
+              if (ph) st.sendSms(ph, PLATFORM + ': we could not pay your withdrawal of GHS ' + (+x.amt).toFixed(2) + (x.note ? ' (' + x.note + ')' : '') + '. Check your account in Online shop > Settings > Payments, then ask again.').catch((e) => console.log('withdrawal sms: ' + e.message));
+            } else {
+              const rec = await st.addPayout({ amt: m.amt, method: m.method, ref: m.ref, note: m.note, wd: m.wd, by: 'Platform admin' });
               const sh = await shopMain(false), ph = st.normPhone((sh && sh.set && sh.set.phone) || r.phone);
               if (ph && m.notify !== false) st.sendSms(ph, PLATFORM + ': we have paid ' + r.name + ' GHS ' + rec.amt.toFixed(2) + (rec.method ? ' by ' + rec.method : '') + (rec.ref ? ' (ref ' + rec.ref + ')' : '') + ' for your online sales. Details: Online shop > Settings > Payments.').catch((e) => console.log('payout sms: ' + e.message));
             }

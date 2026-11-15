@@ -631,6 +631,17 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
           }
           await freshKey(); return send(res, 200, await ledger());
         }
+        if (MULTI && req.method === 'POST' && url === '/api/store/admin/withdraw') { // the owner asks the platform to pay out the shop's money
+          if (st.role !== 'owner' || st.locked) return send(res, 403, { error: 'Only the shop owner can withdraw money.' });
+          const m = await json(req) || {};
+          try {
+            if (m.cancel) {
+              const x = await wdSet(m.cancel, 'open', 'cancelled'); if (!x) throw userErr('That request is no longer waiting.');
+              serverLog('Withdrawal cancelled', CUR + ' ' + (+x.amt).toFixed(2), st);
+            } else await wdAsk(m.amt, st);
+          } catch (e) { if (!e.user) throw e; return send(res, 400, { error: e.message }); }
+          await freshKey(); return send(res, 200, await ledger());
+        }
         if (url === '/api/store/admin/pay') {
           const host = 'https://' + String(req.headers['x-forwarded-host'] || req.headers.host || DEFHOST).split(',')[0].trim();
           const info = () => ({ mode: mode(), source: PK.src, pct: PK.src === 'platform' ? PK.pct : undefined, hint: PK.src === 'platform' ? '' : KEY() ? KEY().slice(0, 8) + '…' + KEY().slice(-4) : '', webhook: host + BASE() + '/api/store/paystack', callback: host + (MULTI ? BASE() + '/shop' : '/store') + '/done/' });
@@ -867,7 +878,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
   }
   async function ledger() {
     await fresh();
-    const [acct, pd] = await Promise.all([sbCall('shop_db_get', { p_col: 'platAcct', p_id: 'main' }), sbCall('shop_db_get', { p_col: PO, p_id: 'list' })]);
+    const [acct, pd, wd] = await Promise.all([sbCall('shop_db_get', { p_col: 'platAcct', p_id: 'main' }), sbCall('shop_db_get', { p_col: PO, p_id: 'list' }), wdList()]);
     const payouts = ((pd && pd.recs) || []).slice();
     const orders = Object.entries(orderDocs).filter(([, o]) => o && o.plat && (o.status === 'paid' || o.status === 'paid_short'))
       .map(([ref, o]) => ({ ref, at: o.paidAt, sale: o.saleId || null, name: o.name, total: r2(o.total), pct: +o.feePct || 0, fee: o.fee != null ? o.fee : r2(o.total * (+o.feePct || 0) / 100), net: o.net != null ? o.net : r2(o.total - r2(o.total * (+o.feePct || 0) / 100)) }))
@@ -875,7 +886,9 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
     const sum = (L, k) => r2(L.reduce((a, x) => a + (+x[k] || 0), 0));
     const collected = sum(orders, 'total'), fees = sum(orders, 'fee'), net = sum(orders, 'net'), paid = sum(payouts, 'amt');
     payouts.sort((a, b) => b.at - a.at);
-    return { on: PK.src === 'platform', pct: PK.pct, collected, fees, net, paid, due: r2(net - paid), orders: orders.slice(0, 200), payouts: payouts.slice(0, 100), acct };
+    // open: the withdrawal the owner is waiting for (one at a time); wd: the latest requests, newest first
+    return { on: PK.src === 'platform', pct: PK.pct, collected, fees, net, paid, due: r2(net - paid), orders: orders.slice(0, 200), payouts: payouts.slice(0, 100), acct,
+      open: wd.find((x) => x.status === 'open') || null, wd: wd.slice().sort((a, b) => b.at - a.at).slice(0, 50), wdHours: WD_HOURS };
   }
   async function addPayout(p) {
     const amt = r2(+p.amt); if (!(amt > 0)) throw new Error('Enter the amount paid out.');
@@ -883,10 +896,53 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
     const rec = { id, at: Date.now(), amt, method: String(p.method || '').slice(0, 30), ref: String(p.ref || '').slice(0, 60), note: String(p.note || '').slice(0, 120), by: String(p.by || 'Platform') };
     const cur = (await sbCall('shop_db_get', { p_col: PO, p_id: 'list' })) || { recs: [] };
     cur.recs = (cur.recs || []).concat(rec); await sbCall('shop_db_put', { p_col: PO, p_id: 'list', p_data: cur });
+    if (p.wd) await wdSet(p.wd, 'open', 'paid', { payoutId: id }); // this payout answers the owner's withdrawal request
     serverLog('Payout received', CUR + ' ' + amt.toFixed(2) + ' paid to the shop by the platform' + (rec.method ? ' · ' + rec.method : '') + (rec.ref ? ' · ref ' + rec.ref : ''), { id: null, name: 'Platform' });
     return rec;
   }
-  async function delPayout(id) { const cur = (await sbCall('shop_db_get', { p_col: PO, p_id: 'list' })) || { recs: [] }; cur.recs = (cur.recs || []).filter((x) => x.id !== Number(id)); await sbCall('shop_db_put', { p_col: PO, p_id: 'list', p_data: cur }); serverLog('Payout removed', 'record #' + id + ' removed by the platform', { id: null, name: 'Platform' }); }
+  async function delPayout(id) { const cur = (await sbCall('shop_db_get', { p_col: PO, p_id: 'list' })) || { recs: [] }; cur.recs = (cur.recs || []).filter((x) => x.id !== Number(id)); await sbCall('shop_db_put', { p_col: PO, p_id: 'list', p_data: cur }); serverLog('Payout removed', 'record #' + id + ' removed by the platform', { id: null, name: 'Platform' });
+    // A payout recorded by mistake: the withdrawal it answered is waiting again.
+    await wdLock(async () => { const recs = await wdList(), x = recs.find((r) => r.payoutId === Number(id) && r.status === 'paid'); if (x) { x.status = 'open'; delete x.payoutId; delete x.doneAt; await wdSave(recs); } });
+  }
+
+  // ---- withdrawals (multi-shop): the shop owner asks for the money the platform holds for the shop; the platform admin
+  // sees the request on /admin and pays it within WD_HOURS. One open request per shop, never more than what is still owed. ----
+  const WD = 'platWd', WD_HOURS = 24;
+  const userErr = (m) => Object.assign(new Error(m), { user: true });
+  async function wdList() { const cur = await sbCall('shop_db_get', { p_col: WD, p_id: 'list' }); return cur && Array.isArray(cur.recs) ? cur.recs : []; }
+  const wdSave = (recs) => sbCall('shop_db_put', { p_col: WD, p_id: 'list', p_data: { recs: recs.slice(-200) } });
+  let wdQ = Promise.resolve(); // one change at a time, so two quick taps can't make two requests
+  const wdLock = (fn) => { const p = wdQ.then(fn, fn); wdQ = p.catch(() => {}); return p; };
+  function wdAsk(amt, st) {
+    return wdLock(async () => {
+      amt = r2(+amt);
+      const g = await ledger(), a = g.acct;
+      if (!a) throw userErr('Add the account you want to be paid into first, then withdraw.');
+      if (g.open) throw userErr('You already asked to withdraw ' + CUR + ' ' + (+g.open.amt).toFixed(2) + '. Wait for it to be paid, or cancel it first.');
+      if (!(g.due > 0)) throw userErr('There is no money to withdraw yet.');
+      if (!(amt > 0)) throw userErr('Enter the amount to withdraw.');
+      if (amt > g.due + 0.001) throw userErr('You can withdraw up to ' + CUR + ' ' + g.due.toFixed(2) + '.');
+      const [id] = await sbCall('shop_ids', { p_n: 1 });
+      const rec = { id, at: Date.now(), amt, status: 'open', by: String((st && st.name) || '').slice(0, 60), acct: { kind: a.kind, bank: a.bank, name: a.name, number: a.number, branch: a.branch || '' } };
+      await wdSave((await wdList()).concat(rec));
+      serverLog('Withdrawal requested', CUR + ' ' + amt.toFixed(2) + ' to ' + a.bank + ' · ' + a.number.slice(0, 3) + '•••' + a.number.slice(-3) + ' · paid within ' + WD_HOURS + ' hours', st);
+      return rec;
+    });
+  }
+  // Moves a request from one state to another (open -> paid / cancelled / declined). Returns it, or null when it was not in that state.
+  function wdSet(id, from, to, extra) {
+    return wdLock(async () => {
+      const recs = await wdList(), x = recs.find((r) => r.id === Number(id));
+      if (!x || x.status !== from) return null;
+      Object.assign(x, { status: to, doneAt: Date.now() }, extra || {}); await wdSave(recs); return x;
+    });
+  }
+  async function wdDecline(id, note) {
+    const x = await wdSet(id, 'open', 'declined', { note: String(note || '').trim().slice(0, 120) });
+    if (!x) throw new Error('That request is no longer waiting.');
+    serverLog('Withdrawal not paid', CUR + ' ' + (+x.amt).toFixed(2) + (x.note ? ' · ' + x.note : ''), { id: null, name: 'Platform' });
+    return x;
+  }
   async function setAcct(a) { const c = cleanAcct(a); if (!c) throw new Error('Fill in the account name and number, and the network or bank.'); await sbCall('shop_db_put', { p_col: 'platAcct', p_id: 'main', p_data: Object.assign(c, { by: 'Platform', at: Date.now() }) }); return c; }
 
   function page(req, res, head, title) {
@@ -899,5 +955,5 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
     } catch (e) { res.writeHead(500, { 'Content-Type': 'text/plain' }); res.end('The online shop page is missing.'); }
   }
 
-  return { remindRun, smsReset: () => { SM.at = 0; }, payReset: () => { PK.at = 0; }, ledger, addPayout, delPayout, setAcct, api, page, receiptPage, invoicePage, isLive: () => mode() === 'paystack', sendSms, smsReady, otpIssue, otpCheck, otpSms, normPhone };
+  return { remindRun, smsReset: () => { SM.at = 0; }, payReset: () => { PK.at = 0; }, ledger, addPayout, delPayout, setAcct, wdDecline, api, page, receiptPage, invoicePage, isLive: () => mode() === 'paystack', sendSms, smsReady, otpIssue, otpCheck, otpSms, normPhone };
 };

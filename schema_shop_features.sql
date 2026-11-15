@@ -128,3 +128,14 @@ begin perform _mt_check(p_token);
 end $$;
 revoke all on function mt_shared_pay from public, anon, authenticated;
 grant execute on function mt_shared_pay to anon;
+
+-- Withdrawal requests: every shop's requests in one call, for the platform admin page (/admin).
+-- Each shop keeps its own requests in mt_docs ('platWd' / 'list'); only the server can write them.
+create or replace function mt_wd_list(p_token text) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+begin perform _mt_check(p_token);
+  return coalesce((select jsonb_agg(jsonb_build_object('id', s.id, 'name', s.name, 'slug', s.slug, 'phone', s.phone, 'recs', d.d->'recs') order by s.name)
+    from mt_docs d join mt_shops s on s.id = d.shop_id
+    where d.c = 'platWd' and d.id = 'list' and not d.x and jsonb_typeof(d.d->'recs') = 'array'), '[]'::jsonb);
+end $$;
+revoke all on function mt_wd_list from public, anon, authenticated;
+grant execute on function mt_wd_list to anon;
