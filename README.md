@@ -29,7 +29,7 @@ A login token from one shop is refused by every other shop.
 - `store.js`, `store.html` the online shop (shared with Renatel Shop)
 
 ## Environment variables
-- `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_BACKUP_TOKEN`
+- `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_BACKUP_TOKEN` (`SUPABASE_KEY` is the secret / service_role key; the database functions refuse the public key)
 - `PLATFORM_ADMIN_PASSWORD` password for /admin
 - `PLATFORM_NAME` (default "Tessa POS"), `PLATFORM_HOST` (e.g. the domain)
 - `MAIL_API_BASE` optional; mail settings are read from `site_secret_get` in Supabase

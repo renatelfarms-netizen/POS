@@ -5,7 +5,8 @@
 // - /admin            platform admin (you): every shop, pause / open, notes
 // - /<link>           a shop's app; its API is /<link>/api/...
 // No dependencies. Secrets come from environment variables:
-//   SUPABASE_URL, SUPABASE_KEY, SUPABASE_BACKUP_TOKEN   the database (multi-shop functions, see schema.sql)
+//   SUPABASE_URL, SUPABASE_KEY, SUPABASE_BACKUP_TOKEN   the database (multi-shop functions, see schema.sql).
+//                    SUPABASE_KEY is the project's SECRET (service_role) key: the functions refuse the public key.
 //   PLATFORM_ADMIN_PASSWORD                             password for /admin
 //   PLATFORM_NAME (default Tessa POS), PLATFORM_HOST (optional)
 //   BACKUP_DIR (optional) hosting copies, one folder per shop
