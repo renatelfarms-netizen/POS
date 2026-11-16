@@ -727,7 +727,7 @@ async function shopView(rec) {
     const sales = pf.flatMap((p) => recs(p + 'sales').map((x) => ({ b: BRN[p], id: x.id, ts: x.ts, total: x.total, method: x.method, by: x.byName || '', items: (x.items || []).reduce((t, i) => t + (i.qty || 0), 0) }))).sort((a, b) => b.ts - a.ts).slice(0, 50);
     const log = recs('log').sort((a, b) => b.ts - a.ts).slice(0, 60).map((x) => ({ ts: x.ts, who: x.who, a: x.a, d: x.d }));
     const staff = (main.staff || []).map((x) => ({ name: x.name, role: x.role, branch: x.role === 'owner' || x.branch === 'both' ? 'All branches' : BRN[x.branch === 'acc' ? 'accra_' : ''], email: x.email || '', phone: x.phone || '', locked: !!x.locked }));
-    return { shop: pubShop(rec), cur: set.cur || 'GH₵', details: { name: set.name, phone: set.phone || '', addr: set.addr || '', email: set.email || '' }, branches, staff, products, sales, log, warehouse: list('whItems').length };
+    return { shop: pubShop(rec), cur: set.cur || 'GH₵', details: { name: set.name, phone: set.phone || '', addr: set.addr || '', email: set.email || '', biz: set.biz || 'retail', city: set.city || '', region: set.region || '', store: !!(set.store && set.store.open) }, branches, staff, products, sales, log, warehouse: list('whItems').length };
   });
 }
 
@@ -877,7 +877,12 @@ async function platformApi(req, res, url) {
       try { return send(res, 200, Object.assign({ ok: true }, await shopView(r))); } catch (e) { console.error('view', e.message); return send(res, 502, { error: 'Could not load the shop.' }); }
     }
     if (req.method === 'GET' && url === '/api/platform/admin/shops') {
-      try { const L = (await sbCall('mt_shop_list', {})) || []; return send(res, 200, { ok: true, shops: L.map(pubShop) }); }
+      try {
+        const L = (await sbCall('mt_shop_list', {})) || [], stats = {};
+        // st: what each shop holds and when it was last used (one database call). The list still loads without it.
+        try { for (const x of (await sbCall('mt_shop_stats', {})) || []) stats[x.id] = x; } catch (e) { console.error('shop stats', e.message); }
+        return send(res, 200, { ok: true, shops: L.map((r) => Object.assign(pubShop(r), { st: stats[r.id] || null })) });
+      }
       catch (e) { return send(res, 502, { error: 'Could not load the shops.' }); }
     }
     if (req.method === 'POST' && url === '/api/platform/admin/shop') {

@@ -139,3 +139,33 @@ begin perform _mt_check(p_token);
 end $$;
 revoke all on function mt_wd_list from public, anon, authenticated;
 grant execute on function mt_wd_list to service_role;
+
+-- Shop details for the platform admin page (/admin): one row of counts per shop, read-only.
+create or replace function mt_shop_stats(p_token text) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+begin perform _mt_check(p_token);
+  return (
+    with docs as (select shop_id, c, id, d from mt_docs where not x),
+     cnt as (select shop_id,
+       count(*) filter (where c in ('products','accra_products')) as products,
+       count(*) filter (where c in ('customers','accra_customers')) as customers,
+       count(*) filter (where c = 'students') as students,
+       count(*) filter (where c in ('att','marks','kot','jobs')) as other_use,
+       count(*) filter (where c = 'webOrders') as web_orders,
+       count(*) filter (where c = 'webOrders' and d->>'status' = 'paid') as web_paid
+      from docs group by shop_id),
+     recs as (select d.shop_id, d.c, r from docs d cross join lateral jsonb_array_elements(case when jsonb_typeof(d.d->'recs') = 'array' then d.d->'recs' else '[]'::jsonb end) r where d.c in ('sales','accra_sales','log')),
+     sal as (select shop_id, count(*) as n, coalesce(sum(case when jsonb_typeof(r->'total') = 'number' then (r->>'total')::numeric else 0 end), 0) as total,
+       max(case when jsonb_typeof(r->'ts') = 'number' then (r->>'ts')::numeric end) as last from recs where c <> 'log' group by shop_id),
+     act as (select shop_id, max(case when jsonb_typeof(r->'ts') = 'number' then (r->>'ts')::numeric end) as last from recs where c = 'log' and coalesce(r->>'who', '—') not in ('—', 'Platform') group by shop_id)
+    select coalesce(jsonb_agg(jsonb_build_object('id', s.id,
+       'biz', coalesce(m.d->'set'->>'biz', 'retail'), 'cur', coalesce(m.d->'set'->>'cur', 'GH₵'), 'city', coalesce(m.d->'set'->>'city', ''), 'region', coalesce(m.d->'set'->>'region', ''), 'addr', coalesce(m.d->'set'->>'addr', ''),
+       'branches', case when m.d->'set'->>'branches' = '2' then 2 else 1 end,
+       'staff', case when jsonb_typeof(m.d->'staff') = 'array' then jsonb_array_length(m.d->'staff') else 0 end,
+       'store', coalesce(m.d->'set'->'store'->>'open', '') = 'true',
+       'products', coalesce(c.products, 0), 'customers', coalesce(c.customers, 0), 'students', coalesce(c.students, 0), 'otherUse', coalesce(c.other_use, 0),
+       'webOrders', coalesce(c.web_orders, 0), 'webPaid', coalesce(c.web_paid, 0),
+       'sales', coalesce(sa.n, 0), 'salesTotal', coalesce(sa.total, 0), 'lastSale', sa.last, 'lastAct', greatest(a.last, sa.last))), '[]'::jsonb)
+     from mt_shops s left join docs m on m.shop_id = s.id and m.c = 'shop' and m.id = 'main' left join cnt c on c.shop_id = s.id left join sal sa on sa.shop_id = s.id left join act a on a.shop_id = s.id);
+end $$;
+revoke all on function mt_shop_stats from public, anon, authenticated;
+grant execute on function mt_shop_stats to service_role;
