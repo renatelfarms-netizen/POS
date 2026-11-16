@@ -91,7 +91,7 @@ begin perform _mt_check(p_token);
   get diagnostics n = row_count; return n > 0; end $$;
 
 revoke all on function mt_photo_put, mt_photo_get, mt_acct_get, mt_acct_put, mt_acct_list, mt_ssecret_get, mt_ssecret_set, mt_otp_set, mt_otp_get, mt_otp_mark, mt_order_claim, mt_stock_take, mt_job_once from public, anon, authenticated;
-grant execute on function mt_photo_put, mt_photo_get, mt_acct_get, mt_acct_put, mt_acct_list, mt_ssecret_get, mt_ssecret_set, mt_otp_set, mt_otp_get, mt_otp_mark, mt_order_claim, mt_stock_take, mt_job_once to anon;
+grant execute on function mt_photo_put, mt_photo_get, mt_acct_get, mt_acct_put, mt_acct_list, mt_ssecret_get, mt_ssecret_set, mt_otp_set, mt_otp_get, mt_otp_mark, mt_order_claim, mt_stock_take, mt_job_once to service_role;
 
 -- Shared SMS account (platform owner's USMS-GH, from site_secrets) for shops without their own; switch kept in mt_kv 'shared_sms'.
 create or replace function mt_kv_get(p_token text, p_k text) returns text language plpgsql security definer set search_path = public, extensions as $$
@@ -110,7 +110,7 @@ begin perform _mt_check(p_token);
     'token', case when coalesce((cfg->>'on')::boolean, false) then tok else null end);
 end $$;
 revoke all on function mt_shared_sms from public, anon, authenticated;
-grant execute on function mt_shared_sms to anon;
+grant execute on function mt_shared_sms to service_role;
 
 -- Shared payments: the platform owner's Paystack key (site_secrets) for shops without their own; switch, commission and details in mt_kv 'shared_pay'.
 create or replace function mt_kv_get(p_token text, p_k text) returns text language plpgsql security definer set search_path = public, extensions as $$
@@ -127,7 +127,7 @@ begin perform _mt_check(p_token);
   return cfg || jsonb_build_object('ready', v_key is not null, 'live', coalesce(v_key like 'sk_live_%', false), 'key', case when coalesce((cfg->>'on')::boolean, false) then v_key else null end);
 end $$;
 revoke all on function mt_shared_pay from public, anon, authenticated;
-grant execute on function mt_shared_pay to anon;
+grant execute on function mt_shared_pay to service_role;
 
 -- Withdrawal requests: every shop's requests in one call, for the platform admin page (/admin).
 -- Each shop keeps its own requests in mt_docs ('platWd' / 'list'); only the server can write them.
@@ -138,4 +138,4 @@ begin perform _mt_check(p_token);
     where d.c = 'platWd' and d.id = 'list' and not d.x and jsonb_typeof(d.d->'recs') = 'array'), '[]'::jsonb);
 end $$;
 revoke all on function mt_wd_list from public, anon, authenticated;
-grant execute on function mt_wd_list to anon;
+grant execute on function mt_wd_list to service_role;

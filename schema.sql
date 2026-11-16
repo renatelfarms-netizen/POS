@@ -166,7 +166,7 @@ create or replace function mt_secret_get(p_token text, p_name text) returns text
 begin perform _mt_check(p_token); if p_name not in ('mail_api_token', 'mail_mailbox_id', 'mail_from') then return null; end if; return (select value from site_secrets where name = p_name); end $$;
 
 revoke all on function _mt_check, _mt_rev, mt_shop_create, mt_shop_by_slug, mt_shop_list, mt_shop_set, mt_db_pull, mt_db_get, mt_db_put, mt_db_del, mt_ids, mt_backup_save, mt_backup_list, mt_backup_get, mt_secret_get from public, anon, authenticated;
-grant execute on function mt_shop_create, mt_shop_by_slug, mt_shop_list, mt_shop_set, mt_db_pull, mt_db_get, mt_db_put, mt_db_del, mt_ids, mt_backup_save, mt_backup_list, mt_backup_get, mt_secret_get to anon;
+grant execute on function mt_shop_create, mt_shop_by_slug, mt_shop_list, mt_shop_set, mt_db_pull, mt_db_get, mt_db_put, mt_db_del, mt_ids, mt_backup_save, mt_backup_list, mt_backup_get, mt_secret_get to service_role;
 
 -- Admin password (salted hash) after it is changed on /admin.
 create table if not exists mt_kv (k text primary key, v text not null, updated_at timestamptz not null default now());
@@ -178,7 +178,7 @@ begin perform _mt_check(p_token); if p_k not in ('admin_pw','nudge') then raise 
   insert into mt_kv (k, v) values (p_k, p_v) on conflict (k) do update set v = excluded.v, updated_at = now();
   return jsonb_build_object('ok', true); end $$;
 revoke all on function mt_kv_get, mt_kv_set from public, anon, authenticated;
-grant execute on function mt_kv_get, mt_kv_set to anon;
+grant execute on function mt_kv_get, mt_kv_set to service_role;
 
 -- Delete a shop for good (admin only, through the server). Its documents, backups and counters go with it.
 create or replace function mt_shop_delete(p_token text, p_id uuid) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
@@ -188,4 +188,4 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 revoke all on function mt_shop_delete from public, anon, authenticated;
-grant execute on function mt_shop_delete to anon;
+grant execute on function mt_shop_delete to service_role;
