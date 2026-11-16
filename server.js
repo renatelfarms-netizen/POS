@@ -8,7 +8,7 @@
 // No dependencies. Secrets come from environment variables set in Hostinger:
 //   BACKUP_CODE            the shop's backup code, typed once in Settings on each device
 //   SUPABASE_URL           e.g. https://xxxx.supabase.co
-//   SUPABASE_KEY           the project's publishable key (not secret)
+//   SUPABASE_KEY           the project's SECRET (service_role) key; the database functions refuse the public key
 //   SUPABASE_BACKUP_TOKEN  secret token; Supabase only accepts backups with it
 //   BACKUP_DIR             optional, defaults to ~/renatel-backups
 //   PHOTO_DIR              optional, defaults to ~/renatel-photos (cache of product photos)
