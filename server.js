@@ -155,7 +155,7 @@ async function sbCall(fn, args, bodyRaw) {
   const body = bodyRaw || JSON.stringify(Object.assign({ p_token: process.env.SUPABASE_BACKUP_TOKEN }, args));
   const r = await fetch(url, {
     method: 'POST',
-    headers: { apikey: process.env.SUPABASE_KEY, 'Content-Type': 'application/json' },
+    headers: { apikey: process.env.SUPABASE_KEY, Authorization: 'Bearer ' + process.env.SUPABASE_KEY, 'Content-Type': 'application/json' },
     body,
     signal: AbortSignal.timeout(60000)
   });
