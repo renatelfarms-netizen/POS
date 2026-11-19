@@ -389,7 +389,7 @@ function cloudStart(c){if(cloud||!c)return;
   e=>{if(e&&(e.code=='revoked'||e.code=='not_granted')){cloud=null;cstate='off';syncUI()}else{cstate='offline';if(APPM&&OFF.have&&!ready&&!OFF.on){OFF.on=true;if(!me)autoIn();render()}syncUI()}}))}
 (async()=>{await 0;
  if(APPM){const s=await offGet();if(s&&s.loc&&s.loc['shop/main']){try{last=s.last||{};assemble(s.loc);IDS=(s.ids||[]).map(Number);OFF.have=OFF.ok=true}catch(e){last={};OFF.have=OFF.ok=false}}
-  if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'}).then(r=>{try{r.update()}catch(e){}}).catch(()=>{});
   if(OFF.have&&!webAuth()&&navigator.onLine===false)OFF.on=true}
  let c=null;try{c=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){}
  if(!c&&ONWEB&&webAuth())c=webDb();
@@ -402,6 +402,18 @@ async function offTick(){if(!APPM||!OFF.have||cloud||offBusy||navigator.onLine==
  try{if(!webAuth()){if(!OFF.cred||!me){offBusy=false;return}
    try{await webLoginCall(OFF.cred.n,OFF.cred.p)}catch(e){if(!/fetch|network|reach/i.test(e.message||'')&&!(e instanceof TypeError)){OFF.cred=null;OFF.on=false;me=null;cart=[];render();uiAlert('The internet is back. Log in again to send the work done offline to the shop. ('+e.message+')')}offBusy=false;return}}
   cloudStart(webDb())}catch(e){}offBusy=false}
+/* Updates: when the device is online, check whether a newer version of the POS is live and switch to it by itself,
+   but only when nothing is in progress (empty till, no open window, nothing typed, offline work already sent). */
+const PAGEV=(document.querySelector('meta[name=pos-v]')||{}).content||'';let updV='',updW=null;
+async function updCheck(){if(!WEB0||!PAGEV||updV||navigator.onLine===false)return;try{const r=await fetch('/api/version',{cache:'no-store'});if(!r.ok)return;const j=await r.json();if(j&&j.v&&j.v!==PAGEV){updV=j.v;updApply()}}catch(e){}}
+function updBusy(){const a=document.activeElement,typing=a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)&&a.type!='checkbox'&&String(a.value||'').trim()!=='';
+ return cart.length>0||typing||$('#dlg').classList.contains('on')||$('#modal').classList.contains('on')||(typeof OFF!='undefined'&&OFF.on)||dirty||syncing||(APPM&&offBusy)}
+function updApply(){clearTimeout(updW);if(!updV)return;if(updBusy()){updW=setTimeout(updApply,10000);return}
+ try{meSave();if(APPM)offPutNow()}catch(e){}try{sessionStorage.setItem(K+'-upd','1')}catch(e){}
+ const go=()=>location.reload();let done=false;const once=()=>{if(!done){done=true;go()}};setTimeout(once,4000);
+ try{navigator.serviceWorker.getRegistration().then(r=>r?r.update():0).catch(()=>{}).then(()=>setTimeout(once,300))}catch(e){once()}}
+if(WEB0){setTimeout(updCheck,15000);setInterval(updCheck,5*60000);addEventListener('online',()=>setTimeout(updCheck,3000));document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')updCheck()});
+ try{if(sessionStorage.getItem(K+'-upd')){sessionStorage.removeItem(K+'-upd');setTimeout(()=>toast('✔ Mictobystar updated','You are on the newest version.'),2500)}}catch(e){}}
 if(APPM){setInterval(offTick,8000);addEventListener('online',()=>setTimeout(offTick,500));addEventListener('pagehide',()=>{offPutNow()});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')offPutNow()})}
 
 const prod=i=>db.products.find(p=>p.id==i), cu=i=>db.customers.find(c=>c.id==i);

@@ -8,6 +8,7 @@ This branch (`mictobystar`) is the Mictobystar shop: a separate shop from Renate
 - Back online, the page logs in to the shop again and `firstLoad`/`applyRemote` merge each document three ways (`merge3`): what only one side changed is taken from that side; stock (`stock`, `wh`) and customer balances (`owed`, `adv`) move by the difference, so sales made offline and sales made on other tills both count; lists (sales, expenses, the trail) merge record by record.
 - Receipt numbers: the apps keep about 150 numbers reserved from the shop for offline use; if they run out, a long time-based number is used.
 - Texts (SMS), online backups, password reset codes and new product photos need internet. In an ordinary browser nothing changed: the shop locks while offline and keeps nothing on the device.
+- **Automatic updates**: the server stamps the page with its version (`<meta name="pos-v">`, a hash of `index.html`) and answers `GET /api/version`. Whenever the device is online (on opening, every 5 minutes, when the internet comes back, when the app comes to the front), the page checks; if a newer version is live it reloads by itself as soon as nothing is in progress (empty till, no open window, nothing typed, offline work sent), then shows “Mictobystar updated”. The service worker fetches the page fresh whenever the website answers.
 - `/.well-known/assetlinks.json` (`assetlinks.json`) lets the Android app show the site full screen; it holds the fingerprint of the app's signing key.
 
 ### Customers, debts, dates and looks (Mictobystar)

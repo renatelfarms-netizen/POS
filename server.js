@@ -36,9 +36,14 @@ const HEADERS = {
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()'
 };
 
-let cache = null;
+// The page carries its version (a hash of index.html) so open apps and browser tabs can see when a newer one is live (/api/version).
+let cache = null, PAGE_V = '';
 function page() {
-  if (!cache) cache = fs.readFileSync(PAGE);
+  if (!cache) {
+    const raw = fs.readFileSync(PAGE, 'utf8');
+    PAGE_V = crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16);
+    cache = Buffer.from(raw.replace('<head>', '<head>\n<meta name="pos-v" content="' + PAGE_V + '">'));
+  }
   return cache;
 }
 
@@ -427,6 +432,7 @@ async function caller(req) {
 
 // ---- API ----
 async function api(req, res, url) {
+  if (req.method === 'GET' && url === '/api/version') { page(); return send(res, 200, { v: PAGE_V }); }
   if (req.method === 'POST' && url === '/api/login') return login(req, res);
   if (req.method === 'POST' && url === '/api/reset') return resetPw(req, res);
   if (req.method === 'POST' && url === '/api/reset/code') return resetCode(req, res);
