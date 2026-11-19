@@ -10,6 +10,14 @@ This branch (`mictobystar`) is the Mictobystar shop: a separate shop from Renate
 - Texts (SMS), online backups, password reset codes and new product photos need internet. In an ordinary browser nothing changed: the shop locks while offline and keeps nothing on the device.
 - `/.well-known/assetlinks.json` (`assetlinks.json`) lets the Android app show the site full screen; it holds the fingerprint of the app's signing key.
 
+### Customers, debts, dates and looks (Mictobystar)
+- **Buyer details are optional per sale**: on the Sell page, *👤 With buyer details* / *🚶 Without details (walk-in)* (`bwalk`), even when Settings requires a buyer. With details, *💾 Save this buyer to my customers list* (`bsave`) can be unticked: the name and phone then go on the receipt only (`custName`, `custPhone` on the sale). Credit, advance and delivery sales always save the customer.
+- **✏️ Edit customer** (`custEdit`) from the customers list, the customer’s profile, the Sell page (returning customer), the debt lists, the receipt and the ⋯ sale menu. A new name is copied to that customer’s receipts.
+- **Customers page tabs**: 👥 All customers (with search), 💳 Who owes us (overdue filter, PDF, CSV) and 📜 Customer history (bought, on credit, paid back, owes now and last visit for any period; CSV and PDF, also a *Customer history* type in Send report). Debt payments are kept on the customer (`payLog`); older ones are read from the activity trail.
+- **Home** shows the customers who owe (owners, managers and accountants); *Owed to you ›* opens the full list.
+- **📅 Pick dates** (`CR`, `rangeAB('custom')`) on Reports (shop and warehouse), Receipts, Expenses, Customer history and Send report (PDF).
+- **More fonts** for the whole website (Settings → Themes), and more receipt design options: any website font for the receipt or just the shop name, very small to very large text, bold text, line spacing, one-line items, message/footer alignment, customer phone and number of items.
+
 ### Sale types on the Sell page (Mictobystar)
 - **🛒 Sale / 📅 Credit sale / 📃 Invoice only** chips at the top of the current sale. Credit sale selects Credit and asks for the pay-by date. Invoice only makes an invoice to print or send without taking stock or recording a sale or payment (kept in the `quotes` collection, listed under Receipts → Invoices only, where it can be turned into a sale or deleted).
 - **📦 Pay now, collect later**: tick it, give the collection date and time; the sale is charged and stock is set aside at once, and it waits under Receipts → Paid, waiting to be collected until someone marks it Collected. On unless `set.pickup` is `false`.

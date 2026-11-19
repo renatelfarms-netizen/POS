@@ -1,6 +1,6 @@
 // Service worker for the Mictobystar apps (Windows and Android). It keeps the POS page and its files on the device,
 // so the app opens without internet. Shop data is not handled here: the page keeps its own copy and syncs it.
-const V = 'mb-shell-v1';
+const V = 'mb-shell-v2';
 const SHELL = ['/pos', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png', '/logo-icon.svg', '/logo.svg', '/logo-white.svg'];
 const LIBS = ['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'];
 
