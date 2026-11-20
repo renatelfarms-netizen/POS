@@ -8,7 +8,8 @@ A point-of-sale system for a small retail shop, in a single file (`index.html`).
 - Customers, credit balances and invoices
 - Deliveries with riders and pay-on-delivery
 - Purchase orders and supplier balances
-- Expenses and reports with charts, plus PDF reports
+- Expenses and reports with charts, plus PDF reports; any report can be run for a specific date or a from–to range (📅 Pick a date), and 📚 Full report puts every section in one PDF
+- Stock worth: what all stock is worth right now in each shop and each warehouse, at cost and at selling price, with a per-product breakdown (Reports → 💰 Stock worth)
 - Staff accounts with roles (owner, manager, accountant, cashier, stock keeper, delivery), password reset, and an activity trail
 - Ghana regions and towns for customers, deliveries and the shop address
 
