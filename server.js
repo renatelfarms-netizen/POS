@@ -299,6 +299,8 @@ const scClear = () => shopCache.delete(SID());
 async function shopMain(fresh) {
   const c = shopCache.get(SID());
   if (!fresh && c && c.doc && Date.now() - c.at < 15000) return c.doc;
+  // 'bg' (background jobs): use the server's copy of the shop if the shop has not changed. Read only.
+  if (fresh === 'bg') { const k = docCache.get(SID()); if (k) { const r = await shopRevs(); if (r && +(r[SID()] || 0) === k.rev) return k.docs.get('shop/main') || null; } }
   const doc = await sbCall('shop_db_get', { p_col: 'shop', p_id: 'main' });
   shopCache.set(SID(), { at: Date.now(), doc });
   return doc;
@@ -977,7 +979,7 @@ const hostName = () => String(process.env.PLATFORM_HOST || 'tessapos.shop').repl
 function store() {
   const id = SID(); if (id === '-') throw new Error('No shop');
   if (!stores.has(id)) stores.set(id, makeStore({ sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS, caller,
-    multi: true, noTimers: true, sharedSms, sharedPay, host: hostName(), base: () => '/' + T().shop.slug, scope: () => 'shop:' + SID() + ':', siteUrl: () => 'https://' + hostName() }));
+    multi: true, noTimers: true, sharedSms, sharedPay, unchanged: async (rev) => { const r = await shopRevs(); return !!(r && +(r[SID()] || 0) === +rev); }, host: hostName(), base: () => '/' + T().shop.slug, scope: () => 'shop:' + SID() + ':', siteUrl: () => 'https://' + hostName() }));
   return stores.get(id);
 }
 // Credit reminders: every 10 minutes, for every open shop (each shop's own SMS account; sent once a day per customer).

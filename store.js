@@ -159,8 +159,8 @@ module.exports = function store(d) {
   }
   const SMS_API = process.env.USMS_API || 'https://webapp.usmsgh.com/api';
   const SM = { token: '', sender: '', at: 0, shared: false };
-  async function smsCfg(fresh) {
-    if (!fresh && SM.at && Date.now() - SM.at < 30000) return SM;
+  async function smsCfg(fresh, maxAge = 30000) {
+    if (!fresh && SM.at && Date.now() - SM.at < maxAge) return SM;
     try { const [t, sd] = await Promise.all([sbCall('site_secret_get', { p_name: 'usms_token' }), sbCall('site_secret_get', { p_name: 'usms_sender' })]); SM.token = t || ''; SM.sender = sd || ''; SM.shared = false;
       // Multi-shop: a shop with no SMS account of its own may use the platform's shared account (switched on by the platform admin).
       if (!SM.token && d.sharedSms) { const sh = await d.sharedSms(); if (sh && sh.token && sh.sender) { SM.token = sh.token; SM.sender = sh.sender; SM.shared = true; } }
@@ -303,11 +303,14 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
   async function remindRun() {
     if (remBusy || !sbOn()) return; remBusy = true;
     try {
-      const shop = await shopMain(true), set = (shop && shop.set) || {};
+      // Background check: the shop settings may come from the server's copy when the shop has not changed.
+      const shop = await shopMain('bg'), set = (shop && shop.set) || {};
       if (set.credRem === false) return;
       const hr = new Date().getUTCHours(), at = Number.isFinite(+set.credHour) && set.credHour !== '' ? +set.credHour : 9; // Ghana = UTC
-      if (hr < at || hr >= 20 || !(await smsReady())) return; // SMS settings are only looked up within reminder hours
-      await fresh();
+      // SMS settings are only looked up within reminder hours, and kept 2 hours here (saving them in the POS resets this).
+      if (hr < at || hr >= 20) return;
+      const sc = await smsCfg(false, 7200000); if (!(sc.token && sc.sender)) return;
+      if (!(prodRev && d.unchanged && await d.unchanged(prodRev))) await fresh(); // no download when the shop has not changed
       const today = accraDay(Date.now());
       ONE = MULTI && set.branches == 1;
       for (const b of brKeys()) {
