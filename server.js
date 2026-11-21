@@ -438,7 +438,7 @@ async function resetCode(req, res) {
   let code; try { code = await st.otpIssue('staff:' + s.id); } catch (e) { return send(res, e.code || 502, { error: e.message }); }
   failed(ip, 10);
   try {
-    if (via === 'sms') await st.sendSms(ph, st.otpSms(nm, code));
+    if (via === 'sms') await st.sendSms(ph, st.otpSms(nm, code), { free: true }); // reset codes are never blocked by the SMS allowance
     else await sendEmail({ to: [s.email], subject: nm + ' - password reset code: ' + code,
       text: 'Hello ' + s.name + ',\n\nSomeone asked to reset your password for ' + nm + '. Your reset code is:\n\n    ' + code + '\n\nIt expires in 15 minutes. If this wasn’t you, ignore this email and tell the shop owner.\n\n-- \n' + PLATFORM });
   } catch (e) { await sbCall('otp_mark', { p_k: 'staff:' + s.id, p_try: false }).catch(() => {}); console.log('reset code ' + via + ': ' + e.message); return send(res, 502, { error: 'The code could not be sent' + (via === 'sms' ? ' by SMS' : ' by email') + '. Try again, or use the recovery code.' }); }
@@ -611,7 +611,7 @@ async function shopBySlug(slug) {
   slugCache.set(slug, { at: Date.now(), rec: rec || null });
   return rec || null;
 }
-const pubShop = (r) => ({ id: r.id, slug: r.slug, name: r.name, owner: r.owner_name, email: r.email, phone: r.phone, status: r.status, plan: planState(r), created: r.created_at, note: r.note || '' });
+const pubShop = (r) => ({ id: r.id, slug: r.slug, name: r.name, owner: r.owner_name, email: r.email, phone: r.phone, status: r.status, plan: planState(r), created: r.created_at, note: r.note || '', smsPlan: +r.sms_plan || 0, smsUntil: r.sms_until || null });
 const signups = new Map();
 function signupAllowed(ip) { const m = signups.get(ip) || { n: 0, since: Date.now() }; if (Date.now() - m.since > 3600e3) { m.n = 0; m.since = Date.now(); } m.n++; signups.set(ip, m); return m.n <= 5; }
 
@@ -852,11 +852,11 @@ async function platformApi(req, res, url) {
             else if (m.decline) { // a withdrawal request that can't be paid (e.g. wrong account): closed, and the owner is told
               const x = await st.wdDecline(m.decline, m.note);
               const sh = await shopMain(false), ph = st.normPhone((sh && sh.set && sh.set.phone) || r.phone);
-              if (ph) st.sendSms(ph, PLATFORM + ': we could not pay your withdrawal of GHS ' + (+x.amt).toFixed(2) + (x.note ? ' (' + x.note + ')' : '') + '. Check your account in Online shop > Settings > Payments, then ask again.').catch((e) => console.log('withdrawal sms: ' + e.message));
+              if (ph) st.sendSms(ph, PLATFORM + ': we could not pay your withdrawal of GHS ' + (+x.amt).toFixed(2) + (x.note ? ' (' + x.note + ')' : '') + '. Check your account in Online shop > Settings > Payments, then ask again.', { free: true }).catch((e) => console.log('withdrawal sms: ' + e.message));
             } else {
               const rec = await st.addPayout({ amt: m.amt, method: m.method, ref: m.ref, note: m.note, wd: m.wd, by: 'Platform admin' });
               const sh = await shopMain(false), ph = st.normPhone((sh && sh.set && sh.set.phone) || r.phone);
-              if (ph && m.notify !== false) st.sendSms(ph, PLATFORM + ': we have paid ' + r.name + ' GHS ' + rec.amt.toFixed(2) + (rec.method ? ' by ' + rec.method : '') + (rec.ref ? ' (ref ' + rec.ref + ')' : '') + ' for your online sales. Details: Online shop > Settings > Payments.').catch((e) => console.log('payout sms: ' + e.message));
+              if (ph && m.notify !== false) st.sendSms(ph, PLATFORM + ': we have paid ' + r.name + ' GHS ' + rec.amt.toFixed(2) + (rec.method ? ' by ' + rec.method : '') + (rec.ref ? ' (ref ' + rec.ref + ')' : '') + ' for your online sales. Details: Online shop > Settings > Payments.', { free: true }).catch((e) => console.log('payout sms: ' + e.message));
             }
           }
           return send(res, 200, Object.assign({ ok: true, shop: { id: r.id, name: r.name, slug: r.slug, phone: r.phone } }, await st.ledger()));
@@ -868,8 +868,13 @@ async function platformApi(req, res, url) {
       let v = await sharedCfg(true); if (!v) return send(res, 502, { error: 'Could not read the SMS settings.' });
       if (req.method === 'POST') {
         let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
-        const cfg = { on: !!v.on, off: Array.isArray(v.off) ? v.off.filter((x) => typeof x === 'string') : [] };
+        const cfg = { on: !!v.on, off: Array.isArray(v.off) ? v.off.filter((x) => typeof x === 'string') : [], free: v.free != null ? +v.free : 30, plans: Array.isArray(v.plans) && v.plans.length ? v.plans : SMS_PLANS };
         if (typeof m.on === 'boolean') cfg.on = m.on;
+        if (m.free != null) { const f = Math.trunc(+m.free); if (!(f >= 0 && f <= 10000)) return send(res, 400, { error: 'Free SMS per month must be a number from 0 to 10000.' }); cfg.free = f; }
+        if (Array.isArray(m.plans)) {
+          const P = m.plans.slice(0, 6).map((x) => ({ gh: Math.round((+(x && x.gh) || 0) * 100) / 100, sms: Math.trunc(+(x && x.sms) || 0) })).filter((x) => x.gh > 0 && x.sms > 0).sort((a, b) => a.gh - b.gh);
+          if (!P.length) return send(res, 400, { error: 'Add at least one SMS plan with a price and a number of SMS.' }); cfg.plans = P;
+        }
         if (m.id && typeof m.shopOn === 'boolean') { cfg.off = cfg.off.filter((x) => x !== m.id); if (!m.shopOn) cfg.off.push(String(m.id).slice(0, 40)); }
         try { await sbCall('mt_kv_set', { p_k: 'shared_sms', p_v: JSON.stringify(cfg) }); } catch (e) { console.error('shared sms save', e.message); return send(res, 502, { error: 'Could not save.' }); }
         console.log('shared sms: ' + (cfg.on ? 'on' : 'off') + ', off for ' + cfg.off.length + ' shop(s)');
@@ -877,7 +882,7 @@ async function platformApi(req, res, url) {
       }
       let balance = null;
       if (v.token) { try { const r = await fetch((process.env.USMS_API || 'https://webapp.usmsgh.com/api') + '/balance', { headers: { Authorization: 'Bearer ' + v.token, Accept: 'application/json' }, signal: AbortSignal.timeout(10000) }); const j = await r.json(); balance = j.data && (j.data.remaining_balance ?? j.data.balance ?? null); } catch (e) {} }
-      return send(res, 200, { ok: true, on: !!v.on, off: v.off || [], sender: v.sender || '', ready: !!v.ready, balance });
+      return send(res, 200, { ok: true, on: !!v.on, off: v.off || [], sender: v.sender || '', ready: !!v.ready, balance, free: v.free != null ? +v.free : 30, plans: Array.isArray(v.plans) && v.plans.length ? v.plans : SMS_PLANS });
     }
     // Reminder SMS to shop owners: on/off, mute one shop, who is due next, what was sent.
     if (url === '/api/platform/admin/nudge') {
@@ -902,7 +907,8 @@ async function platformApi(req, res, url) {
         const L = (await sbCall('mt_shop_list', {})) || [], stats = {};
         // st: what each shop holds and when it was last used (one database call). The list still loads without it.
         try { for (const x of (await sbCall('mt_shop_stats', {})) || []) stats[x.id] = x; } catch (e) { console.error('shop stats', e.message); }
-        return send(res, 200, { ok: true, shops: L.map((r) => Object.assign(pubShop(r), { st: stats[r.id] || null })) });
+        let sms = {}; try { sms = (await sbCall('mt_sms_usage', {})) || {}; } catch (e) { console.error('sms usage', e.message); }
+        return send(res, 200, { ok: true, shops: L.map((r) => Object.assign(pubShop(r), { st: stats[r.id] || null, sms: sms[r.id] || null })) });
       }
       catch (e) { return send(res, 502, { error: 'Could not load the shops.' }); }
     }
@@ -920,6 +926,12 @@ async function platformApi(req, res, url) {
       if (m.act === 'suspend') patch.status = 'suspended';
       else if (m.act === 'activate') patch.status = 'active';
       else if (m.act === 'note') patch.note = String(m.note || '').slice(0, 300);
+      else if (m.act === 'smsplan') { // paid SMS plan: SMS per month, for n months (30 days each); plan 0 removes it
+        const pl = Math.trunc(+m.plan || 0); if (pl < 0 || pl > 1000000) return send(res, 400, { error: 'Not a valid SMS plan.' });
+        if (!pl) { patch.sms_plan = 0; patch.sms_until = null; }
+        else { patch.sms_plan = pl; patch.sms_until = new Date((+r.sms_plan === pl ? base(r.sms_until) : now) + n * 30 * 864e5).toISOString(); }
+        console.log('sms plan: ' + r.slug + ' ' + (pl ? pl + ' SMS/month until ' + patch.sms_until.slice(0, 10) : 'removed'));
+      }
       else return send(res, 400, { error: 'Unknown action.' });
       try { const out = await sbCall('mt_shop_set', { p_id: r.id, p_patch: patch }); slugCache.delete(r.slug); listCache.at = 0; return send(res, 200, { ok: true, shop: pubShop(out) }); }
       catch (e) { return send(res, 502, { error: 'Could not save.' }); }
@@ -975,11 +987,15 @@ async function payCfg(fresh) {
 const payPct = (v, id) => { const r = v && v.rates && v.rates[id]; return Math.max(0, Math.min(50, +(r != null && r !== '' ? r : (v && v.pct != null ? v.pct : 5)) || 0)); };
 async function sharedPay(fresh) { const v = await payCfg(!!fresh); return v && v.on && v.key && !(v.off || []).includes(SID()) ? { key: v.key, pct: payPct(v, SID()) } : null; }
 async function sharedSms() { const v = await sharedCfg(false); return v && v.on && v.token && !(v.off || []).includes(SID()) ? { token: v.token, sender: v.sender } : null; }
+// SMS allowance on the shared account: free SMS every month (shared_sms.free, 30) plus the shop's paid SMS plan, if any.
+const SMS_PLANS = [{ gh: 30, sms: 300 }, { gh: 60, sms: 700 }, { gh: 120, sms: 1500 }];
+const smsTake = (n) => sbCall('mt_sms_take', { p_shop: SID(), p_n: Math.trunc(+n || 0) }); // n = 0 only reads this month's use
+async function smsPlans() { const v = await sharedCfg(false); return (v && Array.isArray(v.plans) && v.plans.length ? v.plans : SMS_PLANS); }
 const hostName = () => String(process.env.PLATFORM_HOST || 'tessapos.shop').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 function store() {
   const id = SID(); if (id === '-') throw new Error('No shop');
   if (!stores.has(id)) stores.set(id, makeStore({ sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS, caller,
-    multi: true, noTimers: true, sharedSms, sharedPay, unchanged: async (rev) => { const r = await shopRevs(); return !!(r && +(r[SID()] || 0) === +rev); }, host: hostName(), base: () => '/' + T().shop.slug, scope: () => 'shop:' + SID() + ':', siteUrl: () => 'https://' + hostName() }));
+    multi: true, noTimers: true, sharedSms, sharedPay, smsTake, smsPlans, help: HELP_WA, platform: PLATFORM, unchanged: async (rev) => { const r = await shopRevs(); return !!(r && +(r[SID()] || 0) === +rev); }, host: hostName(), base: () => '/' + T().shop.slug, scope: () => 'shop:' + SID() + ':', siteUrl: () => 'https://' + hostName() }));
   return stores.get(id);
 }
 // Credit reminders: every 10 minutes, for every open shop (each shop's own SMS account; sent once a day per customer).

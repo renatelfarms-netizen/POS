@@ -175,11 +175,20 @@ module.exports = function store(d) {
     if (!r.ok || (j.status && j.status !== 'success')) throw new Error(j.message || ('USMS-GH answered ' + r.status + (t && !j.message ? ': ' + t.slice(0, 120) : '')));
     return j;
   }
-  async function sendSms(to, message) {
+  // How many SMS credits a message uses: 160 plain characters in one SMS (153 each when longer), 70/67 with other characters.
+  const smsParts = (t) => { const g = /^[\x20-\x7E\n\r]*$/.test(t), n = t.length; return n <= (g ? 160 : 70) ? 1 : Math.ceil(n / (g ? 153 : 67)); };
+  // Shops on the platform's shared SMS account have a monthly allowance (free SMS + any paid plan), counted in Supabase.
+  const smsLimitText = (u, n) => (n > 1 && u.used < u.limit ? 'This message needs ' + n + ' SMS, but only ' + (u.limit - u.used) + ' of this month’s ' + u.limit + ' are left. Shorten it, or get' : 'This month’s SMS are used up (' + u.used + ' of ' + u.limit + '). For more SMS, get') + ' an SMS plan from ' + (d.platform || 'the platform') + (d.help ? ': WhatsApp ' + d.help : '') + '. Free SMS start again on the 1st.';
+  async function sendSms(to, message, opt) {
     const c = await smsCfg(false), rc = intlPhone(to);
     if (!c.token || !c.sender) throw new Error('SMS is not set up yet (Online shop → Settings → SMS receipts).');
     if (!rc) throw new Error('That phone number is not valid.');
-    return usms('/sms/send', { recipient: rc, sender_id: c.sender, type: 'plain', message: String(message).slice(0, 459) }, c.token);
+    const text = String(message).slice(0, 459); let count = c.shared && d.smsTake && !(opt && opt.free) ? smsParts(text) : 0;
+    if (count) { // if the count can't be reached (Supabase down), the SMS still goes out uncounted
+      const u = await d.smsTake(count).catch((e) => { console.error('sms count', e.message); return null; });
+      if (!u) count = 0; else if (!u.ok) { const e = new Error(smsLimitText(u, count)); e.code = 'SMS_LIMIT'; throw e; } }
+    try { return await usms('/sms/send', { recipient: rc, sender_id: c.sender, type: 'plain', message: text }, c.token); }
+    catch (e) { if (count) await d.smsTake(-count).catch(() => {}); throw e; } // not sent: the SMS go back to the allowance
   }
   // One-time codes (password resets), kept as hashes in Supabase so every server process sees them.
   const otpHash = (key, code) => crypto.createHash('sha256').update('otp:' + key + ':' + String(code)).digest('hex');
@@ -321,7 +330,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
           if (pendingClaim(b, c.id)) continue;
           if (!(await sbCall('job_once', { p_k: 'crem:' + b + ':' + c.id + ':' + today }))) continue;
           try { await sendSms(ph, remindText(set, c, ci, SITE() + '/i/' + invCode(b, c.id))); serverLog('Credit reminder SMS', c.name + ' · owes GHS ' + ci.owed.toFixed(2) + ' · ' + whenText(ci.due, today) + ' · to ' + mask(ph) + ' · ' + BR[b].name, WHO); }
-          catch (e) { console.log('credit reminder ' + c.id + ': ' + e.message); }
+          catch (e) { console.log('credit reminder ' + c.id + ': ' + e.message); if (e.code === 'SMS_LIMIT') return; }
         }
       }
     } catch (e) { console.error('credit reminders', e.message); }
@@ -582,7 +591,9 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
           const m = await json(req) || {}, kind = String(m.kind || 'note').replace(/[^a-z]/g, '').slice(0, 12) || 'note';
           const L = (Array.isArray(m.msgs) ? m.msgs.slice(0, 800) : []).map((x) => ({ to: normPhone(x && x.to), text: String(x && x.text || '').replace(/\s+\n/g, '\n').trim().slice(0, 459) })).filter((x) => x.to && x.text.length >= 5);
           if (!L.length) return send(res, 400, { error: 'No valid phone numbers to send to.' });
-          if (!(await smsCfg()).token) return send(res, 400, { error: 'SMS is not set up for this shop yet.' });
+          const sc = await smsCfg(); if (!sc.token) return send(res, 400, { error: 'SMS is not set up for this shop yet.' });
+          if (sc.shared && d.smsTake) { const u = await d.smsTake(0).catch(() => null), need = L.reduce((n, x) => n + smsParts(x.text), 0);
+            if (u && u.used + need > u.limit) return send(res, 400, { error: u.used >= u.limit ? smsLimitText(u) : 'These messages need ' + need + ' SMS, but only ' + (u.limit - u.used) + ' of this month’s ' + u.limit + ' are left. Send to fewer people, or get an SMS plan from ' + (d.platform || 'the platform') + (d.help ? ' (WhatsApp ' + d.help + ')' : '') + '.' }); }
           send(res, 200, { queued: L.length });
           (async () => { let ok = 0, bad = 0; for (const x of L) { try { await sendSms(x.to, x.text); ok++; } catch (e) { bad++; } }
             const K = { fees: 'fee reminders', receipt: 'fee receipt', absent: 'absence notes', courier: 'delivery updates', behaviour: 'behaviour report links', announce: 'announcements', note: 'messages' };
@@ -604,7 +615,9 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         if (!st || (need === 'pay' ? st.role !== 'owner' || st.locked : !webCan(st, need))) return send(res, 403, { error: need === 'pay' ? 'Only the owner can change payment and SMS settings.' : 'You don’t have access to this part of the online shop. Ask the owner.' });
         if (url === '/api/store/admin/sms' || url === '/api/store/admin/sms/test') {
           const info = async () => { const c = await smsCfg(true); let balance = null, err = '';
-            if (c.shared) return { configured: true, shared: true, sender: c.sender, hint: '', balance: null, error: '' }; // the shared account's token and balance stay private
+            if (c.shared) { // the shared account's token and balance stay private; the shop sees its own monthly allowance
+              const u = d.smsTake ? await d.smsTake(0).catch(() => null) : null, pl = d.smsPlans ? await d.smsPlans().catch(() => null) : null;
+              return { configured: true, shared: true, sender: c.sender, hint: '', balance: null, error: '', usage: u && u.limit != null ? { used: u.used, limit: u.limit, free: u.free, plan: u.plan, until: u.until } : null, plans: pl || [], help: d.help || '', platform: d.platform || '' }; }
             if (c.token) { try { const j = await usms('/balance', null, c.token); balance = j.data && (j.data.remaining_balance ?? j.data.balance ?? null); } catch (e) { err = e.message; } }
             return { configured: !!(c.token && c.sender), sender: c.sender, hint: c.token ? c.token.split('|')[0] + '|…' + c.token.slice(-4) : '', balance, error: err }; };
           if (req.method === 'GET') return send(res, 200, await info());
@@ -769,7 +782,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         if (via === 'email' && !a.email) return send(res, 400, { error: sms ? 'This account has no email. Choose “Text me a code” instead.' : 'This account has no email for a reset code.' + (sp ? ' Call the shop on ' + sp + ' for help.' : ' Call the shop for help.') });
         let code; try { code = await otpIssue('cust:' + ph); } catch (e) { return send(res, e.code || 502, { error: e.message }); }
         try {
-          if (via === 'sms') await sendSms(ph, otpSms(nm, code));
+          if (via === 'sms') await sendSms(ph, otpSms(nm, code), { free: true }); // reset codes are never blocked by the SMS allowance
           else await sendEmail({ to: [a.email], subject: nm + ' - your password reset code: ' + code, text: 'Hello ' + a.name + ',\n\nYour code to reset your ' + nm + ' online shop password is:\n\n    ' + code + '\n\nIt expires in 15 minutes. If you did not ask for this, ignore this email.' });
         } catch (e) { await sbCall('otp_mark', { p_k: 'cust:' + ph, p_try: false }); console.log('reset code ' + via + ': ' + e.message); return send(res, 502, { error: 'The code could not be sent' + (via === 'sms' ? ' by SMS' : ' by email') + '. Try again later.' }); }
         const [u, d] = String(a.email || '').split('@');
