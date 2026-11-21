@@ -106,8 +106,8 @@ async function poSave(b){const g=i=>$('#'+i).value.trim(),m=$('#po_msg');const a
 async function poDel(pid){try{LG=await api('payout',{id:LG.shop.id,del:pid});ledgerPane();wdRefresh()}catch(e){alert(e.message)}}
 async function paSave(){const g=i=>$('#'+i).value.trim();try{LG=await api('payacct',{id:LG.shop.id,acct:{kind:g('pa_k'),bank:g('pa_b'),name:g('pa_n'),number:g('pa_no'),branch:g('pa_br')}});ledgerPane()}catch(e){$('#pa_msg').textContent=e.message}}
 async function rateSave(){try{PAYC=await api('pay',{id:LG.shop.id,rate:$('#pr_r').value.trim()});alert('Saved.')}catch(e){alert(e.message)}}
-let SMSC=null,NUDC=null;
-async function load(){try{const j=await api('shops');shops=j.shops;try{SMSC=await api('sms')}catch(e){SMSC={err:e.message}}try{PAYC=await api('pay')}catch(e){PAYC={err:e.message}}try{WDR=await api('withdrawals')}catch(e){WDR={err:e.message}}try{NUDC=await api('nudge')}catch(e){NUDC={err:e.message}}draw()}catch(e){if(tok)$('#app').innerHTML='<p class="msg">'+esc(e.message)+'</p>'}}
+let SMSC=null,NUDC=null,SMO=null;
+async function load(){try{const j=await api('shops');shops=j.shops;try{SMSC=await api('sms')}catch(e){SMSC={err:e.message}}try{PAYC=await api('pay')}catch(e){PAYC={err:e.message}}try{WDR=await api('withdrawals')}catch(e){WDR={err:e.message}}try{NUDC=await api('nudge')}catch(e){NUDC={err:e.message}}try{SMO=await api('smsorders')}catch(e){SMO={err:e.message}}draw()}catch(e){if(tok)$('#app').innerHTML='<p class="msg">'+esc(e.message)+'</p>'}}
 /* ---------- the shops list: what each shop is, how far it has got, filters and sorting ---------- */
 const DAY=864e5,BIZ={retail:'Shop',pharmacy:'Pharmacy',restaurant:'Restaurant',school:'School',courier:'Delivery service'};
 const ago=t=>{if(!t)return 'never';const m=Math.floor((Date.now()-t)/6e4);if(m<1)return 'just now';if(m<60)return m+' min ago';const h=Math.floor(m/60);if(h<24)return h+' hour'+(h==1?'':'s')+' ago';const d=Math.floor(h/24);return d+' day'+(d==1?'':'s')+' ago'};
@@ -129,8 +129,9 @@ function draw(){const n=k=>shops.filter(FLT[k][1]).length,has=shops.some(s=>s.st
  <div class="stats">${tile('all','All shops')}${tile('today','Joined today')}${tile('week','Joined this week')}${has?tile('using','In use')+tile('setup','Set up, not used')+tile('empty','Not started')+tile('quiet','Gone quiet'):tile('active','Open')}${tile('suspended','Paused')}</div>
  <p class="sub">Tap a box to see those shops.${has?' In use = used in the last 7 days. Set up = has products but no sale yet. Not started = nothing added.':''}</p>
  ${wdBox()}
- <div class="vt" style="margin-top:0"><button class="${tabA=='shops'?'on':''}" onclick="tabA='shops';draw()">Shops (${shops.length})</button><button class="${tabA=='set'?'on':''}" onclick="tabA='set';draw()">Payments, SMS and reminders</button></div>
- ${tabA=='set'?payBox()+smsBox()+nudgeBox():`<div class="tools"><input id="sq" placeholder="Search name, owner, email, phone or town" value="${esc(q)}" oninput="q=this.value;lim=50;drawList()">
+ <div class="vt" style="margin-top:0"><button class="${tabA=='shops'?'on':''}" onclick="tabA='shops';draw()">Shops (${shops.length})</button><button class="${tabA=='set'?'on':''}" onclick="tabA='set';draw()">Payments, SMS and reminders${smoWait()?` <span class="pill" style="background:#d97706;color:#fff">${smoWait()} SMS order${smoWait()>1?'s':''}</span>`:''}</button></div>
+ ${smoWait()&&tabA!='set'?`<div class="card" style="border:2px solid #d97706;margin-bottom:12px;cursor:pointer" onclick="tabA='set';draw()"><b>🛒 ${smoWait()} SMS order${smoWait()>1?'s':''} waiting for you to confirm</b> <small>Tap to check the MoMo payment and confirm.</small></div>`:''}
+ ${tabA=='set'?smoBox()+payBox()+smsBox()+nudgeBox():`<div class="tools"><input id="sq" placeholder="Search name, owner, email, phone or town" value="${esc(q)}" oninput="q=this.value;lim=50;drawList()">
  <select title="Show" onchange="f=this.value;lim=50;draw()">${Object.entries(FLT).filter(([k])=>has||!['using','setup','empty','quiet','sold','web','two'].includes(k)).map(([k,v])=>`<option value="${k}" ${f==k?'selected':''}>${v[0]}</option>`).join('')}</select>
  ${has?`<select title="Type of business" onchange="bz=this.value;lim=50;drawList()"><option value="all">All types</option>${Object.entries(BIZ).map(([k,l])=>`<option value="${k}" ${bz==k?'selected':''}>${l}</option>`).join('')}</select>`:''}
  <select title="Order" onchange="srt=this.value;lim=50;drawList()">${Object.entries(SRT).filter(([k])=>has||!['act','sales','prod'].includes(k)).map(([k,v])=>`<option value="${k}" ${srt==k?'selected':''}>${v[0]}</option>`).join('')}</select></div>
@@ -161,12 +162,24 @@ function smsCell(s){const u=s.sms;if(!SMSC||!SMSC.on||!u||(SMSC.off||[]).include
  return `<small style="margin-top:4px;${full?'color:#b91c1c;font-weight:700':''}">📱 ${num(u.used)} of ${num(u.limit)} SMS this month</small>${u.plan?`<small>📦 ${num(u.plan)} SMS plan · until ${fdd(u.until)}</small>`:u.planSet&&u.until?`<small style="color:#b45309">📦 Plan ended ${fdd(u.until)}</small>`:''}`}
 function smsPlan(id){const s=shops.find(x=>x.id==id),u=s.sms||{},P=(SMSC&&SMSC.plans)||[];
  ovOpen(`<div class="top"><h1>📦 SMS plan · ${esc(s.name)}</h1><span class="sp"></span><button class="btn" onclick="$('#ov').remove()">Close</button></div>
- <div class="card"><p style="margin:0 0 8px">Every shop gets <b>${num(SMSC.free)}</b> free SMS each month. A plan adds more SMS each month. Take the payment first (MoMo), then choose the plan here.</p>
+ <div class="card"><p style="margin:0 0 8px">Every shop gets <b>${num(SMSC.free)}</b> free SMS each month. A plan adds more SMS each month. Shops pay by MoMo to 0244022727 (Emmanuel Buckson) and WhatsApp you the transaction ID. Check the money has arrived, then choose the plan here.</p>
  <p style="margin:0 0 8px"><small style="color:var(--mut)">Now: ${num(u.used||0)} of ${num(u.limit||SMSC.free)} SMS used this month${u.plan?` · <b>${num(u.plan)} SMS plan</b> until ${fdd(u.until)}`:' · no plan'}</small></p>
  <label style="display:block;margin:10px 0 4px;font-weight:700">Months paid</label><select id="spm">${[1,2,3,6,12].map(n=>`<option value="${n}">${n} month${n>1?'s':''}</option>`).join('')}</select>
  <div style="display:grid;gap:8px;margin-top:12px">${P.map(p=>`<button class="btn ${u.plan==p.sms?'pri':''}" onclick="smsPlanSave('${id}',${+p.sms})">GH₵ ${(+p.gh).toFixed(2)} / month · ${num(p.sms)} SMS${u.plan==p.sms?' · add months':''}</button>`).join('')}
  ${u.plan?`<button class="btn bad" onclick="if(confirm('Remove the SMS plan? The shop keeps its ${num(SMSC.free)} free SMS a month.'))smsPlanSave('${id}',0)">Remove plan</button>`:''}</div>
  <p style="margin:10px 0 0"><small style="color:var(--mut)">Months are 30 days. Choosing the same plan again adds months to the end date.</small></p></div>`)}
+/* SMS plan orders from shops: check the MoMo payment, then confirm (plan starts at once) or decline */
+const smoWait=()=>SMO&&SMO.orders?SMO.orders.filter(o=>o.status=='pending').length:0;
+function smoBox(){const c=SMO;if(!c)return '';if(c.err)return `<p class="msg">${esc(c.err)}</p>`;const W=c.orders.filter(o=>o.status=='pending'),D=c.orders.filter(o=>o.status!='pending').slice(0,15);
+ const tm=d=>new Date(d).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+ return `<div class="card" style="margin-bottom:14px${W.length?';border:2px solid #d97706':''}"><b>🛒 SMS orders</b><br><small style="color:var(--mut)">Shops pay by MoMo to <b>${esc((c.momo||{}).num||'')}</b> (${esc((c.momo||{}).name||'')}) and send the transaction ID. Check the money arrived, then confirm. The plan starts at once and the shop gets an SMS.</small>
+ ${W.map(o=>`<div style="border:1px solid #fcd34d;background:#fffbeb;border-radius:10px;padding:10px;margin-top:10px"><b>#${o.id} · ${esc(o.shop_name)}</b> <small style="color:var(--mut)">/${esc(o.slug)} · ${tm(o.at)}</small>
+ <div style="margin-top:4px">${num(o.sms)} SMS a month × ${o.months} month${o.months>1?'s':''} = <b>${GH(o.gh*o.months)}</b></div>
+ <div>MoMo ID <b style="font-family:monospace">${esc(o.txid)}</b> · from ${esc(o.payer)}${o.phone?' · '+esc(o.phone):''}</div>${o.by_name?`<small style="color:var(--mut)">Sent by ${esc(o.by_name)}</small>`:''}
+ <div class="acts" style="margin-top:8px"><button class="btn sm pri" onclick="if(confirm('Confirm order #${o.id}? Only confirm after the ${GH(o.gh*o.months)} has arrived on your MoMo.'))smoSet(${o.id},true)">✔ Confirm</button><button class="btn sm bad" onclick="smoDecline(${o.id})">Decline</button></div></div>`).join('')||'<p style="margin:8px 0 0"><small>No orders waiting.</small></p>'}
+ ${D.length?`<details style="margin-top:10px"><summary><small>Recent (${D.length})</small></summary>${D.map(o=>`<div style="font-size:.85rem;padding:4px 0;border-top:1px solid #eee">#${o.id} · ${esc(o.shop_name)} · ${num(o.sms)} SMS × ${o.months} · ${GH(o.gh*o.months)} · ${esc(o.txid)} · <b>${o.status=='approved'?'✔ Confirmed':'Declined'}</b>${o.note?' · '+esc(o.note):''}</div>`).join('')}</details>`:''}</div>`}
+async function smoSet(id,ok,note){try{SMO=await api('smsorders',{id,ok,note});load()}catch(e){alert(e.message)}}
+function smoDecline(id){const n=prompt('Why are you declining this order? The shop gets this by SMS.','The payment was not found');if(n!==null)smoSet(id,false,n)}
 async function smsPlanSave(id,plan){const n=+(($('#spm')||{}).value||1);try{await api('shop',{id,act:'smsplan',plan,n});$('#ov')&&$('#ov').remove();load()}catch(e){alert(e.message)}}
 function smsPrices(){const c=SMSC,P=(c.plans||[]).concat([{gh:'',sms:''}]);
  ovOpen(`<div class="top"><h1>📱 SMS allowance and prices</h1><span class="sp"></span><button class="btn" onclick="$('#ov').remove()">Close</button></div>

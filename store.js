@@ -178,7 +178,7 @@ module.exports = function store(d) {
   // How many SMS credits a message uses: 160 plain characters in one SMS (153 each when longer), 70/67 with other characters.
   const smsParts = (t) => { const g = /^[\x20-\x7E\n\r]*$/.test(t), n = t.length; return n <= (g ? 160 : 70) ? 1 : Math.ceil(n / (g ? 153 : 67)); };
   // Shops on the platform's shared SMS account have a monthly allowance (free SMS + any paid plan), counted in Supabase.
-  const smsLimitText = (u, n) => (n > 1 && u.used < u.limit ? 'This message needs ' + n + ' SMS, but only ' + (u.limit - u.used) + ' of this month’s ' + u.limit + ' are left. Shorten it, or get' : 'This month’s SMS are used up (' + u.used + ' of ' + u.limit + '). For more SMS, get') + ' an SMS plan from ' + (d.platform || 'the platform') + (d.help ? ': WhatsApp ' + d.help : '') + '. Free SMS start again on the 1st.';
+  const smsLimitText = (u, n) => (n > 1 && u.used < u.limit ? 'This message needs ' + n + ' SMS, but only ' + (u.limit - u.used) + ' of this month’s ' + u.limit + ' are left. Shorten it, or get' : 'This month’s SMS are used up (' + u.used + ' of ' + u.limit + '). For more SMS, get') + ' an SMS plan: Online shop → Settings → SMS receipts → Order more SMS (pay by MoMo to ' + (d.smsMomo ? d.smsMomo.num + ', ' + d.smsMomo.name : (d.platform || 'the platform')) + '). Free SMS start again on the 1st.';
   async function sendSms(to, message, opt) {
     const c = await smsCfg(false), rc = intlPhone(to);
     if (!c.token || !c.sender) throw new Error('SMS is not set up yet (Online shop → Settings → SMS receipts).');
@@ -593,7 +593,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
           if (!L.length) return send(res, 400, { error: 'No valid phone numbers to send to.' });
           const sc = await smsCfg(); if (!sc.token) return send(res, 400, { error: 'SMS is not set up for this shop yet.' });
           if (sc.shared && d.smsTake) { const u = await d.smsTake(0).catch(() => null), need = L.reduce((n, x) => n + smsParts(x.text), 0);
-            if (u && u.used + need > u.limit) return send(res, 400, { error: u.used >= u.limit ? smsLimitText(u) : 'These messages need ' + need + ' SMS, but only ' + (u.limit - u.used) + ' of this month’s ' + u.limit + ' are left. Send to fewer people, or get an SMS plan from ' + (d.platform || 'the platform') + (d.help ? ' (WhatsApp ' + d.help + ')' : '') + '.' }); }
+            if (u && u.used + need > u.limit) return send(res, 400, { error: u.used >= u.limit ? smsLimitText(u) : 'These messages need ' + need + ' SMS, but only ' + (u.limit - u.used) + ' of this month’s ' + u.limit + ' are left. Send to fewer people, or get an SMS plan: send the plan price by MoMo to ' + (d.smsMomo ? d.smsMomo.num + ' (' + d.smsMomo.name + ')' : (d.platform || 'the platform')) + '.' }); }
           send(res, 200, { queued: L.length });
           (async () => { let ok = 0, bad = 0; for (const x of L) { try { await sendSms(x.to, x.text); ok++; } catch (e) { bad++; } }
             const K = { fees: 'fee reminders', receipt: 'fee receipt', absent: 'absence notes', courier: 'delivery updates', behaviour: 'behaviour report links', announce: 'announcements', note: 'messages' };
@@ -613,11 +613,25 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         }
         const need = url.includes('/order') ? 'orders' : url.includes('/customer') ? 'customers' : url.endsWith('/pay') || url.includes('/sms') ? 'pay' : '';
         if (!st || (need === 'pay' ? st.role !== 'owner' || st.locked : !webCan(st, need))) return send(res, 403, { error: need === 'pay' ? 'Only the owner can change payment and SMS settings.' : 'You don’t have access to this part of the online shop. Ask the owner.' });
+        if (req.method === 'POST' && url === '/api/store/admin/sms/order') { // order an SMS plan after paying by MoMo; the platform admin confirms it
+          if (!d.smsOrder) return send(res, 404, { error: 'Not found.' });
+          if (!(await smsCfg(true)).shared) return send(res, 400, { error: 'SMS plans are only for shops using the shared SMS account.' });
+          if (!allow(req, 10, 'smso')) return send(res, 429, { error: 'Too many orders from this device. Try again later.' });
+          const m = await json(req) || {}, P = await d.smsPlans(), p = P[+m.i], months = Math.trunc(+m.months || 1), txid = String(m.txid || '').replace(/\s+/g, '').slice(0, 40);
+          if (!p) return send(res, 400, { error: 'Choose a plan.' });
+          if (!(months >= 1 && months <= 12)) return send(res, 400, { error: 'Choose 1 to 12 months.' });
+          if (!/^[A-Za-z0-9.\-]{6,40}$/.test(txid)) return send(res, 400, { error: 'Enter the MoMo transaction ID from your payment message (at least 6 letters or numbers).', f: 'txid' });
+          const payer = String(m.payer || '').trim().slice(0, 80), phone = normPhone(m.phone) || '';
+          if (payer.length < 2) return send(res, 400, { error: 'Enter the name on the MoMo account you paid from.', f: 'payer' });
+          try { const r = await d.smsOrder({ gh: +p.gh, sms: +p.sms, months, txid, payer, phone, by: st.name }); serverLog('SMS plan ordered', '#' + r.id + ' · ' + p.sms + ' SMS a month × ' + months + ' · GHS ' + (p.gh * months).toFixed(2) + ' · MoMo ID ' + txid, st); return send(res, 200, { ok: true, id: r.id }); }
+          catch (e) { return send(res, e.code === 400 ? 400 : 502, { error: e.code === 400 ? e.message : 'Could not send the order. Try again.' }); }
+        }
         if (url === '/api/store/admin/sms' || url === '/api/store/admin/sms/test') {
           const info = async () => { const c = await smsCfg(true); let balance = null, err = '';
             if (c.shared) { // the shared account's token and balance stay private; the shop sees its own monthly allowance
               const u = d.smsTake ? await d.smsTake(0).catch(() => null) : null, pl = d.smsPlans ? await d.smsPlans().catch(() => null) : null;
-              return { configured: true, shared: true, sender: c.sender, hint: '', balance: null, error: '', usage: u && u.limit != null ? { used: u.used, limit: u.limit, free: u.free, plan: u.plan, until: u.until } : null, plans: pl || [], help: d.help || '', platform: d.platform || '' }; }
+              return { configured: true, shared: true, sender: c.sender, hint: '', balance: null, error: '', usage: u && u.limit != null ? { used: u.used, limit: u.limit, free: u.free, plan: u.plan, until: u.until } : null, plans: pl || [], help: d.help || '', platform: d.platform || '', momo: d.smsMomo || null,
+                orders: d.smsOrders ? ((await d.smsOrders().catch(() => [])) || []).slice(0, 5).map((o) => ({ id: o.id, gh: +o.gh, sms: o.sms, months: o.months, txid: o.txid, status: o.status, note: o.note, at: o.at })) : [] }; }
             if (c.token) { try { const j = await usms('/balance', null, c.token); balance = j.data && (j.data.remaining_balance ?? j.data.balance ?? null); } catch (e) { err = e.message; } }
             return { configured: !!(c.token && c.sender), sender: c.sender, hint: c.token ? c.token.split('|')[0] + '|…' + c.token.slice(-4) : '', balance, error: err }; };
           if (req.method === 'GET') return send(res, 200, await info());

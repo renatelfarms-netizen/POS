@@ -868,7 +868,7 @@ async function platformApi(req, res, url) {
       let v = await sharedCfg(true); if (!v) return send(res, 502, { error: 'Could not read the SMS settings.' });
       if (req.method === 'POST') {
         let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
-        const cfg = { on: !!v.on, off: Array.isArray(v.off) ? v.off.filter((x) => typeof x === 'string') : [], free: v.free != null ? +v.free : 30, plans: Array.isArray(v.plans) && v.plans.length ? v.plans : SMS_PLANS };
+        const cfg = { on: !!v.on, off: Array.isArray(v.off) ? v.off.filter((x) => typeof x === 'string') : [], free: v.free != null ? +v.free : 10, plans: Array.isArray(v.plans) && v.plans.length ? v.plans : SMS_PLANS };
         if (typeof m.on === 'boolean') cfg.on = m.on;
         if (m.free != null) { const f = Math.trunc(+m.free); if (!(f >= 0 && f <= 10000)) return send(res, 400, { error: 'Free SMS per month must be a number from 0 to 10000.' }); cfg.free = f; }
         if (Array.isArray(m.plans)) {
@@ -882,7 +882,29 @@ async function platformApi(req, res, url) {
       }
       let balance = null;
       if (v.token) { try { const r = await fetch((process.env.USMS_API || 'https://webapp.usmsgh.com/api') + '/balance', { headers: { Authorization: 'Bearer ' + v.token, Accept: 'application/json' }, signal: AbortSignal.timeout(10000) }); const j = await r.json(); balance = j.data && (j.data.remaining_balance ?? j.data.balance ?? null); } catch (e) {} }
-      return send(res, 200, { ok: true, on: !!v.on, off: v.off || [], sender: v.sender || '', ready: !!v.ready, balance, free: v.free != null ? +v.free : 30, plans: Array.isArray(v.plans) && v.plans.length ? v.plans : SMS_PLANS });
+      return send(res, 200, { ok: true, on: !!v.on, off: v.off || [], sender: v.sender || '', ready: !!v.ready, balance, free: v.free != null ? +v.free : 10, plans: Array.isArray(v.plans) && v.plans.length ? v.plans : SMS_PLANS });
+    }
+    // SMS plan orders from shops: list, confirm (the plan starts at once) or decline. The shop owner is told by SMS.
+    if (url === '/api/platform/admin/smsorders') {
+      if (req.method === 'POST') {
+        let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+        const o = ((await sbCall('mt_sms_order_list', { p_shop: null })) || []).find((x) => +x.id === +m.id); if (!o) return send(res, 404, { error: 'Order not found.' });
+        const r = ((await sbCall('mt_shop_list', {})) || []).find((x) => x.id === o.shop_id); if (!r) return send(res, 404, { error: 'Shop not found.' });
+        const ok = !!m.ok, note = String(m.note || '').trim().slice(0, 200);
+        const d = await sbCall('mt_sms_order_set', { p_id: o.id, p_status: ok ? 'approved' : 'declined', p_note: note });
+        if (!d || d.error) return send(res, 400, { error: (d && d.error) || 'Could not save.' });
+        let until = null;
+        if (ok) { const patch = smsPlanPatch(r, +o.sms, +o.months || 1); until = patch.sms_until;
+          try { await sbCall('mt_shop_set', { p_id: r.id, p_patch: patch }); listCache.at = 0; }
+          catch (e) { console.error('sms order plan', e.message); await sbCall('mt_sms_order_set', { p_id: o.id, p_status: 'declined', p_note: 'error' }).catch(() => {}); return send(res, 502, { error: 'Could not turn the plan on. Try again.' }); } }
+        const ph = (await ctx.run({ shop: r }, () => shopMain(false)).catch(() => null) || {}).set, to = (ph && ph.phone) || o.phone || r.phone;
+        const text = ok ? PLATFORM + ': your SMS order #' + o.id + ' is confirmed. ' + r.name + ' now has ' + o.sms + ' extra SMS a month until ' + new Date(until).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + '. Thank you!'
+          : PLATFORM + ': we could not confirm your SMS order #' + o.id + ' (MoMo ID ' + o.txid + ')' + (note ? ': ' + note : '') + '. Check the transaction ID and order again, or WhatsApp ' + HELP_WA + '.';
+        platformSms(to, text).catch((e) => console.log('sms order reply: ' + e.message));
+        console.log('sms order #' + o.id + ' ' + (ok ? 'confirmed' : 'declined') + ': ' + r.slug);
+      }
+      try { return send(res, 200, { ok: true, orders: (await sbCall('mt_sms_order_list', { p_shop: null })) || [], momo: SMS_MOMO }); }
+      catch (e) { return send(res, 502, { error: 'Could not load the SMS orders.' }); }
     }
     // Reminder SMS to shop owners: on/off, mute one shop, who is due next, what was sent.
     if (url === '/api/platform/admin/nudge') {
@@ -928,8 +950,7 @@ async function platformApi(req, res, url) {
       else if (m.act === 'note') patch.note = String(m.note || '').slice(0, 300);
       else if (m.act === 'smsplan') { // paid SMS plan: SMS per month, for n months (30 days each); plan 0 removes it
         const pl = Math.trunc(+m.plan || 0); if (pl < 0 || pl > 1000000) return send(res, 400, { error: 'Not a valid SMS plan.' });
-        if (!pl) { patch.sms_plan = 0; patch.sms_until = null; }
-        else { patch.sms_plan = pl; patch.sms_until = new Date((+r.sms_plan === pl ? base(r.sms_until) : now) + n * 30 * 864e5).toISOString(); }
+        Object.assign(patch, smsPlanPatch(r, pl, n));
         console.log('sms plan: ' + r.slug + ' ' + (pl ? pl + ' SMS/month until ' + patch.sms_until.slice(0, 10) : 'removed'));
       }
       else return send(res, 400, { error: 'Unknown action.' });
@@ -987,15 +1008,40 @@ async function payCfg(fresh) {
 const payPct = (v, id) => { const r = v && v.rates && v.rates[id]; return Math.max(0, Math.min(50, +(r != null && r !== '' ? r : (v && v.pct != null ? v.pct : 5)) || 0)); };
 async function sharedPay(fresh) { const v = await payCfg(!!fresh); return v && v.on && v.key && !(v.off || []).includes(SID()) ? { key: v.key, pct: payPct(v, SID()) } : null; }
 async function sharedSms() { const v = await sharedCfg(false); return v && v.on && v.token && !(v.off || []).includes(SID()) ? { token: v.token, sender: v.sender } : null; }
-// SMS allowance on the shared account: free SMS every month (shared_sms.free, 30) plus the shop's paid SMS plan, if any.
+// SMS allowance on the shared account: free SMS every month (shared_sms.free, 10) plus the shop's paid SMS plan, if any.
+// Shops pay for a plan by Mobile Money to the platform owner, then send the transaction ID on WhatsApp.
+const SMS_MOMO = { num: process.env.SMS_PAY_MOMO || '0244022727', name: process.env.SMS_PAY_NAME || 'Emmanuel Buckson' };
 const SMS_PLANS = [{ gh: 30, sms: 300 }, { gh: 60, sms: 700 }, { gh: 120, sms: 1500 }];
 const smsTake = (n) => sbCall('mt_sms_take', { p_shop: SID(), p_n: Math.trunc(+n || 0) }); // n = 0 only reads this month's use
+// SMS plan orders: the shop enters its MoMo transaction ID in the POS; the platform admin is told (SMS + email) and confirms in admin.
+const SMS_ORDER_TO = { phone: process.env.SMS_ORDER_PHONE || SMS_MOMO.num, email: process.env.SMS_ORDER_EMAIL || '' };
+// SMS plan for a shop: pl SMS a month for n months (30 days each). Same plan again adds months; a new plan starts today.
+function smsPlanPatch(r, pl, n) {
+  if (!pl) return { sms_plan: 0, sms_until: null };
+  const now = Date.now(), cur = r.sms_until ? Date.parse(r.sms_until) : 0;
+  return { sms_plan: pl, sms_until: new Date((+r.sms_plan === pl && cur > now ? cur : now) + n * 30 * 864e5).toISOString() };
+}
+async function platformSms(phone, text) { // from the shared account, never counted against a shop
+  const v = await sharedCfg(true), ph = nPhone(phone); if (!(v && v.token && v.sender && ph)) return false;
+  await nudgeSend(v.token, v.sender, ph, text); return true;
+}
+async function smsOrder(o) { // inside a shop
+  const r = await sbCall('mt_sms_order_add', { p_shop: SID(), p_o: o });
+  if (!r || r.error) { const e = new Error((r && r.error) || 'Could not send the order.'); e.code = 400; throw e; }
+  const sh = T().shop, tot = (o.gh * o.months).toFixed(2);
+  const line = 'New SMS order #' + r.id + ' from ' + sh.name + ' (/' + sh.slug + '): ' + o.sms + ' SMS a month for ' + o.months + ' month' + (o.months > 1 ? 's' : '') + ', GHS ' + tot + '. MoMo transaction ID ' + o.txid + (o.payer ? ', paid by ' + o.payer : '') + (o.phone ? ' ' + o.phone : '') + '.';
+  platformSms(SMS_ORDER_TO.phone, PLATFORM + ': ' + line + ' Check the MoMo, then confirm in admin.').catch((e) => console.log('sms order alert: ' + e.message));
+  (async () => { const to = SMS_ORDER_TO.email || ((await payCfg(false)) || {}).me && (await payCfg(false)).me.email; if (to) await sendEmail({ to: [to], subject: PLATFORM + ': SMS order #' + r.id + ' from ' + sh.name + ' (GHS ' + tot + ')', text: line + '\n\nCheck that the money arrived on ' + SMS_MOMO.num + ', then open admin > Payments, SMS and reminders > SMS orders to confirm or decline.\n\nhttps://' + hostName() + '/admin' }); })().catch((e) => console.log('sms order email: ' + e.message));
+  console.log('sms order #' + r.id + ': ' + sh.slug + ' ' + o.sms + ' SMS x ' + o.months + ' (GHS ' + tot + ') tx ' + o.txid);
+  return r;
+}
+const smsOrders = () => sbCall('mt_sms_order_list', { p_shop: SID() });
 async function smsPlans() { const v = await sharedCfg(false); return (v && Array.isArray(v.plans) && v.plans.length ? v.plans : SMS_PLANS); }
 const hostName = () => String(process.env.PLATFORM_HOST || 'tessapos.shop').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 function store() {
   const id = SID(); if (id === '-') throw new Error('No shop');
   if (!stores.has(id)) stores.set(id, makeStore({ sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS, caller,
-    multi: true, noTimers: true, sharedSms, sharedPay, smsTake, smsPlans, help: HELP_WA, platform: PLATFORM, unchanged: async (rev) => { const r = await shopRevs(); return !!(r && +(r[SID()] || 0) === +rev); }, host: hostName(), base: () => '/' + T().shop.slug, scope: () => 'shop:' + SID() + ':', siteUrl: () => 'https://' + hostName() }));
+    multi: true, noTimers: true, sharedSms, sharedPay, smsTake, smsPlans, smsOrder, smsOrders, help: HELP_WA, platform: PLATFORM, smsMomo: SMS_MOMO, unchanged: async (rev) => { const r = await shopRevs(); return !!(r && +(r[SID()] || 0) === +rev); }, host: hostName(), base: () => '/' + T().shop.slug, scope: () => 'shop:' + SID() + ':', siteUrl: () => 'https://' + hostName() }));
   return stores.get(id);
 }
 // Credit reminders: every 10 minutes, for every open shop (each shop's own SMS account; sent once a day per customer).

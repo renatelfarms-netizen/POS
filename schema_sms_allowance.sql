@@ -1,5 +1,5 @@
 -- SMS allowance for shops that use the platform's shared SMS account (USMS-GH).
--- Every shop gets a free number of SMS each calendar month (shared_sms.free, default 30).
+-- Every shop gets a free number of SMS each calendar month (shared_sms.free, default 10).
 -- A paid plan adds more: mt_shops.sms_plan SMS per month while mt_shops.sms_until is in the future.
 -- Shops with their own USMS-GH token are not counted. Months follow Ghana time (= UTC).
 -- Run once in the Supabase SQL editor (already applied to the renatel-shop project).
@@ -17,7 +17,7 @@ alter table mt_sms enable row level security;
 
 -- Free SMS per month, from the shared SMS settings.
 create or replace function _mt_sms_free() returns integer language sql stable security definer set search_path = public, extensions as $$
-  select greatest(0, coalesce(((select v from mt_kv where k = 'shared_sms')::jsonb->>'free')::integer, 30));
+  select greatest(0, coalesce(((select v from mt_kv where k = 'shared_sms')::jsonb->>'free')::integer, 10));
 $$;
 revoke all on function _mt_sms_free() from public, anon, authenticated;
 
@@ -83,3 +83,55 @@ begin perform _mt_check(p_token);
     'plans', coalesce(cfg->'plans', '[{"gh":30,"sms":300},{"gh":60,"sms":700},{"gh":120,"sms":1500}]'::jsonb),
     'token', case when coalesce((cfg->>'on')::boolean, false) then tok else null end);
 end $$;
+
+-- SMS plan orders: the shop pays by MoMo, enters the transaction ID in the POS, and the platform admin confirms or declines.
+create table if not exists mt_sms_orders (
+  id bigserial primary key,
+  shop_id uuid not null references mt_shops(id) on delete cascade,
+  gh numeric(10,2) not null, sms integer not null, months integer not null default 1,
+  txid text not null, payer text not null default '', phone text not null default '', by_name text not null default '',
+  status text not null default 'pending',  -- pending | approved | declined
+  note text not null default '',
+  at timestamptz not null default now(), done_at timestamptz
+);
+create index if not exists mt_sms_orders_shop on mt_sms_orders (shop_id, at desc);
+alter table mt_sms_orders enable row level security;
+
+create or replace function mt_sms_order_add(p_token text, p_shop uuid, p_o jsonb) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare r mt_sms_orders;
+begin
+  perform _mt_check(p_token);
+  if (select count(*) from mt_sms_orders where shop_id = p_shop and status = 'pending') >= 3 then return jsonb_build_object('error', 'You already have 3 orders waiting. Wait until they are confirmed.'); end if;
+  if exists (select 1 from mt_sms_orders where lower(txid) = lower(p_o->>'txid') and status <> 'declined') then return jsonb_build_object('error', 'This transaction ID was already sent.'); end if;
+  insert into mt_sms_orders (shop_id, gh, sms, months, txid, payer, phone, by_name)
+  values (p_shop, (p_o->>'gh')::numeric, (p_o->>'sms')::integer, greatest(1, least(12, coalesce((p_o->>'months')::integer, 1))), left(p_o->>'txid', 60), left(coalesce(p_o->>'payer', ''), 80), left(coalesce(p_o->>'phone', ''), 20), left(coalesce(p_o->>'by', ''), 80))
+  returning * into r;
+  return to_jsonb(r);
+end $$;
+revoke all on function mt_sms_order_add(text, uuid, jsonb) from public, anon, authenticated;
+grant execute on function mt_sms_order_add(text, uuid, jsonb) to service_role;
+
+-- One shop's orders (p_shop given) or every shop's (p_shop null), newest first.
+create or replace function mt_sms_order_list(p_token text, p_shop uuid) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform _mt_check(p_token);
+  return coalesce((select jsonb_agg(x order by x.at desc) from (
+    select o.*, s.name as shop_name, s.slug, s.phone as shop_phone from mt_sms_orders o join mt_shops s on s.id = o.shop_id
+    where (p_shop is null or o.shop_id = p_shop) and (p_shop is not null or o.status = 'pending' or o.at > now() - interval '60 days')
+    order by o.at desc limit 200) x), '[]'::jsonb);
+end $$;
+revoke all on function mt_sms_order_list(text, uuid) from public, anon, authenticated;
+grant execute on function mt_sms_order_list(text, uuid) to service_role;
+
+-- Confirm or decline a pending order (only once).
+create or replace function mt_sms_order_set(p_token text, p_id bigint, p_status text, p_note text) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare r mt_sms_orders;
+begin
+  perform _mt_check(p_token);
+  if p_status not in ('approved', 'declined') then raise exception 'bad status'; end if;
+  update mt_sms_orders set status = p_status, note = left(coalesce(p_note, ''), 200), done_at = now() where id = p_id and status = 'pending' returning * into r;
+  if r.id is null then return jsonb_build_object('error', 'This order was already handled.'); end if;
+  return to_jsonb(r);
+end $$;
+revoke all on function mt_sms_order_set(text, bigint, text, text) from public, anon, authenticated;
+grant execute on function mt_sms_order_set(text, bigint, text, text) to service_role;

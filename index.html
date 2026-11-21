@@ -1645,7 +1645,35 @@ function smsUse(S){const u=S.usage;if(!u)return '';const left=Math.max(0,u.limit
  <small class="mut">${u.free} free SMS every month${u.plan?` + your <b>${u.plan} SMS plan</b> (until ${dt(u.until)})`:''}. Free SMS start again on the 1st. Password reset codes are always sent.</small>
  ${full?'<p class="bad" style="margin:6px 0 0">Receipts and reminders by SMS are paused until the 1st, or until you get an SMS plan.</p>':''}
  ${(S.plans||[]).length?`<p style="margin:8px 0 4px"><b>Need more SMS?</b></p><div style="display:grid;gap:4px">${S.plans.map(p=>`<div style="display:flex;justify-content:space-between"><span>${Number(p.sms).toLocaleString()} SMS a month</span><b>GH₵ ${(+p.gh).toFixed(2)} / month</b></div>`).join('')}</div>
- ${wa?`<a class="btn" style="margin-top:8px;display:inline-block" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent('Hello, I want an SMS plan for my shop'+(db.set&&db.set.name?' '+db.set.name:'')+'.')}">💬 Get an SMS plan on WhatsApp</a>`:''}`:''}</div>`}
+ ${S.momo?`<button class="btn pri" style="margin-top:10px" onclick="smsOrderOpen()">🛒 Order more SMS</button>`:''}`:''}
+ ${(S.orders||[]).length?`<p style="margin:10px 0 4px"><b>Your SMS orders</b></p>${S.orders.map(o=>`<div style="display:flex;justify-content:space-between;gap:8px;font-size:.9rem;padding:3px 0"><span>#${o.id} · ${Number(o.sms).toLocaleString()} SMS × ${o.months} mo · GH₵ ${(o.gh*o.months).toFixed(2)}<br><small class="mut">${dt(o.at)} · MoMo ID ${esc(o.txid)}${o.note?' · '+esc(o.note):''}</small></span><span class="pill ${o.status=='approved'?'ok':'low'}">${o.status=='approved'?'✔ Confirmed':o.status=='declined'?'Declined':'⏳ Waiting'}</span></div>`).join('')}`:''}</div>`}
+/* Order an SMS plan: pay by MoMo, enter the transaction ID, tap Done; the platform confirms it */
+function smsOrderOpen(){const S=SMS,P=S.plans||[],mo=S.momo||{};let el=$('#smsord');if(!el){el=document.createElement('div');el.id='smsord';document.body.appendChild(el)}
+ el.style.cssText='position:fixed;inset:0;z-index:9999;background:var(--bg,#f8fafc);overflow:auto;padding:16px';
+ const ms=[1,2,3,6,12];
+ el.innerHTML=`<div style="max-width:520px;margin:0 auto"><div style="display:flex;align-items:center;gap:8px"><button class="btn" onclick="$('#smsord').remove()">← Back</button><h2 style="margin:0">Order more SMS</h2></div>
+ <div class="card" style="margin-top:12px"><b>1. Choose a plan</b>
+ <div style="display:grid;gap:6px;margin-top:8px">${P.map((p,i)=>`<label class="acrow" style="display:flex;gap:10px;align-items:center;padding:10px;border:1px solid var(--bd,#e5e7eb);border-radius:10px"><input type="radio" name="sop" value="${i}" ${i==0?'checked':''} onchange="smsOrdTot()"><span style="flex:1"><b>${Number(p.sms).toLocaleString()} SMS a month</b></span><b>GH₵ ${(+p.gh).toFixed(2)}</b></label>`).join('')}</div>
+ <label class="fl" style="margin-top:10px"><span class="mut">How many months?</span><select id="som" onchange="smsOrdTot()">${ms.map(n=>`<option value="${n}">${n} month${n>1?'s':''}</option>`).join('')}</select></label></div>
+ <div class="card" style="margin-top:12px"><b>2. Pay by Mobile Money</b>
+ <p style="margin:8px 0">Send <b id="sotot">GH₵ 0.00</b> to:</p><div style="padding:10px;background:#fef9c3;border-radius:10px;font-size:1.05rem"><b>${esc(mo.num||'')}</b><br>${esc(mo.name||'')}</div>
+ <button class="btn sm" style="margin-top:8px" onclick="navigator.clipboard&&navigator.clipboard.writeText('${esc(mo.num||'')}').then(()=>toast('Number copied','${esc(mo.num||'')}'))">Copy number</button></div>
+ <div class="card" style="margin-top:12px"><b>3. Enter your payment details</b>
+ <label class="fl" style="margin-top:8px"><span class="mut">MoMo <b>transaction ID</b> (in the payment SMS you got)</span><input id="sotx" autocomplete="off" spellcheck="false" placeholder="e.g. 51234567890"></label>
+ <label class="fl" style="margin-top:8px"><span class="mut">Name on the MoMo account you paid from</span><input id="sopy" value="${esc((typeof me!='undefined'&&me&&me.name)||'')}"></label>
+ <label class="fl" style="margin-top:8px"><span class="mut">MoMo number you paid from</span><input id="soph" inputmode="tel" value="${esc((typeof me!='undefined'&&me&&me.phone)||'')}"></label>
+ <p id="somsg" class="msg" style="margin-top:8px"></p>
+ <button class="btn pri" id="sobtn" style="width:100%;margin-top:6px;padding:12px" onclick="smsOrderSend(this)">✔ Done, I have paid</button>
+ <p style="margin:8px 0 0"><small class="mut">We check the payment and turn your SMS plan on, usually the same day. You get an SMS when it is ready.</small></p></div></div>`;
+ smsOrdTot()}
+function smsOrdTot(){const P=SMS.plans||[],i=+((document.querySelector('input[name=sop]:checked')||{}).value||0),m=+($('#som')||{}).value||1,t=$('#sotot');if(t&&P[i])t.textContent='GH₵ '+(P[i].gh*m).toFixed(2)}
+async function smsOrderSend(b){const say=t=>{$('#somsg').textContent=t};
+ const body={i:+((document.querySelector('input[name=sop]:checked')||{}).value||0),months:+$('#som').value,txid:$('#sotx').value.trim(),payer:$('#sopy').value.trim(),phone:$('#soph').value.trim()};
+ if(body.txid.replace(/\s/g,'').length<6)return say('✖ Enter the MoMo transaction ID from your payment SMS.');
+ if(body.payer.length<2)return say('✖ Enter the name on the MoMo account you paid from.');
+ b.disabled=true;say('⏳ Sending…');
+ try{const r=await webApi('/api/store/admin/sms/order',{method:'POST',body:JSON.stringify(body)});$('#smsord').remove();SMS=await webApi('/api/store/admin/sms');render();uiAlert('Order #'+r.id+' sent. Confirmed ✓\nWe will check your payment and turn the SMS plan on. You will get an SMS when it is ready.')}
+ catch(e){say('✖ '+e.message);b.disabled=false}}
 async function smsSave(b){const m=$('#smsm'),say=(t,ok)=>{m.style.color=ok?'var(--ac)':'';m.textContent=t};
  try{const tok=($('#smstok').value||'').replace(/\s+/g,''),snd=$('#smssnd').value.trim(),msg=$('#smsmsg').value.trim();
   if(!msg.includes('{link}'))return say('✖ The message must include {link} so customers can open their receipt.');
