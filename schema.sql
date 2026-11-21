@@ -189,3 +189,9 @@ begin
 end $$;
 revoke all on function mt_shop_delete from public, anon, authenticated;
 grant execute on function mt_shop_delete to service_role;
+
+-- Every shop's current revision in one call: the server uses it to skip shops that have not changed.
+create or replace function mt_revs(p_token text) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+begin perform _mt_check(p_token); return coalesce((select jsonb_object_agg(shop_id, rev) from mt_seq), '{}'::jsonb); end $$;
+revoke all on function mt_revs(text) from public, anon, authenticated;
+grant execute on function mt_revs(text) to service_role;
