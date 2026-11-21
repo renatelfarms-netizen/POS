@@ -180,14 +180,30 @@ const DB_COLS = new Set(['shop', 'devices', 'mailed', 'students', 'att', 'marks'
 // ---- online backups of the shared shop, made by the server ----
 // Every SNAP_MIN minutes, if anything changed, the whole shop is saved on the hosting and in Supabase.
 const SNAP_DEV = 'shop', SNAP_FORMAT = 'renatel-shop-docs-1', SNAP_MIN = 10;
-async function allDocs() {
-  const docs = {}; let since = 0, more = true;
+// Each shop's documents are kept in memory and only the changes are downloaded (Supabase bandwidth).
+// One small call (mt_revs) says which shops changed, so unchanged shops need no download at all.
+// fresh = always ask Supabase for changes (restore, admin view); the background jobs may use a copy up to a minute old.
+const docCache = new Map(); // shop id -> { rev, docs: Map, at }
+const DOC_TTL = 6 * 3600000; // reload a shop in full every 6 hours, just in case
+let revSnap = { at: 0, revs: null };
+async function shopRevs() {
+  if (Date.now() - revSnap.at < 60000) return revSnap.revs;
+  let revs = null; try { revs = (await sbCall('mt_revs', {})) || {}; } catch (e) { console.error('shop revs', e.message); }
+  revSnap = { at: Date.now(), revs }; return revs;
+}
+async function allDocs(fresh) {
+  const id = SID(); let c = docCache.get(id);
+  if (!c || Date.now() - c.at > DOC_TTL) c = { rev: 0, docs: new Map(), at: Date.now() };
+  const out = () => [...c.docs.keys()].sort().reduce((o, k) => (o[k] = c.docs.get(k), o), {});
+  if (!fresh && docCache.get(id) === c) { const r = await shopRevs(); if (r && +(r[id] || 0) === c.rev) return out(); }
+  let since = c.rev, more = true;
   while (more) {
     const j = await sbCall('shop_db_pull', { p_since: since });
-    for (const d of j.docs || []) { const k = d.c + '/' + d.id; if (d.x) delete docs[k]; else docs[k] = d.d; }
-    since = j.rev; more = !!j.more;
+    for (const d of j.docs || []) { const k = d.c + '/' + d.id; if (d.x) c.docs.delete(k); else c.docs.set(k, d.d); }
+    since = +j.rev || since; more = !!j.more;
   }
-  return Object.keys(docs).sort().reduce((o, k) => (o[k] = docs[k], o), {});
+  c.rev = since; docCache.set(id, c);
+  return out();
 }
 function docCounts(docs) {
   const n = { products: 0, customers: 0, sales: 0, expenses: 0, staff: 0 };
@@ -199,22 +215,25 @@ function docCounts(docs) {
   n.staff = ((docs['shop/main'] || {}).staff || []).length;
   return n;
 }
-const snapBusy = new Map();
+const snapBusy = new Map(), snapLast = new Map(); // shop id -> digest of the last backup saved
 function snapshot(label, force) { const k = SID(); if (!snapBusy.has(k)) snapBusy.set(k, snapshotNow(label, force).finally(() => snapBusy.delete(k))); return snapBusy.get(k); }
 async function snapshotNow(label, force) {
-  const docs = await allDocs();
+  const docs = await allDocs(!!force);
   if (!docs['shop/main']) return { skipped: true, reason: 'empty' };
   const digest = sha(JSON.stringify(docs));
+  // Nothing changed since the last backup this server made: nothing to upload.
+  if (!force && snapLast.get(SID()) === digest) return { skipped: true, same: true };
   const raw = JSON.stringify({ format: SNAP_FORMAT, at: new Date().toISOString(), docs }), cnt = docCounts(docs);
   const out = {};
   // The same backup is never saved twice in a row (hostSave and site_backup_save skip an unchanged copy).
   try { out.hosting = await hostSave(SNAP_DEV, label, raw, digest, cnt); } catch (e) { console.error('hosting backup', e.message); out.hosting = { error: 'Could not save on the hosting.' }; }
   try { out.supabase = await sbSave(SNAP_DEV, label, raw, digest, cnt); } catch (e) { console.error('supabase backup', e.message); out.supabase = { error: 'Could not save in Supabase.' }; }
   if (force && out.hosting.skipped && out.supabase.skipped) out.same = true;
+  if (!out.hosting.error && !out.supabase.error) snapLast.set(SID(), digest);
   return out;
 }
 async function restoreDocs(docs, by) {
-  const cur = await allDocs(); let n = 0;
+  const cur = await allDocs(true); let n = 0;
   docs = Object.assign({}, docs);
   // Everyone is signed out so no device keeps working on the old data.
   const main = JSON.parse(JSON.stringify(docs['shop/main']));
@@ -709,7 +728,7 @@ async function emailReset(req, res) {
 // ---- admin: read-only view of a shop ----
 async function shopView(rec) {
   return ctx.run({ shop: rec }, async () => {
-    const docs = await allDocs(), main = docs['shop/main'] || {}, set = main.set || {}, two = set.branches !== 1;
+    const docs = await allDocs(true), main = docs['shop/main'] || {}, set = main.set || {}, two = set.branches !== 1;
     const BRN = { '': (set.brNames || {}).kum || 'Main branch', accra_: (set.brNames || {}).acc || 'Second branch' };
     const pf = two ? ['', 'accra_'] : [''];
     const list = (c) => Object.entries(docs).filter(([k]) => k.startsWith(c + '/')).map(([, d]) => d);
@@ -969,7 +988,7 @@ async function remindAll() {
     try { await ctx.run({ shop: r }, () => store().remindRun()); } catch (e) { console.error('reminders ' + r.slug, e.message); }
   }
 }
-if (sbOn()) { setTimeout(remindAll, 30000).unref(); setInterval(remindAll, +process.env.REMIND_EVERY_MS || 600000).unref(); }
+if (sbOn()) { setTimeout(remindAll, 30000).unref(); setInterval(remindAll, +process.env.REMIND_EVERY_MS || 1800000).unref(); }
 
 // ---- Reminder SMS to shop owners: people who created a shop but stopped part-way, or went quiet ----
 // Sent from the platform's shared SMS account, 9am to 6pm Ghana time, each message once only (mt_job_once).

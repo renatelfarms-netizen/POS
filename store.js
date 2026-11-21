@@ -304,9 +304,9 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
     if (remBusy || !sbOn()) return; remBusy = true;
     try {
       const shop = await shopMain(true), set = (shop && shop.set) || {};
-      if (set.credRem === false || !(await smsReady())) return;
+      if (set.credRem === false) return;
       const hr = new Date().getUTCHours(), at = Number.isFinite(+set.credHour) && set.credHour !== '' ? +set.credHour : 9; // Ghana = UTC
-      if (hr < at || hr >= 20) return;
+      if (hr < at || hr >= 20 || !(await smsReady())) return; // SMS settings are only looked up within reminder hours
       await fresh();
       const today = accraDay(Date.now());
       ONE = MULTI && set.branches == 1;
@@ -324,7 +324,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
     } catch (e) { console.error('credit reminders', e.message); }
     finally { remBusy = false; }
   }
-  if (sbOn() && !d.noTimers) { setTimeout(remindRun, 20000).unref(); setInterval(remindRun, +process.env.REMIND_EVERY_MS || 600000).unref(); }
+  if (sbOn() && !d.noTimers) { setTimeout(remindRun, 20000).unref(); setInterval(remindRun, +process.env.REMIND_EVERY_MS || 1800000).unref(); }
 
   const PAY_METHODS = ['Mobile Money', 'Cash', 'Bank transfer', 'Other'];
   async function invoicePage(req, res, code) {
