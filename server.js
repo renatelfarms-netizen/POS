@@ -485,7 +485,7 @@ async function caller(req) {
 // ---- API ----
 async function api(req, res, url) {
   if (url.startsWith('/api/store/')) { const c = url === '/api/store/paystack' ? null : shopClosed(); if (c) return send(res, c[0], { error: c[1] }); return store().api(req, res, url); }
-  // ---- product photos: the page shrinks the picture first; it is kept in Supabase and cached on the hosting ----
+  // ---- product photos: the page shrinks the picture first; it is kept on the hosting (PHOTO_DIR), not in Supabase ----
   if (req.method === 'POST' && url === '/api/photo') {
     const who = await caller(req); if (who.err) return send(res, who.err[0], { error: who.err[1] });
     let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
@@ -494,8 +494,7 @@ async function api(req, res, url) {
     const buf = Buffer.from(m[2], 'base64');
     if (buf.length > 1024 * 1024) return send(res, 413, { error: 'The photo is too big. Try a smaller one.' });
     const key = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 24);
-    try { await sbCall('shop_photo_put', { p_key: key, p_mime: m[1], p_data: m[2] }); } catch (e) { console.error('photo put', e.message); return send(res, 502, { error: 'Could not save the photo. Try again.' }); }
-    photoCacheSave(key, m[1], buf);
+    try { await photoWrite(SID(), key, m[1], buf); } catch (e) { console.error('photo save', e.message); return send(res, 502, { error: 'Could not save the photo. Try again.' }); }
     return send(res, 200, { ok: true, key });
   }
   if (req.method === 'POST' && url === '/api/login') return login(req, res);
@@ -778,6 +777,8 @@ const adminToken = () => { const b = b64u(JSON.stringify({ exp: Date.now() + 12 
 async function platformApi(req, res, url) {
   const q = new URL(req.url, 'http://x').searchParams;
   if (req.method === 'GET' && url === '/api/platform/info') return send(res, 200, { name: PLATFORM });
+  // How far the photos have been copied from Supabase to the hosting (counts only).
+  if (req.method === 'GET' && url === '/api/platform/photos-status') return send(res, 200, await photoStatus());
   if (req.method === 'GET' && url === '/api/platform/slug') {
     const v = String(q.get('s') || '').toLowerCase(), want = slugOK(v) ? v : slugify(v);
     if (!slugOK(want)) return send(res, 200, { ok: false, slug: want, why: 'Use 3 to 40 small letters, numbers or dashes.' });
@@ -972,12 +973,58 @@ function html(res, req, body, code) {
 const platInfo = (extra) => '<script>window.PLAT=' + jsonScript(Object.assign({ name: PLATFORM }, extra || {})) + '</script>';
 function landing(req, res, extra, code, f) { return html(res, req, file(f || LANDING).replace('<!--PLAT-->', platInfo(extra)), code); }
 const notFound = (req, res, slug) => landing(req, res, { notFound: String(slug).slice(0, 40) }, 404, LOGIN);
-// ---- product photos at /<shop>/img/<key> (cached on the hosting per shop, outside the website folder) ----
+// ---- product photos at /<shop>/img/<key>: kept on the hosting per shop, outside the website folder (deploys don't touch it).
+// Photos uploaded before 22 Nov 2026 were kept in Supabase (mt_photos); photoSync copies them here once, and the
+// originals saved on 21 Nov (mt_photos_backup_20261121) go to PHOTO_DIR/_originals-20261121, so nothing is lost
+// when they are removed from Supabase. Until then a photo missing here is still read from Supabase. ----
 const PHOTO_DIR = process.env.PHOTO_DIR || path.join(os.homedir(), 'tessa-photos');
+const PHOTO_ORIG = path.join(PHOTO_DIR, '_originals-20261121');
 const PHOTO_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
-const pdir = () => path.join(PHOTO_DIR, SID().replace(/[^A-Za-z0-9-]/g, ''));
-function photoCacheSave(key, mime, buf) {
-  const dir = pdir(); fsp.mkdir(dir, { recursive: true }).then(() => fsp.writeFile(path.join(dir, key + '.' + PHOTO_EXT[mime]), buf)).catch((e) => console.error('photo cache', e.message));
+const sdir = (root, shop) => path.join(root, String(shop).replace(/[^A-Za-z0-9-]/g, ''));
+const pdir = () => sdir(PHOTO_DIR, SID());
+// Writes the whole file or nothing (temporary name, then rename), so a half-written photo is never served.
+async function photoWrite(shop, key, mime, buf, root) {
+  if (!PHOTO_EXT[mime] || !/^[A-Za-z0-9]+$/.test(key)) throw new Error('bad photo');
+  const dir = sdir(root || PHOTO_DIR, shop), f = path.join(dir, key + '.' + PHOTO_EXT[mime]), tmp = f + '.' + process.pid + '.tmp';
+  await fsp.mkdir(dir, { recursive: true }); await fsp.writeFile(tmp, buf); await fsp.rename(tmp, f);
+}
+function photoCacheSave(key, mime, buf) { photoWrite(SID(), key, mime, buf).catch((e) => console.error('photo cache', e.message)); }
+const PHOTO_MARK = path.join(PHOTO_DIR, '.copied-from-supabase.json');
+let PSYNC = { state: 'not started' };
+// Copies every photo from Supabase to the hosting. A file already here is kept only if it is the same photo.
+async function photoSync() {
+  if (PSYNC.state === 'running') return;
+  PSYNC = { state: 'running', started: new Date().toISOString(), live: { checked: 0, written: 0, failed: 0 }, orig: { checked: 0, written: 0, failed: 0 } };
+  try {
+    for (const src of ['live', 'orig']) {
+      const C = PSYNC[src], root = src === 'live' ? PHOTO_DIR : PHOTO_ORIG; let after = '';
+      for (;;) {
+        const L = (await sbCall('mt_photo_dump', { p_src: src, p_after: after, p_limit: 20 })) || [];
+        if (!L.length) break;
+        for (const x of L) {
+          after = x.s + '/' + x.k; C.checked++;
+          try {
+            const buf = Buffer.from(x.d, 'base64'), f = path.join(sdir(root, x.s), x.k + '.' + PHOTO_EXT[x.m]);
+            const cur = await fsp.readFile(f).catch(() => null);
+            if (!cur || !cur.equals(buf)) { await photoWrite(x.s, x.k, x.m, buf, root); C.written++; }
+          } catch (e) { C.failed++; console.error('photo copy', x.s, x.k, e.message); }
+        }
+      }
+    }
+    PSYNC.state = PSYNC.live.failed || PSYNC.orig.failed ? 'finished with errors' : 'done'; PSYNC.finished = new Date().toISOString();
+    if (PSYNC.state === 'done') await fsp.writeFile(PHOTO_MARK, JSON.stringify(PSYNC));
+  } catch (e) { PSYNC.state = 'stopped: ' + e.message; console.error('photo sync', e.message); }
+}
+// Counts the photos in Supabase and the files on the hosting, so the copy can be checked before Supabase is emptied.
+async function photoStatus() {
+  const count = async (root) => { let n = 0, bytes = 0;
+    for (const d of await fsp.readdir(root, { withFileTypes: true }).catch(() => [])) {
+      if (!d.isDirectory() || d.name.startsWith('_')) continue;
+      for (const f of await fsp.readdir(path.join(root, d.name)).catch(() => [])) if (/\.(jpg|png|webp)$/.test(f)) { n++; bytes += (await fsp.stat(path.join(root, d.name, f)).catch(() => ({ size: 0 }))).size; }
+    } return { files: n, mb: +(bytes / 1048576).toFixed(1) }; };
+  let db = null; try { db = await sbCall('mt_photo_count', {}); } catch (e) { db = { error: e.message }; }
+  let mark = null; try { mark = JSON.parse(await fsp.readFile(PHOTO_MARK, 'utf8')); } catch (e) {}
+  return { supabase: db, hosting: await count(PHOTO_DIR), originals: await count(PHOTO_ORIG), sync: PSYNC, lastFullCopy: mark && mark.finished };
 }
 async function photoServe(req, res, key) {
   const done = (mime, buf) => { res.writeHead(200, Object.assign({ 'Content-Type': mime, 'Cache-Control': 'public, max-age=31536000, immutable' }, HEADERS)); res.end(req.method === 'HEAD' ? undefined : buf); };
@@ -1146,6 +1193,8 @@ async function nudgeRun(dry) {
   } catch (x) { console.error('nudge run', x.message); } finally { if (!dry) nudgeBusy = false; }
   return out;
 }
+// Copy the photos from Supabase once (skipped after a full copy has been made).
+if (sbOn()) setTimeout(() => fsp.access(PHOTO_MARK).catch(() => photoSync()), 20000).unref();
 if (sbOn()) { setTimeout(nudgeRun, 120000).unref(); setInterval(nudgeRun, +process.env.NUDGE_EVERY_MS || 1800000).unref(); }
 if (process.env.NUDGE_TEST) module.exports = { nudgePlan, nPhone };
 

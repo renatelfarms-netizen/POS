@@ -169,3 +169,24 @@ begin perform _mt_check(p_token);
 end $$;
 revoke all on function mt_shop_stats from public, anon, authenticated;
 grant execute on function mt_shop_stats to service_role;
+
+-- Moving product photos to the hosting: read them out in pages, and count them. Read-only.
+-- p_src 'live' = mt_photos (the photos in use); 'orig' = mt_photos_backup_20261121 (the bigger originals kept on 21 Nov).
+create or replace function mt_photo_dump(p_token text, p_src text, p_after text, p_limit int) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare t text; r jsonb;
+begin perform _mt_check(p_token);
+  t := case p_src when 'live' then 'mt_photos' when 'orig' then 'mt_photos_backup_20261121' end;
+  if t is null or to_regclass('public.' || t) is null then return '[]'::jsonb; end if;
+  execute format('select coalesce(jsonb_agg(jsonb_build_object(''s'', shop_id, ''k'', key, ''m'', mime, ''d'', data) order by c), ''[]''::jsonb)
+    from (select shop_id, key, mime, data, shop_id::text || ''/'' || key as c from %I where shop_id::text || ''/'' || key > $1 order by c limit $2) q', t)
+    into r using coalesce(p_after, ''), least(greatest(coalesce(p_limit, 20), 1), 50);
+  return r;
+end $$;
+create or replace function mt_photo_count(p_token text) returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare o bigint := 0;
+begin perform _mt_check(p_token);
+  if to_regclass('public.mt_photos_backup_20261121') is not null then execute 'select count(*) from mt_photos_backup_20261121' into o; end if;
+  return jsonb_build_object('live', (select count(*) from mt_photos), 'orig', o);
+end $$;
+revoke all on function mt_photo_dump, mt_photo_count from public, anon, authenticated;
+grant execute on function mt_photo_dump, mt_photo_count to service_role;
