@@ -992,14 +992,28 @@ function photoCacheSave(key, mime, buf) { photoWrite(SID(), key, mime, buf).catc
 const PHOTO_MARK = path.join(PHOTO_DIR, '.copied-from-supabase.json');
 let PSYNC = { state: 'not started' };
 // Copies every photo from Supabase to the hosting. A file already here is kept only if it is the same photo.
+// The hosting runs several server processes; a lock file lets only one of them copy (a lock older than 30 minutes is stale).
+const PHOTO_LOCK = path.join(PHOTO_DIR, '.copying.lock');
+async function photoLock() {
+  await fsp.mkdir(PHOTO_DIR, { recursive: true });
+  try { await fsp.writeFile(PHOTO_LOCK, String(process.pid), { flag: 'wx' }); return true; } catch (e) {
+    const st = await fsp.stat(PHOTO_LOCK).catch(() => null);
+    if (st && Date.now() - st.mtimeMs > 30 * 60000) { await fsp.unlink(PHOTO_LOCK).catch(() => {}); return photoLock(); }
+    return false;
+  }
+}
 async function photoSync() {
   if (PSYNC.state === 'running') return;
-  PSYNC = { state: 'running', started: new Date().toISOString(), live: { checked: 0, written: 0, failed: 0 }, orig: { checked: 0, written: 0, failed: 0 } };
+  if (!(await photoLock().catch(() => false))) { PSYNC = { state: 'another server process is copying' }; return; }
+  PSYNC = { state: 'running', pid: process.pid, started: new Date().toISOString(), live: { checked: 0, written: 0, failed: 0 }, orig: { checked: 0, written: 0, failed: 0 } };
   try {
     for (const src of ['live', 'orig']) {
       const C = PSYNC[src], root = src === 'live' ? PHOTO_DIR : PHOTO_ORIG; let after = '';
       for (;;) {
-        const L = (await sbCall('mt_photo_dump', { p_src: src, p_after: after, p_limit: 20 })) || [];
+        let L; for (let t = 1; ; t++) { // a page that fails is tried again a few times before the copy stops
+          try { L = (await sbCall('mt_photo_dump', { p_src: src, p_after: after, p_limit: 10 })) || []; break; }
+          catch (e) { if (t >= 4) throw e; await new Promise((r) => setTimeout(r, 3000 * t)); }
+        }
         if (!L.length) break;
         for (const x of L) {
           after = x.s + '/' + x.k; C.checked++;
@@ -1014,6 +1028,7 @@ async function photoSync() {
     PSYNC.state = PSYNC.live.failed || PSYNC.orig.failed ? 'finished with errors' : 'done'; PSYNC.finished = new Date().toISOString();
     if (PSYNC.state === 'done') await fsp.writeFile(PHOTO_MARK, JSON.stringify(PSYNC));
   } catch (e) { PSYNC.state = 'stopped: ' + e.message; console.error('photo sync', e.message); }
+  finally { await fsp.unlink(PHOTO_LOCK).catch(() => {}); }
 }
 // Counts the photos in Supabase and the files on the hosting, so the copy can be checked before Supabase is emptied.
 async function photoStatus() {
@@ -1024,7 +1039,7 @@ async function photoStatus() {
     } return { files: n, mb: +(bytes / 1048576).toFixed(1) }; };
   let db = null; try { db = await sbCall('mt_photo_count', {}); } catch (e) { db = { error: e.message }; }
   let mark = null; try { mark = JSON.parse(await fsp.readFile(PHOTO_MARK, 'utf8')); } catch (e) {}
-  return { supabase: db, hosting: await count(PHOTO_DIR), originals: await count(PHOTO_ORIG), sync: PSYNC, lastFullCopy: mark && mark.finished };
+  return { supabase: db, hosting: await count(PHOTO_DIR), originals: await count(PHOTO_ORIG), sync: PSYNC, lastFullCopy: mark && { finished: mark.finished, live: mark.live, orig: mark.orig } };
 }
 async function photoServe(req, res, key) {
   const done = (mime, buf) => { res.writeHead(200, Object.assign({ 'Content-Type': mime, 'Cache-Control': 'public, max-age=31536000, immutable' }, HEADERS)); res.end(req.method === 'HEAD' ? undefined : buf); };

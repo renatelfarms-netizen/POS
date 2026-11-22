@@ -177,8 +177,10 @@ declare t text; r jsonb;
 begin perform _mt_check(p_token);
   t := case p_src when 'live' then 'mt_photos' when 'orig' then 'mt_photos_backup_20261121' end;
   if t is null or to_regclass('public.' || t) is null then return '[]'::jsonb; end if;
-  execute format('select coalesce(jsonb_agg(jsonb_build_object(''s'', shop_id, ''k'', key, ''m'', mime, ''d'', data) order by c), ''[]''::jsonb)
-    from (select shop_id, key, mime, data, shop_id::text || ''/'' || key as c from %I where shop_id::text || ''/'' || key > $1 order by c limit $2) q', t)
+  -- the next keys first (no photo data read), then only those photos: fast enough for the 8 s API time limit
+  execute format('with k as (select shop_id, key from %1$I where (shop_id::text, key) > (split_part($1, ''/'', 1), split_part($1, ''/'', 2)) order by shop_id::text, key limit $2)
+    select coalesce(jsonb_agg(jsonb_build_object(''s'', p.shop_id, ''k'', p.key, ''m'', p.mime, ''d'', p.data) order by p.shop_id::text, p.key), ''[]''::jsonb)
+    from k join %1$I p on p.shop_id = k.shop_id and p.key = k.key', t)
     into r using coalesce(p_after, ''), least(greatest(coalesce(p_limit, 20), 1), 50);
   return r;
 end $$;
