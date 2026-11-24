@@ -294,6 +294,14 @@ function readToken(t) {
   if (mac.length !== want.length || !crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(want))) return null;
   try { const p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); return p.exp > Date.now() && p.shop === SID() ? p : null; } catch (e) { return null; }
 }
+// Staff password hashes (pin) must never reach a browser. Strip them from the shop doc before it is
+// sent to a device; the page works from `hasPw` instead, and the server keeps the real hash.
+function stripShopDoc(d) {
+  if (!d || typeof d !== 'object') return d;
+  const c = JSON.parse(JSON.stringify(d));
+  if (Array.isArray(c.staff)) for (const st of c.staff) if (st && typeof st === 'object' && 'pin' in st) { st.hasPw = !!st.pin; delete st.pin; }
+  return c;
+}
 const shopCache = new Map(); // shop id -> {at, doc}
 const scClear = () => shopCache.delete(SID());
 async function shopMain(fresh) {
@@ -461,6 +469,27 @@ async function resetByEmail(req, res) {
   console.log('password reset by code: ' + s.name); serverLog('Password reset', 'with a one-time code · on ' + SITE, s);
   return send(res, 200, { ok: true, token: makeToken(s.id, cleanDev(msg.dev)), sid: s.id, name: s.name, exp: Date.now() + SESSION_DAYS * 864e5 });
 }
+// Reset a staff member's password when another staff member (owner/manager) approves it in person.
+async function resetApprove(req, res) {
+  if (!sbOn()) return send(res, 503, { error: 'The shop database is not set up on the server yet.' });
+  const ip = 'ap:' + clientIp(req), wait = tooMany(ip);
+  if (wait) return send(res, 429, { error: 'Too many tries. Wait ' + wait + ' minute' + (wait > 1 ? 's' : '') + ', then try again.' });
+  let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+  const pw = String(m.password || '').slice(0, 200), aPw = String(m.approverPassword || '').slice(0, 200);
+  let shop; try { shop = await shopMain(true); } catch (e) { return send(res, 502, { error: 'Could not reach the shop database. Try again in a moment.' }); }
+  if (!shop) return send(res, 404, { error: 'The shop has not been set up yet.' });
+  const target = findStaff(shop.staff || [], String(m.name || '').slice(0, 80));
+  const appr = findStaff(shop.staff || [], String(m.approver || '').slice(0, 80));
+  if (!target) return send(res, 400, { error: 'No staff member with that name.' });
+  if (!appr || appr.locked || !(await pwOK(aPw, appr.pin))) { failed(ip, 6); serverLog('Failed approval', 'wrong approver password · on ' + SITE, appr || null); return send(res, 401, { error: 'That approver name and password don’t match.' }); }
+  const canApprove = appr.id !== target.id && (appr.role === 'owner' || (appr.role === 'manager' && !['owner', 'manager'].includes(target.role)));
+  if (!canApprove) return send(res, 403, { error: appr.name + ' can’t approve this reset.' });
+  const rule = pwRule(pw, shop.set); if (rule) return send(res, 400, { error: rule });
+  await setPin(shop, target.id, pw);
+  serverLog('Password reset', 'approved by ' + appr.name + ' · on ' + SITE, target);
+  return send(res, 200, { ok: true, name: target.name, token: makeToken(target.id, cleanDev(m.dev)), sid: target.id, exp: Date.now() + SESSION_DAYS * 864e5 });
+}
+
 // Who is calling: a logged-in staff member (session token) or a device with the shop code.
 async function caller(req) {
   const h = String(req.headers.authorization || '');
@@ -501,8 +530,20 @@ async function api(req, res, url) {
   if (req.method === 'POST' && url === '/api/reset') return resetPw(req, res);
   if (req.method === 'POST' && url === '/api/reset/code') return resetCode(req, res);
   if (req.method === 'POST' && url === '/api/reset/email') return resetByEmail(req, res);
+  if (req.method === 'POST' && url === '/api/reset/approve') return resetApprove(req, res);
   const who = await caller(req);
   if (who.err) return send(res, who.err[0], { error: who.err[1] });
+  // Confirm a staff member's password (manager approvals, change-password): the browser no longer holds hashes.
+  if (req.method === 'POST' && url === '/api/verify') {
+    let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+    const sid = Number(msg && msg.sid), pw = String(msg && msg.password || '').slice(0, 200);
+    const vk = 'vf:' + clientIp(req) + ':' + SID() + ':' + sid, wait = tooMany(vk);
+    if (wait) return send(res, 429, { error: 'Too many wrong tries. Wait ' + wait + ' minute' + (wait > 1 ? 's' : '') + ', then try again.' });
+    let shop; try { shop = await shopMain(false); } catch (e) { return send(res, 502, { error: 'Could not reach the shop database.' }); }
+    const s = shop && (shop.staff || []).find((x) => x.id === sid);
+    if (!s || s.locked || !(await pwOK(pw, s.pin))) { failed(vk, 6); return send(res, 401, { error: 'That password is not right.' }); }
+    loginFails.delete(vk); return send(res, 200, { ok: true, name: s.name });
+  }
   // Restoring or listing backups: shop code, or the owner / a manager logged in.
   const canRestore = who.code || ['owner', 'manager'].includes(who.staff.role);
   if (!canRestore && req.method === 'GET' && (url === '/api/backups' || url.startsWith('/api/backup/hosting/') || url.startsWith('/api/backup/supabase/'))) {
@@ -535,7 +576,9 @@ async function api(req, res, url) {
     try {
       if (req.method === 'GET' && url === '/api/db') {
         const since = Math.max(0, parseInt(new URL(req.url, 'http://x').searchParams.get('since') || '0', 10) || 0);
-        return send(res, 200, await sbCall('shop_db_pull', { p_since: since }));
+        const pulled = await sbCall('shop_db_pull', { p_since: since });
+        if (pulled && Array.isArray(pulled.docs)) for (const doc of pulled.docs) if (doc && doc.c === 'shop' && doc.id === 'main') doc.d = stripShopDoc(doc.d);
+        return send(res, 200, pulled);
       }
       if (req.method === 'POST' && (url === '/api/db/put' || url === '/api/db/del')) {
         let msg;
@@ -543,6 +586,16 @@ async function api(req, res, url) {
         const col = String(msg && msg.c || ''), id = String(msg && msg.id || '');
         if (!DB_COLS.has(col) || !/^[A-Za-z0-9_.-]{1,120}$/.test(id)) return send(res, 400, { error: 'Unknown document.' });
         if (url === '/api/db/put' && (!msg.d || typeof msg.d !== 'object' || Array.isArray(msg.d))) return send(res, 400, { error: 'Not valid data.' });
+        // The browser never receives staff password hashes, so when it saves shop/main it sends them back empty.
+        // Re-attach the stored hash for each staff member the browser did not change. Fail closed: if the current
+        // doc can't be read, refuse the write rather than risk blanking every password.
+        if (url === '/api/db/put' && col === 'shop' && id === 'main') {
+          let cur; try { cur = await sbCall('shop_db_get', { p_col: 'shop', p_id: 'main' }); } catch (e) { console.error('merge read', e.message); return send(res, 502, { error: 'Could not save right now. Try again in a moment.' }); }
+          if (cur && Array.isArray(cur.staff)) {
+            const old = new Map(cur.staff.map((x) => [x.id, x]));
+            for (const st of (Array.isArray(msg.d.staff) ? msg.d.staff : [])) { const o = old.get(st.id); if (o && !st.pin && o.pin) st.pin = o.pin; if (st && typeof st === 'object') delete st.hasPw; }
+          }
+        }
         const out = url === '/api/db/del' ? await sbCall('shop_db_del', { p_col: col, p_id: id }) : await sbCall('shop_db_put', { p_col: col, p_id: id, p_data: msg.d });
         if (col === 'shop') scClear(); // staff, password or sign-out changes take effect at once
         return send(res, 200, out);

@@ -642,7 +642,7 @@ async function doForgot(){const e=m=>$('#fe').textContent=m,t=db.staff.find(x=>x
  else if(rc){if(!db.set.rc)return e('This shop has no recovery code yet. The owner can create one in Settings → Password recovery.');$('#fgo').disabled=true;await sleep(1500);$('#fgo').disabled=false;
   if(!(await pwOK('rc:'+rcNorm($('#frc').value),db.set.rc))){db.log.push({ts:Date.now(),sid:t.id,who:t.name,a:'Failed recovery code',d:''});save();return e('That recovery code is not right.')}by='the recovery code'}
  else{const a=db.staff.find(x=>x.id==$('#fa').value);if(!a)return e(db.staff.some(x=>canApprove(x,t))?'Type the name of the owner or manager who approves.':'Nobody else can approve this. Use the recovery code instead.');if(!canApprove(a,t))return e('Only an owner can approve a reset for an owner or a manager.');if(a.locked)return e(lockedMsg(a));
-  if(!(await pwOK($('#fap').value,a.pin))){$('#fap').value='';const m=failTry(a,'approval');fgUpd();return e(m)}a.fails=0;by=a.name}
+  if(ONWEB){const rr=await fetch('/api/reset/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:t.email||t.name,approver:a.email||a.name,approverPassword:$('#fap').value,password:n1,dev:DEV.id})});let rj={};try{rj=await rr.json()}catch(_){}if(!rr.ok){$('#fap').value='';return e(rj.error||'That approver name and password don’t match.')}lsel=t.id;$('#dlg').classList.remove('on');render();uiAlert('Password reset. '+t.name+' can log in with the new password now.');return}if(!(await pwOK($('#fap').value,a.pin))){$('#fap').value='';const m=failTry(a,'approval');fgUpd();return e(m)}a.fails=0;by=a.name}
  t.pin=await mkHash(n1);t.locked=false;t.fails=0;lsel=t.id;db.log.push({ts:Date.now(),sid:t.id,who:t.name,a:'Password reset',d:'approved by '+by});save();$('#dlg').classList.remove('on');render();uiAlert('Password reset. '+t.name+' can log in with the new password now.')}
 const rcNorm=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 async function newRc(first){const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',r=crypto.getRandomValues(new Uint8Array(12)),code=[...r].map(x=>A[x%A.length]).join(''),show=code.match(/.{4}/g).join('-');
@@ -662,10 +662,14 @@ async function doLogin(){if(lbusy)return;const nm=($('#lu').value||'').trim();if
  if(!$('#lp').value)return pwShow('lp','lmsg',false,'Type your password / PIN first.');
  if(s.nextTry&&s.nextTry>Date.now())return pwShow('lp','lmsg',false,'⏳ Too many wrong tries. Wait '+Math.ceil((s.nextTry-Date.now())/1000)+' seconds, then try again.');
  lbusy=true;$('#lbtn').disabled=true;
- if(!(await pwOK($('#lp').value,s.pin))){$('#lp').value='';const m=failTry(s,'login');s.nextTry=Date.now()+(DELAYS[Math.min(s.fails||0,DELAYS.length-1)]||0)*1000;save();lbusy=false;$('#lbtn').disabled=false;
+ let lerr=null;
+ if(ONWEB){try{await webLoginCall(nm,$('#lp').value);}catch(x){lerr=(x&&x.message==='Failed to fetch')?'NET':((x&&x.message)||'That email and password don’t match.');}}
+ else if(!(await pwOK($('#lp').value,s.pin)))lerr='local';
+ if(lerr==='NET'){lbusy=false;$('#lbtn').disabled=false;pwShow('lp','lmsg',false,'✖ Can’t reach '+HOST+'. Check the internet connection.');$('#lp').focus();return}
+ if(lerr){$('#lp').value='';const m=failTry(s,'login');s.nextTry=Date.now()+(DELAYS[Math.min(s.fails||0,DELAYS.length-1)]||0)*1000;save();lbusy=false;$('#lbtn').disabled=false;
   if(s.locked){const o=$('#lc_'+s.id);if(o)o.textContent='🔒 Locked'}
-  pwShow('lp','lmsg',false,'✖ '+asT(m));$('#lp').focus();return}
- if(!String(s.pin).startsWith('p2$'))s.pin=await mkHash($('#lp').value);s.fails=0;s.nextTry=0;loginAt=Date.now();try{if(ONWEB)webRelogin(nm,$('#lp').value)}catch(e){}lastAct=Date.now();pwShow('lp','lmsg',true,'✔ Password correct. Welcome!');$('#lbtn').innerHTML=RING()+' Opening your shop…';$('#lp').disabled=true;
+  pwShow('lp','lmsg',false,'✖ '+asT(lerr==='local'?m:lerr));$('#lp').focus();return}
+ if(!ONWEB&&!String(s.pin||'').startsWith('p2$'))s.pin=await mkHash($('#lp').value);s.fails=0;s.nextTry=0;loginAt=Date.now();lastAct=Date.now();pwShow('lp','lmsg',true,'✔ Password correct. Welcome!');$('#lbtn').innerHTML=RING()+' Opening your shop…';$('#lp').disabled=true;
  setTimeout(()=>{lbusy=false;ufail=0;unext=0;lsel='';me=s;tab='home';cart=[];logit('Logged in');save();render();scrollTo(0,0);if(s.mustChange)setTimeout(()=>pinDlg(true),300)},900)}
 function logout(){logit('Logged out');save();me=null;cart=[];try{sessionStorage.removeItem(K+'-me')}catch(e){}render()}
 let lf='';
@@ -700,7 +704,7 @@ function pinDlg(forced){const f=(l,i,a)=>`<label class="fl" style="margin-top:8p
  $('#dlgc').innerHTML=`<b>Change your password / PIN</b>${forced?'<p class="low ln" style="margin:6px 0 0">🔐 You logged in with a temporary password. Choose your own password now.</p>':''}<p class="mut ln" style="margin:4px 0 0">Logged in as ${esc(me.name)}. Use at least 6 characters with letters and numbers.</p>${f('Current password / PIN','pw1','current-password')}${f('New password / PIN','pw2','new-password')}${f('Type the new one again','pw3','new-password')}<label style="display:flex;gap:6px;align-items:center;margin-top:8px" class="ln"><input type="checkbox" onchange="['pw1','pw2','pw3'].forEach(i=>$('#'+i).type=this.checked?'text':'password')"> Show</label><p id="pwe" class="msg" role="status" aria-live="polite" style="margin-top:8px"></p><div class="form" style="margin-top:10px"><button class="btn pri" onclick="changePin()">Save new password</button><button class="btn" onclick="$('#dlg').classList.remove('on')">Cancel</button></div>`;
  $('#dlg').classList.add('on');$('#pw1').focus()}
 async function changePin(){const a=$('#pw1').value,b=$('#pw2').value,c=$('#pw3').value,e=t=>pwShow(/not right|tries|locked/.test(t)?'pw1':'pw2','pwe',false,'✖ '+t);
- if(!(await pwOK(a,me.pin))){const m=failTry(me,'password change');if(me.locked){$('#dlg').classList.remove('on');me=null;cart=[];render();uiAlert(m);return}return e(m)}
+ if(ONWEB){let vb=null;try{const vr=await fetch('/api/verify',{method:'POST',headers:Object.assign(authH(),{'Content-Type':'application/json'}),body:JSON.stringify({sid:me.id,password:a})});if(!vr.ok){let vj={};try{vj=await vr.json()}catch(_){}vb=vj.error||'That password is not right.';}}catch(_){vb='Can’t reach '+HOST+'. Check the internet connection.';}if(vb)return e(vb);}else if(!(await pwOK(a,me.pin))){const m=failTry(me,'password change');if(me.locked){$('#dlg').classList.remove('on');me=null;cart=[];render();uiAlert(m);return}return e(m)}
  if(pwRule(b))return e(pwRule(b));if(b!==c)return e('The two new entries don’t match.');if(b===a)return e('The new password / PIN is the same as the old one.');
  const s=db.staff.find(x=>x.id==me.id);s.pin=await mkHash(b);s.mustChange=false;me=s;logit('Changed own password');save();pwShow('pw2','pwe',true,'✔ Password changed. Use the new one next time you log in.');$('#pw3').classList.add('pw-ok');setTimeout(()=>{$('#dlg').classList.remove('on');render()},1400)}
 function unlockStaff(i){const s=db.staff.find(x=>x.id==i);s.locked=false;s.fails=0;logit('Unlocked account',s.name);save();render()}
