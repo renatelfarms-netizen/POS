@@ -323,6 +323,62 @@ function limitShopDoc(inc, cur, me) {
   }); // staff the caller added are dropped: only an owner adds staff
   return out;
 }
+// Role enforcement for day-to-day data (sales, products, customers, expenses), mirroring the app's own rules:
+// delete = owner or 'del' permission; edit a sale = owner, manager or 'edit'; refund = owner or manager;
+// change stock by hand = 'stock'; product details = Inventory/Purchases/Warehouse screens; lowering a customer's
+// balance = Customers screen (or refund/edit/delete rights). The server keeps the stored values for anything else.
+const ROLE_TABS = { owner: ['home', 'sch', 'cour', 'kds', 'sell', 'docs', 'cust', 'del', 'inv', 'po', 'wh', 'web', 'exp', 'rep', 'staff', 'set'],
+  manager: ['home', 'sch', 'cour', 'kds', 'sell', 'docs', 'cust', 'del', 'inv', 'po', 'wh', 'exp', 'rep'], accountant: ['home', 'sch', 'docs', 'cust', 'po', 'exp', 'rep'],
+  cashier: ['home', 'sch', 'cour', 'sell', 'docs'], warehouse: ['home', 'wh'], stock: ['home', 'inv', 'po'], delivery: ['home', 'del', 'cour'], teacher: ['home', 'sch'],
+  waiter: ['home', 'sell'], kitchen: ['home', 'kds'] };
+const GRANT_TABS = ['sch', 'cour', 'kds', 'sell', 'docs', 'cust', 'del', 'inv', 'po', 'wh', 'exp', 'rep'];
+function powers(s) {
+  const tabs = !s ? [] : Array.isArray(s.access) ? ['home', ...s.access.filter((t) => GRANT_TABS.includes(t))] : (ROLE_TABS[s.role] || ROLE_TABS.cashier);
+  const t = new Set(tabs), p = (s && s.perms) || {}, mgr = !!s && s.role === 'manager';
+  return { t, del: !!p.del, edit: mgr || !!p.edit, refund: mgr, stock: !!p.stock, prod: t.has('inv') || t.has('po') || t.has('wh'), web: !!(p.web && p.web.products) };
+}
+const DATA_COLS = { sales: 'recs', expenses: 'recs', products: 'one', customers: 'one' };
+const SALE_LOCK = ['items', 'total', 'sub', 'disc', 'sdisc', 'pays', 'method', 'tend', 'change', 'cust', 'custName', 'by', 'byName', 'ts', 'tax', 'taxRate', 'dfee', 'due'];
+const keep = (m, o, k) => { if (o && k in o) m[k] = o[k]; else delete m[k]; };
+// Returns the doc to save for a non-owner, or null when the change is not allowed at all.
+function limitData(base, inc, cur, P) {
+  if (DATA_COLS[base] === 'recs') {
+    const old = new Map(((cur && cur.recs) || []).filter((r) => r && typeof r === 'object').map((r) => [r.id, r])), seen = new Set(), out = [];
+    for (const r of (Array.isArray(inc.recs) ? inc.recs : [])) {
+      if (!r || typeof r !== 'object') continue;
+      const o = old.get(r.id); seen.add(r.id);
+      if (!o) { out.push(r); continue; } // new records are fine
+      if (base === 'sales') {
+        if (P.edit) { out.push(r); continue; }
+        const m = Object.assign({}, r); for (const k of SALE_LOCK) keep(m, o, k);
+        if (!P.refund) { // delivery staff may only add a no-money 'Not collected' void when a delivery is cancelled
+          const was = Array.isArray(o.refunds) ? o.refunds : [], ids = new Set(was.map((x) => x && x.id));
+          const voids = P.t.has('del') ? (Array.isArray(r.refunds) ? r.refunds : []).filter((x) => x && !ids.has(x.id) && x.method === 'Not collected' && !+x.cash && !+x.credit) : [];
+          if (was.length || voids.length) m.refunds = was.concat(voids); else delete m.refunds;
+        }
+        out.push(m);
+      } else out.push(P.del ? r : o); // expenses: changing a recorded expense needs 'del'
+    }
+    if (!P.del) for (const [id, o] of old) if (!seen.has(id)) out.push(o); // records can't be removed without 'del'
+    return Object.assign({}, inc, { recs: out.sort((a, b) => (a.ts || 0) - (b.ts || 0)) });
+  }
+  if (base === 'products') {
+    if (!cur) return P.prod ? inc : null; // only stock/inventory staff add products
+    let m;
+    if (P.prod) m = Object.assign({}, inc);
+    else { m = Object.assign({}, cur); for (const k of ['stock', 'lots', 'exp']) if (k in inc) m[k] = inc[k]; if (P.web) for (const k of ['hideOnline', 'img']) if (k in inc) m[k] = inc[k]; }
+    const up = (+m.stock || 0) > (+cur.stock || 0);
+    if (up && !(P.stock || P.refund || P.edit || P.del || P.prod || P.t.has('del'))) { m.stock = cur.stock; if ('lots' in cur) m.lots = cur.lots; else delete m.lots; } // stock goes up only by receiving, refunds, edits or a stock count
+    return m;
+  }
+  if (base === 'customers') {
+    if (!cur) return inc;
+    const m = Object.assign({}, inc);
+    if (!(P.t.has('cust') || P.refund || P.edit || P.del) && (+inc.owed || 0) < (+cur.owed || 0) - 0.004) { m.owed = cur.owed; keep(m, cur, 'due'); } // only Customers staff can lower a balance
+    return m;
+  }
+  return inc;
+}
 const shopCache = new Map(); // shop id -> {at, doc}
 const scClear = () => shopCache.delete(SID());
 async function shopMain(fresh) {
@@ -612,6 +668,17 @@ async function api(req, res, url) {
         // doc can't be read, refuse the write rather than risk blanking every password.
         const owner = !!who.code || (who.staff && who.staff.role === 'owner');
         if (url === '/api/db/del' && col === 'shop' && !owner) return send(res, 403, { error: 'Only the owner can do this.' });
+        const base = col.replace(/^accra_/, '');
+        if (!owner && DATA_COLS[base]) {
+          const P = powers(who.staff);
+          if (url === '/api/db/del') { if (!P.del) return send(res, 403, { error: 'You don’t have permission to delete this.' }); }
+          else {
+            let cur; try { cur = await sbCall('shop_db_get', { p_col: col, p_id: id }); } catch (e) { console.error('limit read', e.message); return send(res, 502, { error: 'Could not save right now. Try again in a moment.' }); }
+            const lim = limitData(base, msg.d, cur, P);
+            if (!lim) return send(res, 403, { error: 'You don’t have permission to add products.' });
+            msg.d = lim;
+          }
+        }
         if (url === '/api/db/put' && col === 'shop' && id === 'main') {
           let cur; try { cur = await sbCall('shop_db_get', { p_col: 'shop', p_id: 'main' }); } catch (e) { console.error('merge read', e.message); return send(res, 502, { error: 'Could not save right now. Try again in a moment.' }); }
           if (!owner) {
