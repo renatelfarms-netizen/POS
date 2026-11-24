@@ -789,7 +789,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
       if (req.method === 'POST' && url === '/api/store/reset/code') {
         const m = await json(req); const ph = m && normPhone(m.phone);
         if (!ph) return send(res, 400, { error: 'Enter the phone number of your account.' });
-        if (!allow(req, 10, 'rc')) return send(res, 429, { error: 'Too many tries. Try again later.' });
+        if (!allow(req, 10, 'rc') || !allow({ headers: {}, socket: {} }, 6, 'lprc' + ph)) return send(res, 429, { error: 'Too many tries. Try again later.' }); // per phone too: the IP header can be faked
         const a = await acctGet(ph), shop = await shopMain(false), nm = (shop && shop.set && shop.set.name) || 'Renatel Shop', sp = (shop && shop.set && shop.set.phone) || '';
         if (!a) return send(res, 404, { error: 'No account uses that phone number. Create an account instead.' });
         const sms = await smsReady(), via = m.via === 'email' || !sms ? 'email' : 'sms';

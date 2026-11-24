@@ -379,6 +379,17 @@ function limitData(base, inc, cur, P) {
   }
   return inc;
 }
+// History the owner relies on to spot problems: the activity trail and stock movements. Non-owners can add to it,
+// and the app may trim old entries, but they can't remove or rewrite anything from the last 7 days, or the server's own entries.
+const HIST_COLS = new Set(['log', 'moves', 'whMoves']), HIST_KEEP = 7 * 864e5;
+const histLocked = (id, r) => /_server/.test(id) || !r || typeof r !== 'object' || !(+r.ts < Date.now() - HIST_KEEP);
+function limitHist(id, inc, cur) {
+  const seen = new Set(), out = [];
+  for (const r of (Array.isArray(inc && inc.recs) ? inc.recs : [])) if (r && typeof r === 'object') out.push(r);
+  const key = (r) => JSON.stringify(r), have = new Set(out.map(key));
+  for (const o of ((cur && cur.recs) || [])) if (histLocked(id, o) && !have.has(key(o))) out.push(o);
+  return Object.assign({}, inc, { recs: out.sort((a, b) => (a.ts || 0) - (b.ts || 0)) });
+}
 const shopCache = new Map(); // shop id -> {at, doc}
 const scClear = () => shopCache.delete(SID());
 async function shopMain(fresh) {
@@ -416,6 +427,9 @@ function pwOK(p, stored) {
   return Promise.resolve(eq(sha('renatel:' + p), stored));
 }
 const loginFails = new Map(); // ip and name -> {n, until}
+const hourHits = new Map();
+function hourly(key, max, win = 3600e3) { const h = hourHits.get(key) || { n: 0, at: Date.now() }; if (Date.now() - h.at > win) { h.n = 0; h.at = Date.now(); } h.n++; hourHits.set(key, h); return h.n <= max; }
+setInterval(() => { const t = Date.now(); for (const [k, v] of hourHits) if (t - v.at > 864e5) hourHits.delete(k); }, 3600e3).unref();
 function tooMany(key) { const f = loginFails.get(key); return f && f.until > Date.now() ? Math.ceil((f.until - Date.now()) / 60000) : 0; }
 function failed(key, max) { const f = loginFails.get(key) || { n: 0, until: 0 }; f.n++; if (f.n >= max) { f.until = Date.now() + 15 * 60000; f.n = 0; } loginFails.set(key, f); }
 setInterval(() => { const t = Date.now(); for (const [k, v] of loginFails) if (v.until && v.until < t) loginFails.delete(k); }, 600000).unref();
@@ -457,7 +471,7 @@ const pwRule = (p, set) => (set && set.strongPw === false) ? (p.length < 4 ? 'Us
 const mkHash = (p) => new Promise((ok, no) => { const salt = crypto.randomBytes(16).toString('hex'); crypto.pbkdf2(String(p), salt, 150000, 32, 'sha256', (e, k) => e ? no(e) : ok('p2$' + salt + '$' + k.toString('hex'))); });
 async function resetPw(req, res) {
   if (!sbOn()) return send(res, 503, { error: 'The shop database is not set up on the server yet.' });
-  const ip = 'rc:' + clientIp(req), wait = tooMany(ip);
+  const ip = 'rc:' + clientIp(req), sk = 'rcs:' + SID(), wait = tooMany(ip) || tooMany(sk); // per shop too: the IP header can be faked
   if (wait) return send(res, 429, { error: 'Too many wrong codes. Wait ' + wait + ' minutes, then try again.' });
   let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
   const name = String(msg.name || '').slice(0, 80), code = rcNorm(msg.code), pw = String(msg.password || '').slice(0, 200);
@@ -466,7 +480,7 @@ async function resetPw(req, res) {
   const s = findStaff(shop.staff || [], name);
   if (!s) return send(res, 400, { error: 'No staff member with that name. Type the name exactly as the owner added it.' });
   if (!shop.set || !shop.set.rc) return send(res, 400, { error: 'This shop has no recovery code yet. Ask the owner.' });
-  if (!code || !(await pwOK('rc:' + code, shop.set.rc))) { console.log('reset failed: wrong recovery code for ' + s.name); serverLog('Failed recovery code', 'on ' + SITE, s); failed(ip, 5); return send(res, 401, { error: 'That recovery code is not right.' }); }
+  if (!code || !(await pwOK('rc:' + code, shop.set.rc))) { console.log('reset failed: wrong recovery code for ' + s.name); serverLog('Failed recovery code', 'on ' + SITE, s); failed(ip, 5); failed(sk, 10); return send(res, 401, { error: 'That recovery code is not right.' }); }
   const rule = pwRule(pw, shop.set); if (rule) return send(res, 400, { error: rule });
   await setPin(shop, s.id, pw);
   console.log('password reset with the recovery code: ' + s.name); serverLog('Password reset', 'with the shop recovery code · on ' + SITE, s);
@@ -520,6 +534,7 @@ async function resetCode(req, res) {
   const via = msg.via === 'email' ? 'email' : msg.via === 'sms' ? 'sms' : (smsOk ? 'sms' : 'email');
   if (via === 'sms' && !smsOk) return send(res, 400, { error: ph ? 'SMS codes are not set up for this shop yet. Choose “Email me a code” or the recovery code.' : 'No phone number is saved for ' + s.name + '. Choose “Email me a code”, or ask the owner.' });
   if (via === 'email' && !emailOK(s.email)) return send(res, 400, { error: 'No email is saved for ' + s.name + '.' + (smsOk ? ' Choose “Text me a code” instead.' : ' Use the recovery code, or ask the owner or a manager.') });
+  if (!hourly('rcsend:' + SID() + ':' + s.id, 6)) return send(res, 429, { error: 'Too many codes for ' + s.name + ' this hour. Try again later, or use the recovery code.' });
   let code; try { code = await st.otpIssue('staff:' + s.id); } catch (e) { return send(res, e.code || 502, { error: e.message }); }
   failed(ip, 10);
   try {
@@ -549,16 +564,17 @@ async function resetByEmail(req, res) {
 // Reset a staff member's password when another staff member (owner/manager) approves it in person.
 async function resetApprove(req, res) {
   if (!sbOn()) return send(res, 503, { error: 'The shop database is not set up on the server yet.' });
-  const ip = 'ap:' + clientIp(req), wait = tooMany(ip);
-  if (wait) return send(res, 429, { error: 'Too many tries. Wait ' + wait + ' minute' + (wait > 1 ? 's' : '') + ', then try again.' });
+  const ip = 'ap:' + clientIp(req);
   let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+  const ak = 'apa:' + SID() + ':' + nmz(String(m && m.approver || '').slice(0, 80)), wait = tooMany(ip) || tooMany(ak); // per approver too: the IP header can be faked
+  if (wait) return send(res, 429, { error: 'Too many tries. Wait ' + wait + ' minute' + (wait > 1 ? 's' : '') + ', then try again.' });
   const pw = String(m.password || '').slice(0, 200), aPw = String(m.approverPassword || '').slice(0, 200);
   let shop; try { shop = await shopMain(true); } catch (e) { return send(res, 502, { error: 'Could not reach the shop database. Try again in a moment.' }); }
   if (!shop) return send(res, 404, { error: 'The shop has not been set up yet.' });
   const target = findStaff(shop.staff || [], String(m.name || '').slice(0, 80));
   const appr = findStaff(shop.staff || [], String(m.approver || '').slice(0, 80));
   if (!target) return send(res, 400, { error: 'No staff member with that name.' });
-  if (!appr || appr.locked || !(await pwOK(aPw, appr.pin))) { failed(ip, 6); serverLog('Failed approval', 'wrong approver password · on ' + SITE, appr || null); return send(res, 401, { error: 'That approver name and password don’t match.' }); }
+  if (!appr || appr.locked || !(await pwOK(aPw, appr.pin))) { failed(ip, 6); failed(ak, 6); serverLog('Failed approval', 'wrong approver password · on ' + SITE, appr || null); return send(res, 401, { error: 'That approver name and password don’t match.' }); }
   const canApprove = appr.id !== target.id && (appr.role === 'owner' || (appr.role === 'manager' && !['owner', 'manager'].includes(target.role)));
   if (!canApprove) return send(res, 403, { error: appr.name + ' can’t approve this reset.' });
   const rule = pwRule(pw, shop.set); if (rule) return send(res, 400, { error: rule });
@@ -597,6 +613,7 @@ async function api(req, res, url) {
     let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
     const m = String(msg && msg.data || '').match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
     if (!m) return send(res, 400, { error: 'That file is not a photo (use JPG, PNG or WebP).' });
+    if (!hourly('photo:' + SID() + ':' + (who.staff ? who.staff.id : 'code'), 300)) return send(res, 429, { error: 'Too many photos this hour. Try again later.' });
     const buf = Buffer.from(m[2], 'base64');
     if (buf.length > 1024 * 1024) return send(res, 413, { error: 'The photo is too big. Try a smaller one.' });
     const key = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 24);
@@ -614,7 +631,7 @@ async function api(req, res, url) {
   if (req.method === 'POST' && url === '/api/verify') {
     let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
     const sid = Number(msg && msg.sid), pw = String(msg && msg.password || '').slice(0, 200);
-    const vk = 'vf:' + clientIp(req) + ':' + SID() + ':' + sid, wait = tooMany(vk);
+    const vk = 'vf:' + SID() + ':' + sid, wait = tooMany(vk); // per account: the IP header can be faked
     if (wait) return send(res, 429, { error: 'Too many wrong tries. Wait ' + wait + ' minute' + (wait > 1 ? 's' : '') + ', then try again.' });
     let shop; try { shop = await shopMain(false); } catch (e) { return send(res, 502, { error: 'Could not reach the shop database.' }); }
     const s = shop && (shop.staff || []).find((x) => x.id === sid);
@@ -636,6 +653,7 @@ async function api(req, res, url) {
     const to = (Array.isArray(msg.to) ? msg.to : [msg.to]).map((x) => String(x || '').trim()).filter(Boolean);
     if (!to.length || to.length > 10 || !to.every(emailOK)) return send(res, 400, { error: 'Check the email address.' });
     if (!mailAllowed(SID() + ':' + (who.staff ? 's' + who.staff.id : 'code'))) return send(res, 429, { error: 'Too many emails this hour. Try again later.' });
+    if (!hourly('maild:' + SID(), 150, 864e5)) return send(res, 429, { error: 'This shop has sent the most emails allowed today. Try again tomorrow.' });
     const atts = (Array.isArray(msg.attachments) ? msg.attachments : []).slice(0, 5);
     try { await sendEmail({ to, subject: msg.subject, text: String(msg.body || msg.text || '').slice(0, 50000), html: msg.html ? String(msg.html).slice(0, 500000) : undefined, attachments: atts }); return send(res, 200, { ok: true }); }
     catch (e) { return send(res, 502, { error: e.message }); }
@@ -669,6 +687,11 @@ async function api(req, res, url) {
         const owner = !!who.code || (who.staff && who.staff.role === 'owner');
         if (url === '/api/db/del' && col === 'shop' && !owner) return send(res, 403, { error: 'Only the owner can do this.' });
         const base = col.replace(/^accra_/, '');
+        if (!owner && HIST_COLS.has(base)) {
+          let cur; try { cur = await sbCall('shop_db_get', { p_col: col, p_id: id }); } catch (e) { console.error('hist read', e.message); return send(res, 502, { error: 'Could not save right now. Try again in a moment.' }); }
+          if (url === '/api/db/del') { if (cur && (/_server/.test(id) || ((cur.recs || []).some((r) => histLocked(id, r))))) return send(res, 200, { ok: true, kept: true }); } // quietly kept: the app only trims
+          else msg.d = limitHist(id, msg.d, cur);
+        }
         if (!owner && DATA_COLS[base]) {
           const P = powers(who.staff);
           if (url === '/api/db/del') { if (!P.del) return send(res, 403, { error: 'You don’t have permission to delete this.' }); }
@@ -772,7 +795,7 @@ async function signup(req, res) {
   if (owner.length < 2) return send(res, 400, { error: 'Type your full name.', f: 'ownerName' });
   if (!emailOK(email)) return send(res, 400, { error: 'Type a valid email address. Password reset codes are sent there.', f: 'email' });
   const rule = pwRule(pw, {}); if (rule) return send(res, 400, { error: rule, f: 'password' });
-  if (!signupAllowed(clientIp(req))) return send(res, 429, { error: 'Too many new shops from this connection. Try again in an hour.' });
+  if (!signupAllowed(clientIp(req)) || !hourly('signup:all', 40)) return send(res, 429, { error: 'Too many new shops from this connection. Try again in an hour.' });
   let rec;
   try { rec = await sbCall('mt_shop_create', { p_slug: slug, p_name: name, p_owner: owner, p_email: email, p_phone: phone, p_trial_days: 365 }); }
   catch (e) { console.error('signup', e.message); return send(res, 502, { error: 'Could not create the shop. Try again in a moment.' }); }
@@ -937,10 +960,10 @@ async function platformApi(req, res, url) {
   if (req.method === 'POST' && url === '/api/platform/reset/code') return emailResetCode(req, res);
   if (req.method === 'POST' && url === '/api/platform/reset') return emailReset(req, res);
   if (req.method === 'POST' && url === '/api/platform/admin/login') {
-    const k = 'adm:' + clientIp(req), w = tooMany(k); if (w) return send(res, 429, { error: 'Too many wrong tries. Wait ' + w + ' minutes.' });
+    const k = 'adm:' + clientIp(req), w = tooMany(k) || tooMany('adm:all'); if (w) return send(res, 429, { error: 'Too many wrong tries. Wait ' + w + ' minutes.' });
     let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
     if (!(await adminHash(true)) && !process.env.PLATFORM_ADMIN_PASSWORD) return send(res, 503, { error: 'Set PLATFORM_ADMIN_PASSWORD on the server first.' });
-    if (!(await adminPwOK(String(m.password || '').slice(0, 200)))) { failed(k, 6); return send(res, 401, { error: 'Wrong admin password.' }); }
+    if (!(await adminPwOK(String(m.password || '').slice(0, 200)))) { failed(k, 6); failed('adm:all', 20); return send(res, 401, { error: 'Wrong admin password.' }); }
     loginFails.delete(k); return send(res, 200, { ok: true, token: adminToken() });
   }
   if (url.startsWith('/api/platform/admin/')) {
