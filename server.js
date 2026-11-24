@@ -302,6 +302,27 @@ function stripShopDoc(d) {
   if (Array.isArray(c.staff)) for (const st of c.staff) if (st && typeof st === 'object' && 'pin' in st) { st.hasPw = !!st.pin; delete st.pin; }
   return c;
 }
+// Role enforcement for the shop document (staff list + settings). Only an owner may change staff roles,
+// permissions, other people's passwords, unlock accounts, add/remove staff, or change the settings below.
+// Anyone else's save is rebuilt from the stored copy, keeping only the changes their role allows.
+const OWNER_SET = ['rc', 'sessEpoch', 'strongPw', 'valOwner', 'idleMin', 'maxDisc', 'tax', 'methods', 'branches', 'brNames', 'cur', 'reqBuyer', 'smsAuto', 'name'];
+const SELF_OK = ['pin', 'mustChange', 'setupDone', 'name', 'email', 'emailOK', 'phone', 'addr', 'ecn', 'ecp', 'look', 'fails', 'nextTry'];
+const OTHER_OK = ['fails', 'nextTry'];
+function limitShopDoc(inc, cur, me) {
+  const out = Object.assign({}, inc);
+  const curSet = (cur && cur.set) || {}, set = Object.assign({}, inc.set || {});
+  for (const k of OWNER_SET) { if (k in curSet) set[k] = curSet[k]; else delete set[k]; }
+  out.set = set;
+  const incStaff = new Map((Array.isArray(inc.staff) ? inc.staff : []).filter((x) => x && typeof x === 'object').map((x) => [x.id, x]));
+  out.staff = (Array.isArray(cur.staff) ? cur.staff : []).map((old) => {
+    const i = incStaff.get(old.id); if (!i) return old; // no removing staff
+    const m = JSON.parse(JSON.stringify(old));
+    for (const k of (old.id === me.id ? SELF_OK : OTHER_OK)) if (i[k] !== undefined) m[k] = i[k];
+    if (i.locked === true) m.locked = true; // wrong tries may lock an account; only an owner can unlock
+    return m;
+  }); // staff the caller added are dropped: only an owner adds staff
+  return out;
+}
 const shopCache = new Map(); // shop id -> {at, doc}
 const scClear = () => shopCache.delete(SID());
 async function shopMain(fresh) {
@@ -589,8 +610,14 @@ async function api(req, res, url) {
         // The browser never receives staff password hashes, so when it saves shop/main it sends them back empty.
         // Re-attach the stored hash for each staff member the browser did not change. Fail closed: if the current
         // doc can't be read, refuse the write rather than risk blanking every password.
+        const owner = !!who.code || (who.staff && who.staff.role === 'owner');
+        if (url === '/api/db/del' && col === 'shop' && !owner) return send(res, 403, { error: 'Only the owner can do this.' });
         if (url === '/api/db/put' && col === 'shop' && id === 'main') {
           let cur; try { cur = await sbCall('shop_db_get', { p_col: 'shop', p_id: 'main' }); } catch (e) { console.error('merge read', e.message); return send(res, 502, { error: 'Could not save right now. Try again in a moment.' }); }
+          if (!owner) {
+            if (!cur) return send(res, 403, { error: 'Only the owner can do this.' });
+            msg.d = limitShopDoc(msg.d, cur, who.staff);
+          }
           if (cur && Array.isArray(cur.staff)) {
             const old = new Map(cur.staff.map((x) => [x.id, x]));
             for (const st of (Array.isArray(msg.d.staff) ? msg.d.staff : [])) { const o = old.get(st.id); if (o && !st.pin && o.pin) st.pin = o.pin; if (st && typeof st === 'object') delete st.hasPw; }
