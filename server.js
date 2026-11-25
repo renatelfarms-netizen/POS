@@ -298,6 +298,7 @@ function readToken(t) {
 // sent to a device; the page works from `hasPw` instead, and the server keeps the real hash.
 function stripShopDoc(d) {
   if (!d || typeof d !== 'object') return d;
+  curFix(d);
   const c = JSON.parse(JSON.stringify(d));
   if (Array.isArray(c.staff)) for (const st of c.staff) if (st && typeof st === 'object' && 'pin' in st) { st.hasPw = !!st.pin; delete st.pin; }
   return c;
@@ -337,7 +338,7 @@ function powers(s) {
   const t = new Set(tabs), p = (s && s.perms) || {}, mgr = !!s && s.role === 'manager';
   return { t, del: !!p.del, edit: mgr || !!p.edit, refund: mgr, stock: !!p.stock, prod: t.has('inv') || t.has('po') || t.has('wh'), web: !!(p.web && p.web.products) };
 }
-const DATA_COLS = { sales: 'recs', expenses: 'recs', products: 'one', customers: 'one', deliveries: 'recs', pos: 'recs', transfers: 'recs', trReq: 'recs', whPos: 'recs', whItems: 'one' };
+const DATA_COLS = { sales: 'recs', expenses: 'recs', products: 'one', customers: 'one', deliveries: 'recs', pos: 'recs', transfers: 'recs', trReq: 'recs', whPos: 'recs', whItems: 'one', remits: 'recs', students: 'one' };
 // Which screens need which data. Staff only download what their screens use (the owner gets everything).
 const SEE = { sales: ['sell', 'docs', 'cust', 'del', 'cour', 'rep'], customers: ['sell', 'docs', 'cust', 'del', 'cour', 'rep'], expenses: ['exp', 'rep', 'po'] };
 function canSee(c, s) {
@@ -356,7 +357,7 @@ function codSwap(o, r) {
 // Who may change existing records / add new ones, per collection (deletes and removals always need 'del').
 const GEN = { deliveries: { chg: (P) => P.t.has('del') || P.t.has('cour') || P.edit, add: () => true },
   pos: { chg: (P) => P.prod, add: (P) => P.prod }, transfers: { chg: (P) => P.prod, add: (P) => P.prod },
-  trReq: { chg: (P) => P.prod, add: (P) => P.prod }, whPos: { chg: (P) => P.prod, add: (P) => P.prod }, whItems: { chg: (P) => P.prod, add: (P) => P.prod } };
+  remits: { chg: (P) => P.del, add: () => true }, trReq: { chg: (P) => P.prod, add: (P) => P.prod }, whPos: { chg: (P) => P.prod, add: (P) => P.prod }, whItems: { chg: (P) => P.prod, add: (P) => P.prod } };
 const SALE_LOCK = ['items', 'total', 'sub', 'disc', 'sdisc', 'pays', 'method', 'tend', 'change', 'cust', 'custName', 'by', 'byName', 'ts', 'tax', 'taxRate', 'dfee', 'due'];
 const keep = (m, o, k) => { if (o && k in o) m[k] = o[k]; else delete m[k]; };
 // Returns the doc to save for a non-owner, or null when the change is not allowed at all.
@@ -392,6 +393,14 @@ function limitData(base, inc, cur, P) {
     if (up && !(P.stock || P.refund || P.edit || P.del || P.prod || P.t.has('del'))) { m.stock = cur.stock; if ('lots' in cur) m.lots = cur.lots; else delete m.lots; } // stock goes up only by receiving, refunds, edits or a stock count
     return m;
   }
+  if (base === 'students') { // fee payments already recorded stay as they are unless the person may delete
+    if (!cur || P.del) return inc;
+    const m = Object.assign({}, inc), mine = Array.isArray(inc.pays) ? inc.pays.filter((x) => x && typeof x === 'object') : [];
+    const ids = new Set(mine.map((x) => x.id)), was = Array.isArray(cur.pays) ? cur.pays : [];
+    const out = mine.map((x) => was.find((o) => o && o.id === x.id) || x).concat(was.filter((o) => o && !ids.has(o.id)));
+    if (out.length || 'pays' in cur) m.pays = out.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    return m;
+  }
   if (base === 'whItems') { if (!cur) return P.prod ? inc : null; return P.prod ? inc : cur; }
   if (base === 'customers') {
     if (!cur) return inc;
@@ -412,14 +421,30 @@ function limitHist(id, inc, cur) {
   for (const o of ((cur && cur.recs) || [])) if (histLocked(id, o) && !have.has(key(o))) out.push(o);
   return Object.assign({}, inc, { recs: out.sort((a, b) => (a.ts || 0) - (b.ts || 0)) });
 }
+// Fields the screens treat as numbers must be numbers, and status labels plain text, whoever saves them
+// (stops a device storing script in a quantity or status that another person's screen then shows).
+const NUM_KEYS = new Set(['qty', 'price', 'cost', 'disc', 'sdisc', 'total', 'sub', 'tax', 'taxRate', 'dfee', 'tend', 'change', 'amt', 'cash', 'credit', 'stock', 'min', 'wh', 'owed', 'cod', 'fee', 'q', 'ts', 'sent', 'got', 'paid', 'bal', 'due_amt']);
+function cleanDoc(v, depth = 0) {
+  if (depth > 8 || !v || typeof v !== 'object') return v;
+  if (Array.isArray(v)) { for (let i = 0; i < v.length; i++) v[i] = cleanDoc(v[i], depth + 1); return v; }
+  for (const k of Object.keys(v)) {
+    const x = v[k];
+    if (NUM_KEYS.has(k) && typeof x === 'string' && !/^\s*-?\d*\.?\d+\s*%?\s*$/.test(x)) v[k] = x.trim() === '' ? x : (parseFloat(x) || 0);
+    else if (k === 'status' && typeof x === 'string') v[k] = x.replace(/[<>"'&`]/g, '').slice(0, 60);
+    else if (x && typeof x === 'object') v[k] = cleanDoc(x, depth + 1);
+  }
+  return v;
+}
 const shopCache = new Map(); // shop id -> {at, doc}
 const scClear = () => shopCache.delete(SID());
+// The currency symbol is shown unescaped on many screens and pages: keep it to plain text.
+const curFix = (d) => { if (d && d.set && typeof d.set === 'object' && d.set.cur != null) { const c = String(d.set.cur).replace(/[<>"'&`\\]/g, '').slice(0, 6).trim(); d.set.cur = c || 'GH₵'; } return d; };
 async function shopMain(fresh) {
   const c = shopCache.get(SID());
   if (!fresh && c && c.doc && Date.now() - c.at < 15000) return c.doc;
   // 'bg' (background jobs): use the server's copy of the shop if the shop has not changed. Read only.
-  if (fresh === 'bg') { const k = docCache.get(SID()); if (k) { const r = await shopRevs(); if (r && +(r[SID()] || 0) === k.rev) return k.docs.get('shop/main') || null; } }
-  const doc = await sbCall('shop_db_get', { p_col: 'shop', p_id: 'main' });
+  if (fresh === 'bg') { const k = docCache.get(SID()); if (k) { const r = await shopRevs(); if (r && +(r[SID()] || 0) === k.rev) return curFix(k.docs.get('shop/main') || null); } }
+  const doc = curFix(await sbCall('shop_db_get', { p_col: 'shop', p_id: 'main' }));
   shopCache.set(SID(), { at: Date.now(), doc });
   return doc;
 }
@@ -696,7 +721,9 @@ async function api(req, res, url) {
         const pulled = await sbCall('shop_db_pull', { p_since: since });
         const own = !!who.code || (who.staff && who.staff.role === 'owner');
         if (pulled && Array.isArray(pulled.docs)) {
+          pulled.docs = pulled.docs.filter((doc) => doc && DB_COLS.has(String(doc.c || ''))); // server-only data (online orders, payout account, withdrawals, claims) never goes to devices
           if (!own) pulled.docs = pulled.docs.filter((doc) => doc && canSee(String(doc.c || ''), who.staff));
+          for (const doc of pulled.docs) if (doc && doc.c !== 'shop' && doc.d) cleanDoc(doc.d); // numbers stay numbers on every screen
           for (const doc of pulled.docs) if (doc && doc.c === 'shop' && doc.id === 'main') { doc.d = stripShopDoc(doc.d); if (!own && doc.d && doc.d.set && doc.d.set.rc) doc.d.set.rc = 'hidden'; }
         }
         return send(res, 200, pulled);
@@ -707,6 +734,8 @@ async function api(req, res, url) {
         const col = String(msg && msg.c || ''), id = String(msg && msg.id || '');
         if (!DB_COLS.has(col) || !/^[A-Za-z0-9_.-]{1,120}$/.test(id)) return send(res, 400, { error: 'Unknown document.' });
         if (url === '/api/db/put' && (!msg.d || typeof msg.d !== 'object' || Array.isArray(msg.d))) return send(res, 400, { error: 'Not valid data.' });
+        if (url === '/api/db/put' && col !== 'shop') cleanDoc(msg.d);
+        if (url === '/api/db/put' && col === 'shop') curFix(msg.d);
         // The browser never receives staff password hashes, so when it saves shop/main it sends them back empty.
         // Re-attach the stored hash for each staff member the browser did not change. Fail closed: if the current
         // doc can't be read, refuse the write rather than risk blanking every password.
@@ -940,11 +969,11 @@ async function shopView(rec) {
         month: { n: sales.filter((x) => x.ts >= mon0).length, total: sum(sales.filter((x) => x.ts >= mon0), (x) => x.total), expenses: sum(exps.filter((x) => x.ts >= mon0), (x) => x.amt) },
         all: { n: sales.length, total: sum(sales, (x) => x.total) } };
     });
-    const products = pf.flatMap((p) => list(p + 'products').map((x) => ({ b: BRN[p], name: x.name, cat: x.cat || '', price: x.price, stock: x.stock }))).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 300);
-    const sales = pf.flatMap((p) => recs(p + 'sales').map((x) => ({ b: BRN[p], id: x.id, ts: x.ts, total: x.total, method: x.method, by: x.byName || '', items: (x.items || []).reduce((t, i) => t + (i.qty || 0), 0) }))).sort((a, b) => b.ts - a.ts).slice(0, 50);
+    const products = pf.flatMap((p) => list(p + 'products').map((x) => ({ b: BRN[p], name: x.name, cat: x.cat || '', price: +x.price || 0, stock: +x.stock || 0 }))).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 300);
+    const sales = pf.flatMap((p) => recs(p + 'sales').map((x) => ({ b: BRN[p], id: x.id, ts: +x.ts || 0, total: +x.total || 0, method: x.method, by: x.byName || '', items: (Array.isArray(x.items) ? x.items : []).reduce((t, i) => t + (+(i && i.qty) || 0), 0) }))).sort((a, b) => b.ts - a.ts).slice(0, 50);
     const log = recs('log').sort((a, b) => b.ts - a.ts).slice(0, 60).map((x) => ({ ts: x.ts, who: x.who, a: x.a, d: x.d }));
     const staff = (main.staff || []).map((x) => ({ name: x.name, role: x.role, branch: x.role === 'owner' || x.branch === 'both' ? 'All branches' : BRN[x.branch === 'acc' ? 'accra_' : ''], email: x.email || '', phone: x.phone || '', locked: !!x.locked }));
-    return { shop: pubShop(rec), cur: set.cur || 'GH₵', details: { name: set.name, phone: set.phone || '', addr: set.addr || '', email: set.email || '', biz: set.biz || 'retail', city: set.city || '', region: set.region || '', store: !!(set.store && set.store.open) }, branches, staff, products, sales, log, warehouse: list('whItems').length };
+    return { shop: pubShop(rec), cur: curFix({ set: { cur: set.cur || 'GH₵' } }).set.cur, details: { name: set.name, phone: set.phone || '', addr: set.addr || '', email: set.email || '', biz: set.biz || 'retail', city: set.city || '', region: set.region || '', store: !!(set.store && set.store.open) }, branches, staff, products, sales, log, warehouse: list('whItems').length };
   });
 }
 
