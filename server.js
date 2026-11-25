@@ -311,8 +311,13 @@ const SELF_OK = ['pin', 'mustChange', 'setupDone', 'name', 'email', 'emailOK', '
 const OTHER_OK = ['fails', 'nextTry'];
 function limitShopDoc(inc, cur, me) {
   const out = Object.assign({}, inc);
-  const curSet = (cur && cur.set) || {}, set = Object.assign({}, inc.set || {});
-  for (const k of OWNER_SET) { if (k in curSet) set[k] = curSet[k]; else delete set[k]; }
+  // Staff start from the stored settings and may only change what their screens use (categories, printer, counters).
+  // Everything else (shop phone, payment instructions on invoices, receipt design, online shop, SMS, delivery prices…) is the owner's.
+  const curSet = (cur && cur.set) || {}, incSet = (inc.set && typeof inc.set === 'object') ? inc.set : {}, set = JSON.parse(JSON.stringify(curSet));
+  for (const k of ['cats', 'pcats', 'autoPrint', 'paper', 'dlvRider']) if (k in incSet) set[k] = incSet[k];
+  const nest = (k, ok) => { const a = incSet[k]; if (!a || typeof a !== 'object') return; if (!curSet[k] || typeof curSet[k] !== 'object') { set[k] = a; return; } for (const x of ok) if (x in a) set[k][x] = a[x]; };
+  nest('rst', ['no']); nest('cour', ['seq']); // ticket / job numbers
+  if (powers(me).t.has('sch') && incSet.sch && typeof incSet.sch === 'object') set.sch = incSet.sch;
   out.set = set;
   const incStaff = new Map((Array.isArray(inc.staff) ? inc.staff : []).filter((x) => x && typeof x === 'object').map((x) => [x.id, x]));
   out.staff = (Array.isArray(cur.staff) ? cur.staff : []).map((old) => {
@@ -459,7 +464,9 @@ async function flagSales(col, doc, cur, st) {
 const shopCache = new Map(); // shop id -> {at, doc}
 const scClear = () => shopCache.delete(SID());
 // The currency symbol is shown unescaped on many screens and pages: keep it to plain text.
-const curFix = (d) => { if (d && d.set && typeof d.set === 'object' && d.set.cur != null) { const c = String(d.set.cur).replace(/[<>"'&`\\]/g, '').slice(0, 6).trim(); d.set.cur = c || 'GH₵'; } return d; };
+const LOGO_RX = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+const curFix = (d) => { if (d && d.set && typeof d.set === 'object' && d.set.rx && typeof d.set.rx === 'object' && d.set.rx.logo && !LOGO_RX.test(String(d.set.rx.logo))) d.set.rx.logo = ''; // the receipt logo is put in an <img src>: only a real picture
+  if (d && d.set && typeof d.set === 'object' && d.set.cur != null) { const c = String(d.set.cur).replace(/[<>"'&`\\]/g, '').slice(0, 6).trim(); d.set.cur = c || 'GH₵'; } return d; };
 async function shopMain(fresh) {
   const c = shopCache.get(SID());
   if (!fresh && c && c.doc && Date.now() - c.at < 15000) return c.doc;
