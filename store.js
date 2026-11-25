@@ -748,7 +748,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
       }
       // ---- accounts ----
       if (req.method === 'POST' && url === '/api/store/signup') {
-        if (!allow(req, 10, 'su')) return send(res, 429, { error: 'Too many new accounts from here. Try again later.' });
+        if (!allow(req, 10, 'su') || !daily('su:' + SCOPE(), 300)) return send(res, 429, { error: 'Too many new accounts from here. Try again later.' }); // per shop too: the IP can be faked
         const m = await json(req); if (!m) return send(res, 400, { error: 'Not valid data.' });
         const name = String(m.name || '').trim().replace(/\s+/g, ' ').slice(0, 80), ph = normPhone(m.phone), email = String(m.email || '').trim().toLowerCase().slice(0, 120), pw = String(m.password || '');
         if (name.length < 2) return send(res, 400, { error: 'Enter your full name.', field: 'name' });
@@ -850,6 +850,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         const cust = await custOf(req);
         if (!cust) return send(res, 401, { error: 'Please create an account or sign in to check out.', auth: true });
         if (cust.blocked) return send(res, 403, { error: 'Your account is blocked. Please call the shop.' });
+        if (!daily('ord:' + SCOPE() + cust.phone, 30)) return send(res, 429, { error: 'Too many orders today. Please call the shop.' });
         const ss = storeSet(await shopMain(false));
         if (ss.open === false) return send(res, 403, { error: (ss.msg ? ss.msg + ' ' : '') + 'The online shop is not taking orders right now.' });
         const m = await json(req); if (!m) return send(res, 400, { error: 'Not valid data.' });

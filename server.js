@@ -33,6 +33,8 @@ const MAX_BODY = 25 * 1024 * 1024, SMALL_BODY = 256 * 1024; // big bodies only f
 const HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'SAMEORIGIN',
+  'Content-Security-Policy': "base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self' https://checkout.paystack.com",
+  'Permissions-Policy': 'camera=(self), microphone=(), geolocation=(self), payment=()',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Strict-Transport-Security': 'max-age=31536000',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()'
@@ -317,7 +319,11 @@ function limitShopDoc(inc, cur, me) {
   for (const k of ['cats', 'pcats', 'autoPrint', 'paper', 'dlvRider']) if (k in incSet) set[k] = incSet[k];
   const nest = (k, ok) => { const a = incSet[k]; if (!a || typeof a !== 'object') return; if (!curSet[k] || typeof curSet[k] !== 'object') { set[k] = a; return; } for (const x of ok) if (x in a) set[k][x] = a[x]; };
   nest('rst', ['no']); nest('cour', ['seq']); // ticket / job numbers
-  if (powers(me).t.has('sch') && incSet.sch && typeof incSet.sch === 'object') set.sch = incSet.sch;
+  if (powers(me).t.has('sch') && incSet.sch && typeof incSet.sch === 'object') { // school settings; fees and bills need the 'Create bills' permission
+    const was = curSet.sch && typeof curSet.sch === 'object' ? curSet.sch : {}, nx = JSON.parse(JSON.stringify(incSet.sch));
+    if (!spHas(me, 'bill')) for (const k of ['fees', 'admFee', 'billed']) { if (k in was) nx[k] = was[k]; else delete nx[k]; }
+    set.sch = nx;
+  }
   out.set = set;
   const incStaff = new Map((Array.isArray(inc.staff) ? inc.staff : []).filter((x) => x && typeof x === 'object').map((x) => [x.id, x]));
   out.staff = (Array.isArray(cur.staff) ? cur.staff : []).map((old) => {
@@ -341,8 +347,16 @@ const GRANT_TABS = ['sch', 'cour', 'kds', 'sell', 'docs', 'cust', 'del', 'inv', 
 function powers(s) {
   const tabs = !s ? [] : Array.isArray(s.access) ? ['home', ...s.access.filter((t) => GRANT_TABS.includes(t))] : (ROLE_TABS[s.role] || ROLE_TABS.cashier);
   const t = new Set(tabs), p = (s && s.perms) || {}, mgr = !!s && s.role === 'manager';
-  return { t, del: !!p.del, edit: mgr || !!p.edit, refund: mgr, stock: !!p.stock, prod: t.has('inv') || t.has('po') || t.has('wh'), web: !!(p.web && p.web.products) };
+  return { st: s, t, del: !!p.del, edit: mgr || !!p.edit, refund: mgr, stock: !!p.stock, prod: t.has('inv') || t.has('po') || t.has('wh'), web: !!(p.web && p.web.products) };
 }
+// Which screens may add records / touch documents at all (mirrors the app: checkout and courier make sales; expenses and
+// purchase payments make expenses; selling, receipts, customers, delivery and courier screens change customers).
+// School permissions, same as the app (spOK): a staff member's own list, or the default for the role.
+const SPDEF = { owner: ['fees', 'bill', 'beh', 'bsend', 'notes', 'tt', 'adm', 'tch', 'bc'], manager: ['fees', 'beh', 'bsend', 'notes', 'tt', 'adm', 'tch', 'bc'], accountant: ['fees', 'bill', 'adm'], cashier: ['fees', 'adm'], teacher: [], support: [] };
+const spHas = (st, k) => !!st && (st.role === 'owner' || (st.sp && typeof st.sp === 'object' ? !!st.sp[k] : (SPDEF[st.role] || []).includes(k)));
+const NEW_REC = { sales: ['sell', 'cour'], expenses: ['exp', 'po'] };
+const TOUCH = { customers: ['sell', 'docs', 'cust', 'del', 'cour'], products: ['sell', 'docs', 'cust', 'inv', 'po', 'wh', 'del', 'cour'] };
+const hasTab = (P, L) => L.some((t) => P.t.has(t));
 const DATA_COLS = { sales: 'recs', expenses: 'recs', products: 'one', customers: 'one', deliveries: 'recs', pos: 'recs', transfers: 'recs', trReq: 'recs', whPos: 'recs', whItems: 'one', remits: 'recs', students: 'one' };
 // Which screens need which data. Staff only download what their screens use (the owner gets everything).
 const SEE = { sales: ['sell', 'docs', 'cust', 'del', 'cour', 'rep'], customers: ['sell', 'docs', 'cust', 'del', 'cour', 'rep'], expenses: ['exp', 'rep', 'po'] };
@@ -372,7 +386,7 @@ function limitData(base, inc, cur, P) {
     for (const r of (Array.isArray(inc.recs) ? inc.recs : [])) {
       if (!r || typeof r !== 'object') continue;
       const o = old.get(r.id); seen.add(r.id);
-      if (!o) { if (!GEN[base] || GEN[base].add(P)) out.push(r); continue; } // new records are fine
+      if (!o) { if ((!GEN[base] || GEN[base].add(P)) && (!NEW_REC[base] || hasTab(P, NEW_REC[base]))) out.push(r); continue; } // new records, from the screens that make them
       if (GEN[base]) { out.push(GEN[base].chg(P) ? r : o); continue; }
       if (base === 'sales') {
         if (P.edit) { out.push(r); continue; }
@@ -389,6 +403,7 @@ function limitData(base, inc, cur, P) {
     if (!P.del) for (const [id, o] of old) if (!seen.has(id)) out.push(o); // records can't be removed without 'del'
     return Object.assign({}, inc, { recs: out.sort((a, b) => (a.ts || 0) - (b.ts || 0)) });
   }
+  if (TOUCH[base] && !hasTab(P, TOUCH[base])) return cur || null; // staff without these screens can't change them
   if (base === 'products') {
     if (!cur) return P.prod ? inc : null; // only stock/inventory staff add products
     let m;
@@ -399,6 +414,8 @@ function limitData(base, inc, cur, P) {
     return m;
   }
   if (base === 'students') { // fee payments already recorded stay as they are unless the person may delete
+    if (P.st && !spHas(P.st, 'bill')) { const was = (cur && Array.isArray(cur.bills)) ? cur.bills : []; inc = Object.assign({}, inc); if (was.length || (cur && 'bills' in cur)) inc.bills = was; else delete inc.bills; } // bills need 'Create bills'
+    if (P.st && !spHas(P.st, 'fees')) { const was = (cur && Array.isArray(cur.pays)) ? cur.pays : []; inc = Object.assign({}, inc); if (was.length || (cur && 'pays' in cur)) inc.pays = was; else delete inc.pays; } // payments need 'Fees and payments'
     if (!cur || P.del) return inc;
     const m = Object.assign({}, inc), mine = Array.isArray(inc.pays) ? inc.pays.filter((x) => x && typeof x === 'object') : [];
     const ids = new Set(mine.map((x) => x.id)), was = Array.isArray(cur.pays) ? cur.pays : [];
@@ -729,7 +746,9 @@ async function api(req, res, url) {
     const to = (Array.isArray(msg.to) ? msg.to : [msg.to]).map((x) => String(x || '').trim()).filter(Boolean);
     if (!to.length || to.length > 10 || !to.every(emailOK)) return send(res, 400, { error: 'Check the email address.' });
     if (!mailAllowed(SID() + ':' + (who.staff ? 's' + who.staff.id : 'code'))) return send(res, 429, { error: 'Too many emails this hour. Try again later.' });
-    if (!hourly('maild:' + SID(), 150, 864e5)) return send(res, 429, { error: 'This shop has sent the most emails allowed today. Try again tomorrow.' });
+    { const rec = T().shop || {}, fresh = !rec.paid_until && Date.now() - Date.parse(rec.created_at || 0) < 7 * 864e5; // new free shops can't be used to send spam from the platform
+      if (!hourly('maild:' + SID(), fresh ? 20 : 150, 864e5)) return send(res, 429, { error: 'This shop has sent the most emails allowed today. Try again tomorrow.' });
+      if (!hourly('mail:all', 1000)) return send(res, 429, { error: 'Too many emails are being sent right now. Try again in a while.' }); }
     const atts = (Array.isArray(msg.attachments) ? msg.attachments : []).slice(0, 5);
     try { await sendEmail({ to, subject: msg.subject, text: String(msg.body || msg.text || '').slice(0, 50000), html: msg.html ? String(msg.html).slice(0, 500000) : undefined, attachments: atts }); return send(res, 200, { ok: true }); }
     catch (e) { return send(res, 502, { error: e.message }); }
