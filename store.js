@@ -230,7 +230,8 @@ module.exports = function store(d) {
     serverLog('Receipt SMS sent', '#' + sale.id + ' to ' + ph.slice(0, 3) + '•••' + ph.slice(-3) + ' · ' + (b === 'acc' ? 'Accra' : 'Kumasi') + ' branch', by || WHO);
     return { sent: true, to: ph.slice(0, 3) + '•••' + ph.slice(-3), link };
   }
-  const hostOf = (req) => 'https://' + String((req && (req.headers['x-forwarded-host'] || req.headers.host)) || DEFHOST).split(',')[0].trim().replace(/^localhost.*/, DEFHOST);
+  // Links in SMS, emails and payment pages always use the real domain: the Host headers of a request can be set by anyone.
+  const hostOf = (req) => { const h = String((req && (req.headers['x-forwarded-host'] || req.headers.host)) || '').split(',')[0].trim().toLowerCase(); return 'https://' + (h === DEFHOST || h === 'www.' + DEFHOST ? h : DEFHOST); };
 
   // ---- the customer's receipt page: /r/<code> ----
   async function receiptPage(req, res, code) {
@@ -456,13 +457,13 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
     let custId = null;
     if (o.acct) { try { const a = await acctGet(o.acct); if (a) custId = await posCustomer(b, o.acct, a); } catch (e) { console.error('order customer', e.message); } }
     const tax = set.tax ? o.total * set.tax / (100 + set.tax) : 0;
-    const sale = { id: saleId, ts: now, items, sub: o.total, disc: 0, sdisc: 0, total: o.total, method: 'Online', pays: [{ m: 'Online', amt: o.total }], tend: null, change: null,
+    const sale = { id: saleId, ts: now, items, sub: o.total, disc: 0, sdisc: 0, total: o.total, method: pay.provider === 'test' ? 'On delivery' : 'Online', pays: [{ m: pay.provider === 'test' ? 'On delivery' : 'Online', amt: o.total }], // test mode takes no money: the customer pays on pickup / delivery tend: null, change: null,
       cust: custId, custName: o.name, by: null, byName: 'Online shop', tax, taxRate: set.tax || 0, refunds: [], dfee: 0,
       online: { ref, phone: o.phone, email: o.email || '', mode: o.mode, region: o.region || '', provider: pay.provider, payRef: pay.reference || ref } };
     // 3. delivery job if asked
     if (o.mode === 'delivery') {
       const dl = { id: ids[1], ts: now, sale: saleId, name: o.name, phone: o.phone, addr: o.addr, region: o.region || '', city: o.city || '', gps: '', note: ('Online order ' + ref + '. ' + (o.note || '')).trim(),
-        items: items.map((i) => i.qty + ' × ' + i.name).join(', '), fee: 0, rider: null, status: 'Pending', by: 'Online shop', byId: null, when: '', cod: 0, codPaid: false };
+        items: items.map((i) => i.qty + ' × ' + i.name).join(', '), fee: 0, rider: null, status: 'Pending', by: 'Online shop', byId: null, when: '', cod: pay.provider === 'test' ? o.total : 0, codPaid: false };
       sale.dlv = dl.id; o.dlvId = dl.id;
       o.dlvDoc = await appendRec(PF + 'deliveries', accraDay(now).slice(0, 7), dl);
     }
@@ -511,7 +512,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
   const stk = (st) => 'lp' + SCOPE() + ':' + (st && st.id); // per staff member, not per (fakeable) IP
   function allow(req, max, bucket) { const k = (bucket || 'o') + ':' + (bucket && bucket.startsWith('lp') ? '' : clientIp(req)), h = hits.get(k) || { n: 0, at: Date.now() }; if (Date.now() - h.at > 3600e3) { h.n = 0; h.at = Date.now(); } h.n++; hits.set(k, h); return h.n <= max; }
   setInterval(() => { const t = Date.now(); for (const [k, v] of hits) if (t - v.at > 3600e3) hits.delete(k); }, 600000).unref();
-  const json = async (req) => { try { return JSON.parse(await readBody(req)); } catch (e) { return null; } };
+  const json = async (req, max) => { try { return JSON.parse(await readBody(req, max)); } catch (e) { return null; } };
   const REF_RX = /^RS[A-Z0-9]{10}$/;
 
   async function api(req, res, url) {
@@ -592,7 +593,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         if (req.method === 'POST' && url === '/api/store/admin/sms/bulk') { // school: fee reminders, payment receipts, absence notes (sent in the background)
           if (!st || st.locked || !(d.tabs ? ['sch', 'cour', 'del', 'cust'].some((t) => d.tabs(st).has(t)) : !['warehouse', 'stock'].includes(st.role))) return send(res, 403, { error: 'You can’t send these messages.' });
           if (!allow(req, 40, 'smsb') || !allow({ headers: {}, socket: {} }, 10, stk(st) + 'smsb')) return send(res, 429, { error: 'Too many batches of SMS from this device. Try again in an hour.' });
-          const m = await json(req) || {}, kind = String(m.kind || 'note').replace(/[^a-z]/g, '').slice(0, 12) || 'note';
+          const m = await json(req, 2 * 1024 * 1024) || {}, kind = String(m.kind || 'note').replace(/[^a-z]/g, '').slice(0, 12) || 'note';
           const L = (Array.isArray(m.msgs) ? m.msgs.slice(0, 800) : []).map((x) => ({ to: normPhone(x && x.to), text: String(x && x.text || '').replace(/\s+\n/g, '\n').trim().slice(0, 459) })).filter((x) => x.to && x.text.length >= 5);
           if (!L.length) return send(res, 400, { error: 'No valid phone numbers to send to.' });
           { const k = stk(st) + 'smsbc', t = Date.now(), h = dhits.get(k) || { n: 0, at: t }; if (t - h.at > 864e5) { h.n = 0; h.at = t; } if (h.n + L.length > 1500) return send(res, 429, { error: 'That is more SMS than one person can send in a day. Ask the owner.' }); h.n += L.length; dhits.set(k, h); }
@@ -663,6 +664,10 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
             if (!a) return send(res, 400, { error: 'Fill in the account name and number, and the network or bank.' });
             await sbCall('shop_db_put', { p_col: 'platAcct', p_id: 'main', p_data: Object.assign(a, { by: st.name, at: Date.now() }) });
             serverLog('Payout account saved', a.kind + ' · ' + a.bank + ' · ' + a.name + ' · ' + a.number.slice(0, 3) + '•••' + a.number.slice(-3), st);
+            try { // tell the owner(s) by email, so a change they didn't make is noticed before any money is paid out
+              const sh = await shopMain(false), to = [...new Set(((sh && sh.staff) || []).filter((x) => x.role === 'owner' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(x.email || '').slice(0, 120))).map((x) => x.email))].slice(0, 3);
+              if (to.length) sendEmail({ to, subject: ((sh.set && sh.set.name) || 'Your shop') + ' - payout account changed', text: 'Hello,\n\nThe account your online-shop money is paid into was changed by ' + st.name + ' on ' + new Date().toLocaleString('en-GB', { timeZone: 'Africa/Accra' }) + ':\n\n    ' + a.bank + ' · ' + a.name + ' · ' + a.number.slice(0, 3) + '•••' + a.number.slice(-3) + '\n\nIf this was not you, change your password now and contact ' + (d.platform || 'Tessa POS') + ' support before asking for any withdrawal.\n\n-- \n' + (d.platform || 'Tessa POS') }).catch((e) => console.log('payout acct email: ' + e.message));
+            } catch (e) { console.log('payout acct email: ' + e.message); }
           }
           await freshKey(); return send(res, 200, await ledger());
         }
@@ -678,7 +683,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
           await freshKey(); return send(res, 200, await ledger());
         }
         if (url === '/api/store/admin/pay') {
-          const host = 'https://' + String(req.headers['x-forwarded-host'] || req.headers.host || DEFHOST).split(',')[0].trim();
+          const host = hostOf(req);
           const info = () => ({ mode: mode(), source: PK.src, pct: PK.src === 'platform' ? PK.pct : undefined, hint: PK.src === 'platform' ? '' : KEY() ? KEY().slice(0, 8) + '…' + KEY().slice(-4) : '', webhook: host + BASE() + '/api/store/paystack', callback: host + (MULTI ? BASE() + '/shop' : '/store') + '/done/' });
           await freshKey();
           if (req.method === 'GET') return send(res, 200, info());
@@ -875,7 +880,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         cust.a.orders = (cust.a.orders || []).concat(ref).slice(-50); if (region && !cust.a.region) cust.a.region = region;
         await acctPut(phone, cust.a, false);
         if (mode() === 'test') return send(res, 200, { ref, pay_url: (MULTI ? BASE() + '/shop' : '/store') + '/pay/' + ref });
-        const host = 'https://' + String(req.headers['x-forwarded-host'] || req.headers.host || DEFHOST).split(',')[0].trim();
+        const host = hostOf(req);
         const t = await paystack('/transaction/initialize', { email: email || phone.replace(/\D/g, '') + '@customers.' + DEFHOST, amount: Math.round(total * 100), currency: 'GHS', reference: ref,
           callback_url: host + (MULTI ? BASE() + '/shop' : '/store') + '/done/' + ref, channels: ['mobile_money', 'card'], metadata: Object.assign({ name, phone, shop_order: ref, branch }, MULTI ? { tessa: BASE().slice(1) } : {}) });
         return send(res, 200, { ref, pay_url: t.authorization_url });
@@ -900,7 +905,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
       if (req.method === 'POST' && url === '/api/store/paystack') {
         // Paystack webhook: signed with the secret key. Records the sale even if the customer closes the page.
         await freshKey();
-        const raw = await readBody(req), sig = String(req.headers['x-paystack-signature'] || '');
+        const raw = await readBody(req, 1024 * 1024), sig = String(req.headers['x-paystack-signature'] || '');
         const keys = [KEY()]; if (MULTI && d.sharedPay && PK.src !== 'platform') { const sp = await d.sharedPay(true); if (sp && sp.key) keys.push(sp.key); }
         const good = keys.filter(Boolean).some((k) => { const want = crypto.createHmac('sha512', k).update(raw).digest('hex'); return sig.length === want.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want)); });
         if (!good) return send(res, 401, { error: 'bad signature' });
@@ -978,7 +983,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
       if (!(amt > 0)) throw userErr('Enter the amount to withdraw.');
       if (amt > g.due + 0.001) throw userErr('You can withdraw up to ' + CUR + ' ' + g.due.toFixed(2) + '.');
       const [id] = await sbCall('shop_ids', { p_n: 1 });
-      const rec = { id, at: Date.now(), amt, status: 'open', by: String((st && st.name) || '').slice(0, 60), acct: { kind: a.kind, bank: a.bank, name: a.name, number: a.number, branch: a.branch || '' } };
+      const rec = { id, at: Date.now(), amt, status: 'open', by: String((st && st.name) || '').slice(0, 60), acct: { kind: a.kind, bank: a.bank, name: a.name, number: a.number, branch: a.branch || '', at: +a.at || 0 } };
       await wdSave((await wdList()).concat(rec));
       serverLog('Withdrawal requested', CUR + ' ' + amt.toFixed(2) + ' to ' + a.bank + ' · ' + a.number.slice(0, 3) + '•••' + a.number.slice(-3) + ' · paid within ' + WD_HOURS + ' hours', st);
       return rec;

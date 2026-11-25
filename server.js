@@ -28,7 +28,7 @@ const SITE = process.env.PLATFORM_HOST || 'tessapos.shop';
 const PAGE = path.join(__dirname, 'index.html'), LANDING = path.join(__dirname, 'landing.html'), ADMIN = path.join(__dirname, 'admin.html'), LOGIN = path.join(__dirname, 'login.html'), HELP = path.join(__dirname, 'help.html'), REGISTER = path.join(__dirname, 'register.html'), CSS = path.join(__dirname, 'site.css');
 const PORT = process.env.PORT || 3000;
 const BACKUP_DIR = process.env.BACKUP_DIR || path.join(os.homedir(), 'shop-backups');
-const MAX_BODY = 25 * 1024 * 1024;
+const MAX_BODY = 25 * 1024 * 1024, SMALL_BODY = 256 * 1024; // big bodies only for logged-in sync and email; everything else is small
 
 const HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -70,12 +70,12 @@ function codeOK(req) {
 }
 setInterval(() => { const t = Date.now(); for (const [k, v] of fails) if (v.until && v.until < t) fails.delete(k); }, 600000).unref();
 
-function readBody(req) {
+function readBody(req, max = SMALL_BODY) {
   return new Promise((resolve, reject) => {
     let size = 0; const parts = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > MAX_BODY) { reject(Object.assign(new Error('too big'), { code: 413 })); req.destroy(); return; }
+      if (size > max) { reject(Object.assign(new Error('too big'), { code: 413 })); req.destroy(); return; }
       parts.push(c);
     });
     req.on('end', () => resolve(Buffer.concat(parts).toString('utf8')));
@@ -564,7 +564,7 @@ async function mailCfg() {
   mailCache = { at: Date.now(), cfg: token && box ? { token, box, from: from || '' } : null };
   return mailCache.cfg;
 }
-const emailOK = (e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(e || ''));
+const emailOK = (e) => { const s = String(e || ''); return s.length <= 254 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s); }; // length first: the pattern is slow on long input
 const maskEmail = (e) => { const [u, d] = String(e).split('@'); return (u || '').slice(0, 2) + '•••@' + (d || ''); };
 async function sendEmail({ to, subject, text, html, attachments }) {
   const cfg = await mailCfg();
@@ -679,7 +679,7 @@ async function api(req, res, url) {
   // ---- product photos: the page shrinks the picture first; it is kept on the hosting (PHOTO_DIR), not in Supabase ----
   if (req.method === 'POST' && url === '/api/photo') {
     const who = await caller(req); if (who.err) return send(res, who.err[0], { error: who.err[1] });
-    let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
+    let msg; try { msg = JSON.parse(await readBody(req, 3 * 1024 * 1024)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
     const m = String(msg && msg.data || '').match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
     if (!m) return send(res, 400, { error: 'That file is not a photo (use JPG, PNG or WebP).' });
     if (!hourly('photo:' + SID() + ':' + (who.staff ? who.staff.id : 'code'), 300)) return send(res, 429, { error: 'Too many photos this hour. Try again later.' });
@@ -718,7 +718,7 @@ async function api(req, res, url) {
   }
 
   if (req.method === 'POST' && url === '/api/mail/send') {
-    let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, e.code === 413 ? 413 : 400, { error: e.code === 413 ? 'The attachment is too big to email.' : 'Not valid data.' }); }
+    let msg; try { msg = JSON.parse(await readBody(req, MAX_BODY)); } catch (e) { return send(res, e.code === 413 ? 413 : 400, { error: e.code === 413 ? 'The attachment is too big to email.' : 'Not valid data.' }); }
     const to = (Array.isArray(msg.to) ? msg.to : [msg.to]).map((x) => String(x || '').trim()).filter(Boolean);
     if (!to.length || to.length > 10 || !to.every(emailOK)) return send(res, 400, { error: 'Check the email address.' });
     if (!mailAllowed(SID() + ':' + (who.staff ? 's' + who.staff.id : 'code'))) return send(res, 429, { error: 'Too many emails this hour. Try again later.' });
@@ -752,7 +752,7 @@ async function api(req, res, url) {
       }
       if (req.method === 'POST' && (url === '/api/db/put' || url === '/api/db/del')) {
         let msg;
-        try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, e.code === 413 ? 413 : 400, { error: e.code === 413 ? 'That is too big to save.' : 'Not valid data.' }); }
+        try { msg = JSON.parse(await readBody(req, MAX_BODY)); } catch (e) { return send(res, e.code === 413 ? 413 : 400, { error: e.code === 413 ? 'That is too big to save.' : 'Not valid data.' }); }
         const col = String(msg && msg.c || ''), id = String(msg && msg.id || '');
         if (!DB_COLS.has(col) || !/^[A-Za-z0-9_.-]{1,120}$/.test(id)) return send(res, 400, { error: 'Unknown document.' });
         if (url === '/api/db/put' && (!msg.d || typeof msg.d !== 'object' || Array.isArray(msg.d))) return send(res, 400, { error: 'Not valid data.' });
@@ -1091,7 +1091,7 @@ async function platformApi(req, res, url) {
     if (req.method === 'GET' && url === '/api/platform/admin/withdrawals') {
       let L; try { L = (await sbCall('mt_wd_list', {})) || []; } catch (e) { console.error('withdrawals', e.message); return send(res, 502, { error: 'Could not read the withdrawal requests.' }); }
       const open = [];
-      for (const s of L) for (const x of Array.isArray(s.recs) ? s.recs : []) if (x && x.status === 'open') open.push({ shop: s.id, name: s.name, slug: s.slug, phone: s.phone || '', id: x.id, at: +x.at || 0, amt: +x.amt || 0, by: x.by || '', acct: x.acct || null });
+      for (const s of L) for (const x of Array.isArray(s.recs) ? s.recs : []) if (x && x.status === 'open') open.push({ shop: s.id, name: s.name, slug: s.slug, phone: s.phone || '', id: x.id, at: +x.at || 0, amt: +x.amt || 0, by: x.by || '', acct: x.acct || null, newAcct: !!(x.acct && +x.acct.at && (+x.at || 0) - +x.acct.at < 48 * 3600e3) });
       open.sort((a, b) => a.at - b.at);
       return send(res, 200, { ok: true, open, hours: 24 });
     }

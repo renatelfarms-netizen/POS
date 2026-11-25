@@ -222,7 +222,7 @@ input.f:focus,textarea.f:focus{border-color:var(--g);box-shadow:0 0 0 3px var(--
 </div></header>
 <div class="test" id="annbar" hidden style="background:var(--y);color:var(--ink);border:0;font-weight:500"><div class="wrap" id="annwrap"></div></div>
 <div class="locbar" id="locbar" hidden><div class="wrap" id="locwrap"></div></div>
-<div class="test" id="testbar" hidden><div class="wrap">🧪 <b>Test mode:</b> payments are simulated and no money is taken, but orders are recorded in the shop and stock really goes down.</div></div>
+<div class="test" id="testbar" hidden><div class="wrap">🧪 <b>Online payment is not set up yet:</b> no money is taken here. Your order is sent to the shop and you pay when you collect it or on delivery.</div></div>
 <main id="app"><div class="spin"></div></main>
 <footer><div class="wrap" id="foot"></div></footer>
 <div class="modal" id="locmodal" hidden></div>
@@ -348,7 +348,7 @@ function checkoutView(){const L=lines();if(!L.length){step='shop';return shopVie
   <div class="tot"><span>Total</span><span>${money(total())}</span></div>
   <p id="cmsg" class="msg" role="status" aria-live="polite"></p>
   ${SS.open?`<button class="pill big" id="paybtn" onclick="placeOrder()">Pay ${money(total())}</button>`:`<p class="msg" style="text-align:center">⛔ The shop is not taking online orders right now. Your cart is saved. Please come back later.</p>`}
-  <p class="mut" style="font-size:13px;margin:12px 0 0;text-align:center">🔒 ${S.mode=='test'?'Test mode: you’ll see a practice payment screen. No money is taken.':'You’ll pay securely on Paystack with Mobile Money or card.'}</p></div></div></div></div>`}
+  <p class="mut" style="font-size:13px;margin:12px 0 0;text-align:center">🔒 ${S.mode=='test'?'No money is taken online: you’ll pay when you collect your order or on delivery.':'You’ll pay securely on Paystack with Mobile Money or card.'}</p></div></div></div></div>`}
 async function placeOrder(){const b=$('#paybtn'),m=$('#cmsg');m.textContent='';
  ['email','addr','city','note'].forEach(k=>{const e=$('#f_'+k);if(e)ck[k]=e.value});
  if(ck.mode=='delivery'&&!ck.addr.trim())return m.textContent='Enter the delivery address.';
