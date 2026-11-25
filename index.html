@@ -330,7 +330,7 @@ function webDb(){idFill();const subs={},errs=[];let since=0,first=true,stop=fals
   }catch(e){if(e.code=='revoked'){stop=true;delete BK.code;bkPut();sessClear();busyP=false;errs.forEach(f=>f(e));render();return}errs.forEach(f=>f(e))}
   busyP=false;if(!stop)timer=setTimeout(poll,document.hidden?20000:4000)}
  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!stop)poll()});setTimeout(poll,0);
- return {web:true,refresh:async()=>{if(stop)return;for(let k=0;busyP&&k<50;k++)await new Promise(r=>setTimeout(r,100));await poll()},collection:c=>({onSnapshot:(f,e)=>{(subs[c]=subs[c]||[]).push(f);if(e&&!errs.includes(e))errs.push(e)}}),
+ return {web:true,refresh:async()=>{if(stop)return;for(let k=0;busyP&&k<50;k++)await new Promise(r=>setTimeout(r,100));await poll()},resync:async()=>{if(stop)return;for(let k=0;busyP&&k<50;k++)await new Promise(r=>setTimeout(r,100));since=0;await poll()},collection:c=>({onSnapshot:(f,e)=>{(subs[c]=subs[c]||[]).push(f);if(e&&!errs.includes(e))errs.push(e)}}),
   doc:p=>{const i=p.indexOf('/'),c=p.slice(0,i),id=p.slice(i+1);return {set:d=>call('/api/db/put',{method:'POST',body:JSON.stringify({c,id,d})}),delete:()=>call('/api/db/del',{method:'POST',body:JSON.stringify({c,id})})}}}}
 (async()=>{await 0;let c=null;try{c=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){}
  if(!c&&ONWEB&&webAuth())c=webDb();
@@ -666,7 +666,7 @@ async function doLogin(){if(lbusy)return;const nm=($('#lu').value||'').trim();if
  if(s.nextTry&&s.nextTry>Date.now())return pwShow('lp','lmsg',false,'⏳ Too many wrong tries. Wait '+Math.ceil((s.nextTry-Date.now())/1000)+' seconds, then try again.');
  lbusy=true;$('#lbtn').disabled=true;
  let lerr=null;
- if(ONWEB){try{await webLoginCall(nm,$('#lp').value);}catch(x){lerr=(x&&x.message==='Failed to fetch')?'NET':((x&&x.message)||'That email and password don’t match.');}}
+ if(ONWEB){try{await webLoginCall(nm,$('#lp').value);}catch(x){lerr=(x&&x.message==='Failed to fetch')?'NET':((x&&x.message)||'That email and password don’t match.');}if(!lerr&&cloud&&cloud.resync)setTimeout(()=>cloud.resync(),50)} // staff only download what their screens use, so get everything this person may see
  else if(!(await pwOK($('#lp').value,s.pin)))lerr='local';
  if(lerr==='NET'){lbusy=false;$('#lbtn').disabled=false;pwShow('lp','lmsg',false,'✖ Can’t reach '+HOST+'. Check the internet connection.');$('#lp').focus();return}
  if(lerr){$('#lp').value='';const m=failTry(s,'login');s.nextTry=Date.now()+(DELAYS[Math.min(s.fails||0,DELAYS.length-1)]||0)*1000;save();lbusy=false;$('#lbtn').disabled=false;

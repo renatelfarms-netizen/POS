@@ -337,7 +337,26 @@ function powers(s) {
   const t = new Set(tabs), p = (s && s.perms) || {}, mgr = !!s && s.role === 'manager';
   return { t, del: !!p.del, edit: mgr || !!p.edit, refund: mgr, stock: !!p.stock, prod: t.has('inv') || t.has('po') || t.has('wh'), web: !!(p.web && p.web.products) };
 }
-const DATA_COLS = { sales: 'recs', expenses: 'recs', products: 'one', customers: 'one' };
+const DATA_COLS = { sales: 'recs', expenses: 'recs', products: 'one', customers: 'one', deliveries: 'recs', pos: 'recs', transfers: 'recs', trReq: 'recs', whPos: 'recs', whItems: 'one' };
+// Which screens need which data. Staff only download what their screens use (the owner gets everything).
+const SEE = { sales: ['sell', 'docs', 'cust', 'del', 'cour', 'rep'], customers: ['sell', 'docs', 'cust', 'del', 'cour', 'rep'], expenses: ['exp', 'rep', 'po'] };
+function canSee(c, s) {
+  const base = c.replace(/^accra_/, '');
+  if (base === 'log') return !!s && s.role === 'manager';
+  if (!SEE[base]) return true;
+  const P = powers(s); return SEE[base].some((t) => P.t.has(t));
+}
+// Pay on delivery: delivery staff turn the 'On delivery' part of a sale into how the customer actually paid, same amount.
+function codSwap(o, r) {
+  const A = Array.isArray(o.pays) ? o.pays : [], B = Array.isArray(r.pays) ? r.pays : [], sum = (L) => L.reduce((t, p) => t + (+(p && p.amt) || 0), 0);
+  if (!A.some((p) => p && p.m === 'On delivery') || B.some((p) => !p || p.m === 'On delivery' || p.m === 'Credit')) return false;
+  const rest = B.map((p) => JSON.stringify(p)); for (const p of A.filter((p) => p.m !== 'On delivery')) { const k = rest.indexOf(JSON.stringify(p)); if (k < 0) return false; rest.splice(k, 1); }
+  return rest.length <= 1 && Math.abs(sum(A) - sum(B)) < 0.01;
+}
+// Who may change existing records / add new ones, per collection (deletes and removals always need 'del').
+const GEN = { deliveries: { chg: (P) => P.t.has('del') || P.t.has('cour') || P.edit, add: () => true },
+  pos: { chg: (P) => P.prod, add: (P) => P.prod }, transfers: { chg: (P) => P.prod, add: (P) => P.prod },
+  trReq: { chg: (P) => P.prod, add: (P) => P.prod }, whPos: { chg: (P) => P.prod, add: (P) => P.prod }, whItems: { chg: (P) => P.prod, add: (P) => P.prod } };
 const SALE_LOCK = ['items', 'total', 'sub', 'disc', 'sdisc', 'pays', 'method', 'tend', 'change', 'cust', 'custName', 'by', 'byName', 'ts', 'tax', 'taxRate', 'dfee', 'due'];
 const keep = (m, o, k) => { if (o && k in o) m[k] = o[k]; else delete m[k]; };
 // Returns the doc to save for a non-owner, or null when the change is not allowed at all.
@@ -347,10 +366,12 @@ function limitData(base, inc, cur, P) {
     for (const r of (Array.isArray(inc.recs) ? inc.recs : [])) {
       if (!r || typeof r !== 'object') continue;
       const o = old.get(r.id); seen.add(r.id);
-      if (!o) { out.push(r); continue; } // new records are fine
+      if (!o) { if (!GEN[base] || GEN[base].add(P)) out.push(r); continue; } // new records are fine
+      if (GEN[base]) { out.push(GEN[base].chg(P) ? r : o); continue; }
       if (base === 'sales') {
         if (P.edit) { out.push(r); continue; }
         const m = Object.assign({}, r); for (const k of SALE_LOCK) keep(m, o, k);
+        if ((P.t.has('del') || P.t.has('cour')) && codSwap(o, r)) { m.pays = r.pays; m.method = r.method; }
         if (!P.refund) { // delivery staff may only add a no-money 'Not collected' void when a delivery is cancelled
           const was = Array.isArray(o.refunds) ? o.refunds : [], ids = new Set(was.map((x) => x && x.id));
           const voids = P.t.has('del') ? (Array.isArray(r.refunds) ? r.refunds : []).filter((x) => x && !ids.has(x.id) && x.method === 'Not collected' && !+x.cash && !+x.credit) : [];
@@ -371,6 +392,7 @@ function limitData(base, inc, cur, P) {
     if (up && !(P.stock || P.refund || P.edit || P.del || P.prod || P.t.has('del'))) { m.stock = cur.stock; if ('lots' in cur) m.lots = cur.lots; else delete m.lots; } // stock goes up only by receiving, refunds, edits or a stock count
     return m;
   }
+  if (base === 'whItems') { if (!cur) return P.prod ? inc : null; return P.prod ? inc : cur; }
   if (base === 'customers') {
     if (!cur) return inc;
     const m = Object.assign({}, inc);
@@ -672,7 +694,11 @@ async function api(req, res, url) {
       if (req.method === 'GET' && url === '/api/db') {
         const since = Math.max(0, parseInt(new URL(req.url, 'http://x').searchParams.get('since') || '0', 10) || 0);
         const pulled = await sbCall('shop_db_pull', { p_since: since });
-        if (pulled && Array.isArray(pulled.docs)) for (const doc of pulled.docs) if (doc && doc.c === 'shop' && doc.id === 'main') doc.d = stripShopDoc(doc.d);
+        const own = !!who.code || (who.staff && who.staff.role === 'owner');
+        if (pulled && Array.isArray(pulled.docs)) {
+          if (!own) pulled.docs = pulled.docs.filter((doc) => doc && canSee(String(doc.c || ''), who.staff));
+          for (const doc of pulled.docs) if (doc && doc.c === 'shop' && doc.id === 'main') { doc.d = stripShopDoc(doc.d); if (!own && doc.d && doc.d.set && doc.d.set.rc) doc.d.set.rc = 'hidden'; }
+        }
         return send(res, 200, pulled);
       }
       if (req.method === 'POST' && (url === '/api/db/put' || url === '/api/db/del')) {
@@ -708,6 +734,7 @@ async function api(req, res, url) {
             if (!cur) return send(res, 403, { error: 'Only the owner can do this.' });
             msg.d = limitShopDoc(msg.d, cur, who.staff);
           }
+          if (msg.d.set && msg.d.set.rc === 'hidden') { if (cur && cur.set && cur.set.rc) msg.d.set.rc = cur.set.rc; else delete msg.d.set.rc; }
           if (cur && Array.isArray(cur.staff)) {
             const old = new Map(cur.staff.map((x) => [x.id, x]));
             for (const st of (Array.isArray(msg.d.staff) ? msg.d.staff : [])) { const o = old.get(st.id); if (o && !st.pin && o.pin) st.pin = o.pin; if (st && typeof st === 'object') delete st.hasPw; }
