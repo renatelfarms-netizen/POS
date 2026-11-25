@@ -242,10 +242,10 @@ async function restoreDocs(docs, by) {
   main.set = Object.assign({}, main.set, { sessEpoch: Date.now() }); docs['shop/main'] = main;
   // The activity trail is never rolled back: it keeps every entry, including what happened after the backup.
   for (const [k, d] of Object.entries(docs)) {
-    if (k.startsWith('log/') || JSON.stringify(cur[k]) === JSON.stringify(d)) continue;
+    if (k.startsWith('log/') || !DB_COLS.has(k.slice(0, k.indexOf('/'))) || JSON.stringify(cur[k]) === JSON.stringify(d)) continue; // only the shop's own data: payouts, withdrawals, payout account, online orders and claims are never rolled back
     const i = k.indexOf('/'); await sbCall('shop_db_put', { p_col: k.slice(0, i), p_id: k.slice(i + 1), p_data: d }); n++;
   }
-  for (const k of Object.keys(cur)) if (!(k in docs) && !k.startsWith('log/')) { const i = k.indexOf('/'); await sbCall('shop_db_del', { p_col: k.slice(0, i), p_id: k.slice(i + 1) }); n++; }
+  for (const k of Object.keys(cur)) if (!(k in docs) && !k.startsWith('log/') && DB_COLS.has(k.slice(0, k.indexOf('/')))) { const i = k.indexOf('/'); await sbCall('shop_db_del', { p_col: k.slice(0, i), p_id: k.slice(i + 1) }); n++; }
   scClear();
   console.log('restore: ' + n + ' documents changed by ' + by);
   return n;
@@ -380,7 +380,7 @@ function codSwap(o, r) {
 const GEN = { deliveries: { chg: (P) => P.t.has('del') || P.t.has('cour') || P.edit, add: () => true },
   pos: { chg: (P) => P.prod, add: (P) => P.prod }, transfers: { chg: (P) => P.prod, add: (P) => P.prod },
   remits: { chg: (P) => P.del, add: () => true }, trReq: { chg: (P) => P.prod, add: (P) => P.prod }, whPos: { chg: (P) => P.prod, add: (P) => P.prod }, whItems: { chg: (P) => P.prod, add: (P) => P.prod } };
-const SALE_LOCK = ['items', 'total', 'sub', 'disc', 'sdisc', 'pays', 'method', 'tend', 'change', 'cust', 'custName', 'by', 'byName', 'ts', 'tax', 'taxRate', 'dfee', 'due'];
+const SALE_LOCK = ['flag', 'items', 'total', 'sub', 'disc', 'sdisc', 'pays', 'method', 'tend', 'change', 'cust', 'custName', 'by', 'byName', 'ts', 'tax', 'taxRate', 'dfee', 'due'];
 const keep = (m, o, k) => { if (o && k in o) m[k] = o[k]; else delete m[k]; };
 // Returns the doc to save for a non-owner, or null when the change is not allowed at all.
 function limitData(base, inc, cur, P) {
@@ -463,9 +463,19 @@ function cleanDoc(v, depth = 0) {
 // The till takes prices from the product and limits discounts; a sale sent straight to the server could skip that.
 // New sales by staff other than owners/managers are checked: below the shelf price or over the discount limit gets a
 // flag on the sale and a line in the activity trail for the owner. The sale itself is kept (the money was taken).
+// Refunds by staff that add up to more than the sale: kept, but flagged for the owner.
+function flagRefunds(doc, cur, st) {
+  const old = new Map(((cur && cur.recs) || []).map((r) => [r && r.id, r]));
+  for (const r of (doc.recs || [])) {
+    const o = r && old.get(r.id); if (!o || !Array.isArray(r.refunds)) continue;
+    const sum = (L) => (Array.isArray(L) ? L : []).reduce((t, x) => t + (+(x && (+x.cash || 0) + (+x.credit || 0)) || 0), 0), was = sum(o.refunds), now = sum(r.refunds);
+    if (now > was + 0.009 && now > (+r.total || 0) + 0.009) { r.flag = ('refunds ' + now.toFixed(2) + ' are more than the sale ' + (+r.total || 0).toFixed(2)).slice(0, 200); serverLog('⚠ Check this sale', '#' + r.id + ' by ' + (st && st.name) + ' · ' + r.flag, st); }
+  }
+}
 async function flagSales(col, doc, cur, st) {
   try {
-    const had = new Set(((cur && cur.recs) || []).map((r) => r && r.id)), fresh = (doc.recs || []).filter((r) => r && !had.has(r.id) && !r.flag).slice(0, 20);
+    const had = new Set(((cur && cur.recs) || []).map((r) => r && r.id)), fresh = (doc.recs || []).filter((r) => r && !had.has(r.id)).slice(0, 20);
+    for (const r of fresh) delete r.flag; // only the server sets flags
     if (!fresh.length) return;
     const shop = await shopMain(false), lim = +((shop && shop.set && shop.set.maxDisc) || 0), pf = col.startsWith('accra_') ? 'accra_' : '', prices = new Map();
     for (const r of fresh) {
@@ -817,6 +827,7 @@ async function api(req, res, url) {
             if (!lim) return send(res, 403, { error: 'You don’t have permission to add products.' });
             msg.d = lim;
             if (base === 'sales' && !P.refund) await flagSales(col, msg.d, cur, who.staff);
+            if (base === 'sales') flagRefunds(msg.d, cur, who.staff);
           }
         }
         if (url === '/api/db/put' && col === 'shop' && id === 'main') {
