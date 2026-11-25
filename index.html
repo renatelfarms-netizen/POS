@@ -2060,7 +2060,7 @@ let lastAct=Date.now(),loginAt=0;['pointerdown','keydown','touchstart','wheel'].
 setInterval(()=>{if(!me)return;const m=+(db.set.idleMin??10);if(m>0&&Date.now()-lastAct>m*60000){const n=me.name;logit('Logged out','after '+m+' minutes without activity');save();me=null;cart=[];$('#dlg').classList.remove('on');render();uiAlert('🔒 '+n+' was logged out after '+m+' minutes without activity. Log in again to continue.')}},20000);
 function sessCheck(){if(me&&db.set.sessEpoch&&loginAt&&loginAt<db.set.sessEpoch){me=null;cart=[];$('#dlg').classList.remove('on');render();uiAlert('🔒 The owner signed out every device. Log in again to continue.')}}
 async function signOutAll(){if(me.role!='owner')return;if(!await uiConfirm('Sign out every device now? Everyone, on every phone and computer, will have to log in again.','Sign out everyone'))return;db.set.sessEpoch=Date.now();loginAt=Date.now()+1;logit('Signed out every device','by '+me.name);save();render()}
-const SECRX=/Failed|locked|Account locked|Password reset|Reset PIN|recovery|Recovery|Access changed|Permission changed|Role changed|Signed out|Unlocked|Removed staff|Added staff|Changed own password/;
+const SECRX=/Check this sale|Failed|locked|Account locked|Password reset|Reset PIN|recovery|Recovery|Access changed|Permission changed|Role changed|Signed out|Unlocked|Removed staff|Added staff|Changed own password/;
 function secCard(){const ev=db.log.filter(l=>SECRX.test(l.a)).slice(-25).reverse(),d1=Date.now()-864e5,fails=db.log.filter(l=>/^Failed/.test(l.a)&&l.ts>d1).length,weak=db.staff.filter(s=>!String(s.pin||'').startsWith('p2$')).length;
  return `<div class="card"><b>🛡️ Security</b>
  <div class="pl"><span>Failed login or code attempts (24 h)</span><b class="${fails?'bad':''}">${fails}</b></div>

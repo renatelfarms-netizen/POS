@@ -435,6 +435,27 @@ function cleanDoc(v, depth = 0) {
   }
   return v;
 }
+// The till takes prices from the product and limits discounts; a sale sent straight to the server could skip that.
+// New sales by staff other than owners/managers are checked: below the shelf price or over the discount limit gets a
+// flag on the sale and a line in the activity trail for the owner. The sale itself is kept (the money was taken).
+async function flagSales(col, doc, cur, st) {
+  try {
+    const had = new Set(((cur && cur.recs) || []).map((r) => r && r.id)), fresh = (doc.recs || []).filter((r) => r && !had.has(r.id) && !r.flag).slice(0, 20);
+    if (!fresh.length) return;
+    const shop = await shopMain(false), lim = +((shop && shop.set && shop.set.maxDisc) || 0), pf = col.startsWith('accra_') ? 'accra_' : '', prices = new Map();
+    for (const r of fresh) {
+      const why = [], sub = +r.sub || 0, disc = +r.disc || 0;
+      if (sub > 0 && disc / sub * 100 > lim + 0.5) why.push('discount ' + (disc / sub * 100).toFixed(1) + '% (limit ' + lim + '%)');
+      for (const it of (Array.isArray(r.items) ? r.items : []).slice(0, 40)) {
+        if (!it || !it.id) continue;
+        if (!prices.has(it.id)) { const p = await sbCall('shop_db_get', { p_col: pf + 'products', p_id: 'p' + it.id }).catch(() => null); prices.set(it.id, p && +p.price); }
+        const want = prices.get(it.id);
+        if (want > 0 && +it.price < want - 0.009) why.push((it.name || 'item') + ' at ' + (+it.price || 0).toFixed(2) + ' (price ' + want.toFixed(2) + ')');
+      }
+      if (why.length) { r.flag = why.join(' · ').slice(0, 200); serverLog('⚠ Check this sale', '#' + r.id + ' by ' + (st && st.name) + ' · ' + r.flag, st); }
+    }
+  } catch (e) { console.error('flag sales', e.message); }
+}
 const shopCache = new Map(); // shop id -> {at, doc}
 const scClear = () => shopCache.delete(SID());
 // The currency symbol is shown unescaped on many screens and pages: keep it to plain text.
@@ -748,6 +769,15 @@ async function api(req, res, url) {
           if (url === '/api/db/del') { if (cur && (/_server/.test(id) || ((cur.recs || []).some((r) => histLocked(id, r))))) return send(res, 200, { ok: true, kept: true }); } // quietly kept: the app only trims
           else msg.d = limitHist(id, msg.d, cur);
         }
+        if (!owner && ['rtabs', 'jobs', 'quotes'].includes(base)) { // restaurant bills, courier jobs, quotes: same rules as the app
+          const P = powers(who.staff);
+          let cur; try { cur = await sbCall('shop_db_get', { p_col: col, p_id: id }); } catch (e) { console.error('limit read', e.message); return send(res, 502, { error: 'Could not save right now. Try again in a moment.' }); }
+          if (cur && url === '/api/db/del') {
+            const may = base === 'rtabs' ? (P.del || (cur.st !== 'paid' && P.refund)) : base === 'jobs' ? P.del : (P.edit || P.del || cur.by === who.staff.id);
+            if (!may) return send(res, 200, { ok: true, kept: true }); // quietly kept, so the app doesn't retry forever
+          }
+          if (cur && url === '/api/db/put' && base === 'rtabs' && cur.st === 'paid' && !P.edit) msg.d = cur; // a paid bill stays as it was
+        }
         if (!owner && DATA_COLS[base]) {
           const P = powers(who.staff);
           if (url === '/api/db/del') { if (!P.del) return send(res, 403, { error: 'You don’t have permission to delete this.' }); }
@@ -756,6 +786,7 @@ async function api(req, res, url) {
             const lim = limitData(base, msg.d, cur, P);
             if (!lim) return send(res, 403, { error: 'You don’t have permission to add products.' });
             msg.d = lim;
+            if (base === 'sales' && !P.refund) await flagSales(col, msg.d, cur, who.staff);
           }
         }
         if (url === '/api/db/put' && col === 'shop' && id === 'main') {
