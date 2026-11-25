@@ -622,7 +622,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         if (req.method === 'POST' && url === '/api/store/admin/sms/order') { // order an SMS plan after paying by MoMo; the platform admin confirms it
           if (!d.smsOrder) return send(res, 404, { error: 'Not found.' });
           if (!(await smsCfg(true)).shared) return send(res, 400, { error: 'SMS plans are only for shops using the shared SMS account.' });
-          if (!allow(req, 10, 'smso')) return send(res, 429, { error: 'Too many orders from this device. Try again later.' });
+          if (!allow(req, 10, 'smso') || !daily('smso:' + SCOPE(), 5)) return send(res, 429, { error: 'Too many orders today. Try again tomorrow, or call us.' }); // each order texts and emails the platform
           const m = await json(req) || {}, P = await d.smsPlans(), p = P[+m.i], months = Math.trunc(+m.months || 1), txid = String(m.txid || '').replace(/\s+/g, '').slice(0, 40);
           if (!p) return send(res, 400, { error: 'Choose a plan.' });
           if (!(months >= 1 && months <= 12)) return send(res, 400, { error: 'Choose 1 to 12 months.' });

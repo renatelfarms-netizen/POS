@@ -330,6 +330,9 @@ function limitShopDoc(inc, cur, me) {
     const i = incStaff.get(old.id); if (!i) return old; // no removing staff
     const m = JSON.parse(JSON.stringify(old));
     for (const k of (old.id === me.id ? SELF_OK : OTHER_OK)) if (i[k] !== undefined) m[k] = i[k];
+    if (old.id === me.id) for (const k of ['name', 'email']) { // can't take another staff member's name or email (posing as the owner, confusing sign-in)
+      const v = nmz(String(m[k] || '')); if (v && v !== nmz(String(old[k] || '')) && cur.staff.some((x) => x.id !== me.id && nmz(String(x[k] || '')) === v)) m[k] = old[k];
+    }
     if (i.locked === true) m.locked = true; // wrong tries may lock an account; only an owner can unlock
     return m;
   }); // staff the caller added are dropped: only an owner adds staff
@@ -594,7 +597,8 @@ async function sendEmail({ to, subject, text, html, attachments }) {
   const cfg = await mailCfg();
   if (!cfg) throw new Error('The shop email is not set up.');
   let shopName = PLATFORM; try { const sh = await shopMain(false); if (sh && sh.set && sh.set.name) shopName = sh.set.name; } catch (e) {}
-  const body = { to, subject: String(subject || '').slice(0, 200), displayName: shopName };
+  const one = (v, n) => String(v || '').replace(/[\r\n\t]+/g, ' ').slice(0, n); // no line breaks in headers
+  const body = { to, subject: one(subject, 200), displayName: one(shopName, 80) };
   if (text) body.text = text; if (html) body.html = html;
   if (attachments && attachments.length) body.attachments = attachments.map((a) => ({ filename: String(a.filename || 'file').slice(0, 120), content: a.content, contentType: a.contentType || a.mimeType || 'application/octet-stream' }));
   const r = await fetch((process.env.MAIL_API_BASE || 'https://api.mail.hostinger.com') + '/api/v1/mailboxes/' + encodeURIComponent(cfg.box) + '/send', {
@@ -936,10 +940,10 @@ async function behPage(req, res, code, rec) {
   res.writeHead(d ? 200 : 404, Object.assign({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' }, HEADERS));
   const top = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Behaviour report · ' + h(rec.name) + '</title><style>body{font-family:system-ui,sans-serif;background:#f6f5f1;color:#1d1d1b;margin:0;padding:16px}.c{max-width:560px;margin:0 auto;background:#fff;border-radius:16px;padding:20px;box-shadow:0 1px 3px #0001}h1{font-size:20px;margin:0}table{width:100%;border-collapse:collapse;margin-top:12px}td{padding:9px 4px;border-bottom:1px solid #eee}.s{font-weight:700;text-align:right;white-space:nowrap}.m{color:#666;font-size:14px}.b{display:inline-block;background:#e7f4ee;color:#0f6e56;border-radius:20px;padding:4px 12px;font-weight:700}.r{background:#fff7ed;border-radius:10px;padding:10px;margin-top:12px}</style></head><body><div class="c">';
   if (!d) return res.end(top + '<h1>' + h(rec.name) + '</h1><p>This report link is not valid any more. Please contact the school.</p></div></body></html>');
-  const stars = (n) => '★'.repeat(n) + '☆'.repeat(5 - n), L = ['', 'Poor', 'Fair', 'Good', 'Very good', 'Excellent'];
+  const r5 = (v) => Math.max(0, Math.min(5, Math.round(+v) || 0)), stars = (n) => '★'.repeat(r5(n)) + '☆'.repeat(5 - r5(n)), L = ['', 'Poor', 'Fair', 'Good', 'Very good', 'Excellent']; // scores come from staff devices: keep them 0-5
   res.end(top + '<h1>' + h(d.school || rec.name) + '</h1><p class="m">Behaviour report · ' + h(d.term) + '</p><p style="font-size:18px;margin:14px 0 4px"><b>' + h(d.name) + '</b> · ' + h(d.cls) + '</p>' +
     (d.std ? '<p>Overall: <span class="b">' + h(d.std) + '</span> <span class="m">' + h(d.avg) + ' out of 5</span></p>' : '') +
-    '<table>' + (Array.isArray(d.r) ? d.r : []).map((x) => '<tr><td>' + h(x[0]) + '</td><td class="s">' + (x[1] ? '<span style="color:#d97706">' + stars(+x[1]) + '</span> <span class="m">' + L[+x[1]] + '</span>' : '<span class="m">not rated</span>') + '</td></tr>').join('') + '</table>' +
+    '<table>' + (Array.isArray(d.r) ? d.r : []).map((x) => '<tr><td>' + h(x[0]) + '</td><td class="s">' + (r5(x[1]) ? '<span style="color:#d97706">' + stars(x[1]) + '</span> <span class="m">' + L[r5(x[1])] + '</span>' : '<span class="m">not rated</span>') + '</td></tr>').join('') + '</table>' +
     (d.rec ? '<div class="r"><b>Teacher’s recommendation</b><br>' + h(d.rec) + '</div>' : '') + '<p class="m" style="margin-top:14px">From ' + h(d.by || 'the class teacher') + ' · ' + h(new Date(d.ts || Date.now()).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })) + '. Please contact the school with any questions.</p></div></body></html>');
 }
 
