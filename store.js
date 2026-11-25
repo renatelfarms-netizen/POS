@@ -505,6 +505,10 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
 
   // ---- limits: a few orders per visitor per hour ----
   const hits = new Map();
+  const smsSent = new Map(); // phones a reset code was just texted to
+  const dhits = new Map(); // per account/phone per day
+  function daily(key, max) { const t = Date.now(), h = dhits.get(key) || { n: 0, at: t }; if (t - h.at > 864e5) { h.n = 0; h.at = t; } h.n++; dhits.set(key, h); return h.n <= max; }
+  const stk = (st) => 'lp' + SCOPE() + ':' + (st && st.id); // per staff member, not per (fakeable) IP
   function allow(req, max, bucket) { const k = (bucket || 'o') + ':' + (bucket && bucket.startsWith('lp') ? '' : clientIp(req)), h = hits.get(k) || { n: 0, at: Date.now() }; if (Date.now() - h.at > 3600e3) { h.n = 0; h.at = Date.now(); } h.n++; hits.set(k, h); return h.n <= max; }
   setInterval(() => { const t = Date.now(); for (const [k, v] of hits) if (t - v.at > 3600e3) hits.delete(k); }, 600000).unref();
   const json = async (req) => { try { return JSON.parse(await readBody(req)); } catch (e) { return null; } };
@@ -533,7 +537,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         // Any logged-in staff member can text a customer their receipt after a sale.
         if (req.method === 'POST' && url === '/api/store/admin/sms/receipt') {
           if (!st || st.locked) return send(res, 403, { error: 'Please log in again.' });
-          if (!allow(req, 120, 'smsr')) return send(res, 429, { error: 'Too many SMS from this device. Try again later.' });
+          if (!allow(req, 120, 'smsr') || !allow({ headers: {}, socket: {} }, 120, stk(st) + 'smsr')) return send(res, 429, { error: 'Too many SMS from this device. Try again later.' });
           const m = await json(req), b = brOf(m && m.b), id = Number(m && m.id), phone = normPhone(m && m.phone);
           if (!id || !phone) return send(res, 400, { error: 'A sale number and a valid phone number are needed.' });
           const sale = await getSale(b, id, 12000);
@@ -578,7 +582,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
             if (req.method === 'GET') return send(res, 200, { link, owed: ci.owed, due: ci.due, list: ci.list, pending: pend });
             if (!(ci.owed > 0.004)) return send(res, 400, { error: c.name + ' owes nothing.' });
             const ph = normPhone(c.phone); if (!ph) return send(res, 400, { error: c.name + ' has no valid phone number.' });
-            if (!allow(req, 60, 'crm')) return send(res, 429, { error: 'Too many reminders from this device. Try again later.' });
+            if (!allow(req, 60, 'crm') || !allow({ headers: {}, socket: {} }, 40, stk(st) + 'crm')) return send(res, 429, { error: 'Too many reminders from this device. Try again later.' });
             try { await sendSms(ph, remindText(set, c, ci, link)); } catch (e) { return send(res, 502, { error: e.message }); }
             serverLog('Credit reminder SMS', c.name + ' · owes GHS ' + ci.owed.toFixed(2) + ' · sent by hand · to ' + mask(ph), st);
             return send(res, 200, { sent: true, to: mask(ph), link });
@@ -586,11 +590,12 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         }
         // Delivery SMS (rider job details, customer updates, instructions): any logged-in staff; the till writes the text.
         if (req.method === 'POST' && url === '/api/store/admin/sms/bulk') { // school: fee reminders, payment receipts, absence notes (sent in the background)
-          if (!st || st.locked || ['warehouse', 'stock'].includes(st.role)) return send(res, 403, { error: 'You can’t send these messages.' });
-          if (!allow(req, 40, 'smsb')) return send(res, 429, { error: 'Too many batches of SMS from this device. Try again in an hour.' });
+          if (!st || st.locked || !(d.tabs ? ['sch', 'cour', 'del', 'cust'].some((t) => d.tabs(st).has(t)) : !['warehouse', 'stock'].includes(st.role))) return send(res, 403, { error: 'You can’t send these messages.' });
+          if (!allow(req, 40, 'smsb') || !allow({ headers: {}, socket: {} }, 10, stk(st) + 'smsb')) return send(res, 429, { error: 'Too many batches of SMS from this device. Try again in an hour.' });
           const m = await json(req) || {}, kind = String(m.kind || 'note').replace(/[^a-z]/g, '').slice(0, 12) || 'note';
           const L = (Array.isArray(m.msgs) ? m.msgs.slice(0, 800) : []).map((x) => ({ to: normPhone(x && x.to), text: String(x && x.text || '').replace(/\s+\n/g, '\n').trim().slice(0, 459) })).filter((x) => x.to && x.text.length >= 5);
           if (!L.length) return send(res, 400, { error: 'No valid phone numbers to send to.' });
+          { const k = stk(st) + 'smsbc', t = Date.now(), h = dhits.get(k) || { n: 0, at: t }; if (t - h.at > 864e5) { h.n = 0; h.at = t; } if (h.n + L.length > 1500) return send(res, 429, { error: 'That is more SMS than one person can send in a day. Ask the owner.' }); h.n += L.length; dhits.set(k, h); }
           const sc = await smsCfg(); if (!sc.token) return send(res, 400, { error: 'SMS is not set up for this shop yet.' });
           if (sc.shared && d.smsTake) { const u = await d.smsTake(0).catch(() => null), need = L.reduce((n, x) => n + smsParts(x.text), 0);
             if (u && u.used + need > u.limit) return send(res, 400, { error: u.used >= u.limit ? smsLimitText(u) : 'These messages need ' + need + ' SMS, but only ' + (u.limit - u.used) + ' of this month’s ' + u.limit + ' are left. Send to fewer people, or get an SMS plan: send the plan price by MoMo to ' + (d.smsMomo ? d.smsMomo.num + ' (' + d.smsMomo.name + ')' : (d.platform || 'the platform')) + '.' }); }
@@ -602,7 +607,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         }
         if (req.method === 'POST' && url === '/api/store/admin/sms/dlv') {
           if (!st || st.locked) return send(res, 403, { error: 'Please log in again.' });
-          if (!allow(req, 200, 'smsd')) return send(res, 429, { error: 'Too many SMS from this device. Try again later.' });
+          if (!allow(req, 200, 'smsd') || !allow({ headers: {}, socket: {} }, 100, stk(st) + 'smsd')) return send(res, 429, { error: 'Too many SMS from this device. Try again later.' });
           const m = await json(req) || {}, to = normPhone(m.to), text = String(m.text || '').replace(/\s+\n/g, '\n').trim().slice(0, 459), kind = String(m.kind || 'note').slice(0, 20), did = String(m.id || '').slice(0, 20);
           if (!to) return send(res, 400, { error: 'That phone number is not valid.' });
           if (text.length < 5) return send(res, 400, { error: 'Type the message.' });
@@ -761,14 +766,34 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         if (a.blocked) return send(res, 403, { error: 'This account is blocked. Please call the shop.' });
         return send(res, 200, { token: ctoken(ph), me: profile(ph, a) });
       }
+      if (req.method === 'POST' && (url === '/api/store/verify/code' || url === '/api/store/verify')) { // confirm the phone number of an account
+        const c = await custOf(req); if (!c) return send(res, 401, { error: 'Please sign in again.' });
+        const m = await json(req) || {};
+        if (url === '/api/store/verify/code') {
+          if (!(await smsReady())) return send(res, 400, { error: 'Text codes are not set up for this shop. Call the shop to see your balance.' });
+          if (!daily('ver:' + SCOPE() + c.phone, 5)) return send(res, 429, { error: 'Too many codes today. Try again tomorrow.' });
+          let code; try { code = await otpIssue('ver:' + c.phone); } catch (e) { return send(res, e.code || 502, { error: e.message }); }
+          const shop = await shopMain(false), nm = (shop && shop.set && shop.set.name) || 'the shop';
+          try { await sendSms(c.phone, nm + ': your code to confirm your phone is ' + code + '. It expires in 15 minutes. Never share this code.', { free: true }); }
+          catch (e) { return send(res, 502, { error: 'The code could not be sent. Try again.' }); }
+          return send(res, 200, { ok: true, to: c.phone.slice(0, 3) + '•••' + c.phone.slice(-3) });
+        }
+        const r = await otpCheck('ver:' + c.phone, m.code);
+        if (r === 'expired') return send(res, 400, { error: 'That code has expired. Send a new code.' });
+        if (r === 'locked') return send(res, 429, { error: 'Too many wrong codes. Send a new code.' });
+        if (r !== 'ok') return send(res, 401, { error: 'That code is not right.' });
+        c.a.ver = true; await acctPut(c.phone, c.a, false);
+        return send(res, 200, { ok: true });
+      }
       if (url === '/api/store/me') {
         const c = await custOf(req); if (!c) return send(res, 401, { error: 'Please sign in again.' });
         if (req.method === 'GET') {
           const orders = [];
           for (const ref of (c.a.orders || []).slice(-15).reverse()) { const o = await getOrder(ref); if (o) orders.push(publicOrder(o, ref)); }
-          await fresh(); const credit = [];
+          await fresh(); const credit = []; let hidden = false;
           for (const b of brKeys()) { const pc = Object.values(custDocs[b]).find((x) => x && normPhone(x.phone) === c.phone && +x.owed > 0.004); if (pc) { const ci = credInfo(b, pc), p = pendingClaim(b, pc.id); credit.push({ branch: BR[b].name, owed: ci.owed, due: ci.due ? dayStr(ci.due) : '', late: !!ci.due && ci.due < accraDay(Date.now()), link: BASE() + '/i/' + invCode(b, pc.id), pending: p ? p.amt : 0 }); } }
-          return send(res, 200, { me: profile(c.phone, c.a), orders, credit });
+          if (!c.a.ver && credit.length) { hidden = true; credit.length = 0; } // the number was never confirmed: don't show someone else's balance
+          return send(res, 200, { me: profile(c.phone, c.a), orders, credit, verify: hidden });
         }
         if (req.method === 'POST') {
           const m = await json(req); if (!m) return send(res, 400, { error: 'Not valid data.' });
@@ -789,14 +814,14 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
       if (req.method === 'POST' && url === '/api/store/reset/code') {
         const m = await json(req); const ph = m && normPhone(m.phone);
         if (!ph) return send(res, 400, { error: 'Enter the phone number of your account.' });
-        if (!allow(req, 10, 'rc') || !allow({ headers: {}, socket: {} }, 6, 'lprc' + ph)) return send(res, 429, { error: 'Too many tries. Try again later.' }); // per phone too: the IP header can be faked
+        if (!allow(req, 10, 'rc') || !allow({ headers: {}, socket: {} }, 6, 'lprc' + ph) || !daily('rcd:' + SCOPE() + ph, 12)) return send(res, 429, { error: 'Too many tries. Try again later.' }); // per phone too: the IP header can be faked
         const a = await acctGet(ph), shop = await shopMain(false), nm = (shop && shop.set && shop.set.name) || 'Renatel Shop', sp = (shop && shop.set && shop.set.phone) || '';
         if (!a) return send(res, 404, { error: 'No account uses that phone number. Create an account instead.' });
         const sms = await smsReady(), via = m.via === 'email' || !sms ? 'email' : 'sms';
         if (via === 'email' && !a.email) return send(res, 400, { error: sms ? 'This account has no email. Choose “Text me a code” instead.' : 'This account has no email for a reset code.' + (sp ? ' Call the shop on ' + sp + ' for help.' : ' Call the shop for help.') });
         let code; try { code = await otpIssue('cust:' + ph); } catch (e) { return send(res, e.code || 502, { error: e.message }); }
         try {
-          if (via === 'sms') await sendSms(ph, otpSms(nm, code), { free: true }); // reset codes are never blocked by the SMS allowance
+          if (via === 'sms') { await sendSms(ph, otpSms(nm, code), { free: true }); smsSent.set(ph, Date.now()); } // reset codes are never blocked by the SMS allowance
           else await sendEmail({ to: [a.email], subject: nm + ' - your password reset code: ' + code, text: 'Hello ' + a.name + ',\n\nYour code to reset your ' + nm + ' online shop password is:\n\n    ' + code + '\n\nIt expires in 15 minutes. If you did not ask for this, ignore this email.' });
         } catch (e) { await sbCall('otp_mark', { p_k: 'cust:' + ph, p_try: false }); console.log('reset code ' + via + ': ' + e.message); return send(res, 502, { error: 'The code could not be sent' + (via === 'sms' ? ' by SMS' : ' by email') + '. Try again later.' }); }
         const [u, d] = String(a.email || '').split('@');
@@ -810,7 +835,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         if (r === 'expired') return send(res, 400, { error: 'That code has expired. Send a new code.' });
         if (r === 'locked') return send(res, 429, { error: 'Too many wrong codes. Send a new code.' });
         if (r !== 'ok') return send(res, 401, { error: r > 0 ? 'That code is not right. ' + r + (r === 1 ? ' try' : ' tries') + ' left.' : 'That code is not right, and that was the last try. Send a new code.' });
-        a.pw = await hashPw(m.password); a.pwAt = Date.now(); delete a.rst; if (a.blocked) return send(res, 403, { error: 'This account is blocked. Please call the shop.' });
+        a.pw = await hashPw(m.password); a.pwAt = Date.now(); delete a.rst; if (smsSent.get(ph)) { a.ver = true; smsSent.delete(ph); } if (a.blocked) return send(res, 403, { error: 'This account is blocked. Please call the shop.' });
         await acctPut(ph, a, false);
         return send(res, 200, { token: ctoken(ph), me: profile(ph, a) });
       }

@@ -564,7 +564,7 @@ const mailCount = new Map(); // staff id -> {n, since}
 function mailAllowed(key) { const m = mailCount.get(key) || { n: 0, since: Date.now() }; if (Date.now() - m.since > 3600e3) { m.n = 0; m.since = Date.now(); } m.n++; mailCount.set(key, m); return m.n <= 40; }
 async function setPin(shop, sid, pw) {
   const main = JSON.parse(JSON.stringify(shop)), t = main.staff.find((x) => x.id === sid);
-  t.pin = await mkHash(pw); t.fails = 0; t.nextTry = 0; t.locked = false; t.mustChange = false; delete t.rst;
+  t.pin = await mkHash(pw); t.fails = 0; t.nextTry = 0; t.locked = false; t.mustChange = false; delete t.rst; t.pwAt = Date.now(); delete t.pwDev;
   await sbCall('shop_db_put', { p_col: 'shop', p_id: 'main', p_data: main }); scClear();
 }
 // Forgot password: a 6-digit code is sent by SMS to the phone on the staff record (or by email if chosen / no SMS).
@@ -581,7 +581,7 @@ async function resetCode(req, res) {
   const via = msg.via === 'email' ? 'email' : msg.via === 'sms' ? 'sms' : (smsOk ? 'sms' : 'email');
   if (via === 'sms' && !smsOk) return send(res, 400, { error: ph ? 'SMS codes are not set up for this shop yet. Choose “Email me a code” or the recovery code.' : 'No phone number is saved for ' + s.name + '. Choose “Email me a code”, or ask the owner.' });
   if (via === 'email' && !emailOK(s.email)) return send(res, 400, { error: 'No email is saved for ' + s.name + '.' + (smsOk ? ' Choose “Text me a code” instead.' : ' Use the recovery code, or ask the owner or a manager.') });
-  if (!hourly('rcsend:' + SID() + ':' + s.id, 6)) return send(res, 429, { error: 'Too many codes for ' + s.name + ' this hour. Try again later, or use the recovery code.' });
+  if (!hourly('rcsend:' + SID() + ':' + s.id, 6) || !hourly('rcsendd:' + SID() + ':' + s.id, 12, 864e5)) return send(res, 429, { error: 'Too many codes for ' + s.name + ' this hour. Try again later, or use the recovery code.' });
   let code; try { code = await st.otpIssue('staff:' + s.id); } catch (e) { return send(res, e.code || 502, { error: e.message }); }
   failed(ip, 10);
   try {
@@ -641,7 +641,8 @@ async function caller(req) {
     const s = shop && (shop.staff || []).find((x) => x.id === t.sid);
     if (!s || s.locked) return { err: [401, 'Please log in again.'] };
     if (shop.set && shop.set.sessEpoch && t.iat < shop.set.sessEpoch) return { err: [401, 'The owner signed out every device. Log in again.'] };
-    return { staff: s };
+    if (s.pwAt && t.iat < s.pwAt && !(s.pwDev && t.dev === s.pwDev)) return { err: [401, 'Your password was changed. Log in again.'] };
+    return { staff: s, dev: t.dev };
   }
   if (!req.headers['x-backup-code']) return { err: [401, 'Please log in.'] };
   const c = codeOK(req);
@@ -766,7 +767,8 @@ async function api(req, res, url) {
           if (msg.d.set && msg.d.set.rc === 'hidden') { if (cur && cur.set && cur.set.rc) msg.d.set.rc = cur.set.rc; else delete msg.d.set.rc; }
           if (cur && Array.isArray(cur.staff)) {
             const old = new Map(cur.staff.map((x) => [x.id, x]));
-            for (const st of (Array.isArray(msg.d.staff) ? msg.d.staff : [])) { const o = old.get(st.id); if (o && !st.pin && o.pin) st.pin = o.pin; if (st && typeof st === 'object') delete st.hasPw; }
+            for (const st of (Array.isArray(msg.d.staff) ? msg.d.staff : [])) { const o = old.get(st.id); if (o && !st.pin && o.pin) st.pin = o.pin; if (st && typeof st === 'object') delete st.hasPw;
+              if (o && st && st.pin && st.pin !== o.pin) { st.pwAt = Date.now(); st.pwDev = who.dev || null; } else if (o && st) { if (o.pwAt) st.pwAt = o.pwAt; else delete st.pwAt; if (o.pwDev) st.pwDev = o.pwDev; else delete st.pwDev; } } // a new password signs out the person's other devices
           }
         }
         const out = url === '/api/db/del' ? await sbCall('shop_db_del', { p_col: col, p_id: id }) : await sbCall('shop_db_put', { p_col: col, p_id: id, p_data: msg.d });
@@ -925,6 +927,7 @@ async function emailResetCode(req, res) {
   let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
   const email = emNorm(m.email).slice(0, 120); if (!emailOK(email)) return send(res, 400, { error: 'Type your email address.' });
   const ik = 'erc:' + clientIp(req); if (tooMany(ik)) return send(res, 429, { error: 'Too many tries. Wait a few minutes.' }); failed(ik, 10);
+  if (!hourly('ercd:' + email, 10, 864e5)) return send(res, 429, { error: 'Too many codes for this email today. Try again tomorrow.' });
   const prev = emailCodes.get(email); if (prev && Date.now() - prev.sent < 60000) return send(res, 429, { error: 'A code was sent less than a minute ago. Check your email (and spam).' });
   let M; try { M = await byEmail(email, true); } catch (e) { return send(res, 502, { error: 'Could not reach the database. Try again in a moment.' }); }
   if (M.length) {
@@ -1329,7 +1332,7 @@ const hostName = () => String(process.env.PLATFORM_HOST || 'tessapos.shop').repl
 function store() {
   const id = SID(); if (id === '-') throw new Error('No shop');
   if (!stores.has(id)) stores.set(id, makeStore({ sbCall, sbOn, send, readBody, serverLog, shopMain, clientIp, sendEmail, HEADERS, caller,
-    multi: true, noTimers: true, sharedSms, sharedPay, smsTake, smsPlans, smsOrder, smsOrders, help: HELP_WA, platform: PLATFORM, smsMomo: SMS_MOMO, unchanged: async (rev) => { const r = await shopRevs(); return !!(r && +(r[SID()] || 0) === +rev); }, host: hostName(), base: () => '/' + T().shop.slug, scope: () => 'shop:' + SID() + ':', siteUrl: () => 'https://' + hostName() }));
+    multi: true, noTimers: true, tabs: (s) => powers(s).t, sharedSms, sharedPay, smsTake, smsPlans, smsOrder, smsOrders, help: HELP_WA, platform: PLATFORM, smsMomo: SMS_MOMO, unchanged: async (rev) => { const r = await shopRevs(); return !!(r && +(r[SID()] || 0) === +rev); }, host: hostName(), base: () => '/' + T().shop.slug, scope: () => 'shop:' + SID() + ':', siteUrl: () => 'https://' + hostName() }));
   return stores.get(id);
 }
 // Credit reminders: every 10 minutes, for every open shop (each shop's own SMS account; sent once a day per customer).
