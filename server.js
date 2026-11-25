@@ -561,16 +561,21 @@ async function login(req, res) {
   let shop; try { shop = await shopMain(true); } catch (e) { console.error('login', e.message); return send(res, 502, { error: 'Could not reach the shop database. Try again in a moment.' }); }
   if (!shop) return send(res, 404, { error: 'The shop has not been set up yet.', setup: true });
   const s = findStaff(shop.staff || [], name);
+  const sk = s ? 'ls:' + SID() + ':' + s.id : null; // per person, whichever name or email was typed
+  if (sk) { const w2 = tooMany(sk); if (w2) return send(res, 429, { error: 'Too many wrong tries. Wait ' + w2 + ' minute' + (w2 > 1 ? 's' : '') + ', then try again.' });
+    if ((dayFails.get(sk) || { n: 0 }).n >= 40 && Date.now() - dayFails.get(sk).at < 864e5) return send(res, 429, { error: 'Too many wrong passwords today for ' + s.name + '. Reset the password (Forgot password) or try again tomorrow.' }); }
   if (!s || !(await pwOK(pw, s.pin))) {
+    if (sk) { failed(sk, 6); const d = dayFails.get(sk), t = Date.now(); dayFails.set(sk, d && t - d.at < 864e5 ? { n: d.n + 1, at: d.at } : { n: 1, at: t }); }
     console.log('login failed: ' + (s ? 'wrong password for ' + s.name : 'no staff member called "' + nmz(name) + '"'));
     serverLog('Failed login', s ? 'wrong password · on ' + SITE : 'name not recognised: “' + name.slice(0, 40) + '” · on ' + SITE, s);
     failed(ip, 20); failed(nk, 6); return send(res, 401, { error: 'That email and password don’t match. Check the email and try again.' }); }
   if (s.locked) { serverLog('Failed login', 'account is locked · on ' + SITE, s); return send(res, 423, { error: s.name + '’s account is locked after too many wrong tries. Ask the owner or a manager to unlock it.' }); }
-  loginFails.delete(nk);
+  loginFails.delete(nk); loginFails.delete(sk); dayFails.delete(sk);
   console.log('login ok: ' + s.name);
   const dev = cleanDev(msg.dev);
   return send(res, 200, { ok: true, token: makeToken(s.id, dev), sid: s.id, name: s.name, exp: Date.now() + SESSION_DAYS * 864e5 });
 }
+const dayFails = new Map(); // wrong passwords per person per day
 const rcNorm = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const pwRule = (p, set) => (set && set.strongPw === false) ? (p.length < 4 ? 'Use at least 4 characters.' : '') : (p.length < 6 || !/[A-Za-z]/.test(p) || !/\d/.test(p) ? 'Use at least 6 characters with both letters and numbers, e.g. kofi2024.' : '');
 const mkHash = (p) => new Promise((ok, no) => { const salt = crypto.randomBytes(16).toString('hex'); crypto.pbkdf2(String(p), salt, 150000, 32, 'sha256', (e, k) => e ? no(e) : ok('p2$' + salt + '$' + k.toString('hex'))); });
@@ -623,7 +628,7 @@ const mailCount = new Map(); // staff id -> {n, since}
 function mailAllowed(key) { const m = mailCount.get(key) || { n: 0, since: Date.now() }; if (Date.now() - m.since > 3600e3) { m.n = 0; m.since = Date.now(); } m.n++; mailCount.set(key, m); return m.n <= 40; }
 async function setPin(shop, sid, pw) {
   const main = JSON.parse(JSON.stringify(shop)), t = main.staff.find((x) => x.id === sid);
-  t.pin = await mkHash(pw); t.fails = 0; t.nextTry = 0; t.locked = false; t.mustChange = false; delete t.rst; t.pwAt = Date.now(); delete t.pwDev;
+  t.pin = await mkHash(pw); t.fails = 0; t.nextTry = 0; t.locked = false; t.mustChange = false; delete t.rst; t.pwAt = Date.now(); delete t.pwDev; delete t.pwIat; dayFails.delete('ls:' + SID() + ':' + t.id); loginFails.delete('ls:' + SID() + ':' + t.id);
   await sbCall('shop_db_put', { p_col: 'shop', p_id: 'main', p_data: main }); scClear();
 }
 // Forgot password: a 6-digit code is sent by SMS to the phone on the staff record (or by email if chosen / no SMS).
@@ -700,8 +705,8 @@ async function caller(req) {
     const s = shop && (shop.staff || []).find((x) => x.id === t.sid);
     if (!s || s.locked) return { err: [401, 'Please log in again.'] };
     if (shop.set && shop.set.sessEpoch && t.iat < shop.set.sessEpoch) return { err: [401, 'The owner signed out every device. Log in again.'] };
-    if (s.pwAt && t.iat < s.pwAt && !(s.pwDev && t.dev === s.pwDev)) return { err: [401, 'Your password was changed. Log in again.'] };
-    return { staff: s, dev: t.dev };
+    if (s.pwAt && t.iat < s.pwAt && !(s.pwDev && t.dev === s.pwDev && s.pwIat && t.iat === s.pwIat)) return { err: [401, 'Your password was changed. Log in again.'] }; // only the very login that changed it stays in
+    return { staff: s, dev: t.dev, iat: t.iat };
   }
   if (!req.headers['x-backup-code']) return { err: [401, 'Please log in.'] };
   const c = codeOK(req);
@@ -842,7 +847,7 @@ async function api(req, res, url) {
           if (cur && Array.isArray(cur.staff)) {
             const old = new Map(cur.staff.map((x) => [x.id, x]));
             for (const st of (Array.isArray(msg.d.staff) ? msg.d.staff : [])) { const o = old.get(st.id); if (o && !st.pin && o.pin) st.pin = o.pin; if (st && typeof st === 'object') delete st.hasPw;
-              if (o && st && st.pin && st.pin !== o.pin) { st.pwAt = Date.now(); st.pwDev = who.dev || null; } else if (o && st) { if (o.pwAt) st.pwAt = o.pwAt; else delete st.pwAt; if (o.pwDev) st.pwDev = o.pwDev; else delete st.pwDev; } } // a new password signs out the person's other devices
+              if (o && st && st.pin && st.pin !== o.pin) { st.pwAt = Date.now(); st.pwDev = who.dev || null; st.pwIat = who.iat || null; } else if (o && st) { for (const k of ['pwAt', 'pwDev', 'pwIat']) { if (o[k]) st[k] = o[k]; else delete st[k]; } } } // a new password signs out the person's other devices
           }
         }
         const out = url === '/api/db/del' ? await sbCall('shop_db_del', { p_col: col, p_id: id }) : await sbCall('shop_db_put', { p_col: col, p_id: id, p_data: msg.d });
