@@ -739,6 +739,12 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         if (req.method === 'POST' && url === '/api/store/admin/customer') {
           const m = await json(req), ph = m && normPhone(m.phone);
           const a = ph ? await acctGet(ph) : null; if (!a) return send(res, 404, { error: 'Account not found.' });
+          if (m.delete) { // owner only: remove the online account (their orders and the shop's customer record stay)
+            if (!st || st.role !== 'owner') return send(res, 403, { error: 'Only the shop owner can delete customer accounts.' });
+            await sbCall('web_acct_del', { p_phone: ph });
+            serverLog('Deleted online account', a.name + ' · ' + ph, st);
+            return send(res, 200, { ok: true, deleted: true });
+          }
           a.blocked = !!m.blocked; if (a.blocked) a.pwAt = Date.now(); // blocking also signs them out everywhere
           await acctPut(ph, a, false);
           serverLog(a.blocked ? 'Blocked online account' : 'Unblocked online account', a.name + ' · ' + ph, st);

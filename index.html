@@ -316,6 +316,15 @@ function applyRemote(changed){const loc={},cur=chunks();for(const p in cur)loc[p
 let IDS=[],idBusy=false;
 async function idFill(){if(idBusy||IDS.length>=20||!SESS())return;idBusy=true;try{const r=await fetch('/api/ids',{cache:'no-store',headers:authH()});const j=await r.json();if(r.ok&&Array.isArray(j.ids))IDS.push(...j.ids.map(Number))}catch(e){}idBusy=false}
 function takeId(){const v=IDS.length?IDS.shift():Date.now()*100+Math.floor(Math.random()*100);if(IDS.length<20)idFill();return v}
+// A new version of the app went live while this page was open: offer to load it (and load it quietly when it's safe).
+let APPV=null,appvNew=false;
+function appvCheck(v){if(!APPV){APPV=v;return}if(v===APPV||appvNew)return;appvNew=true;
+ const safe=()=>!(typeof cart!=='undefined'&&cart&&cart.length)&&!document.querySelector('#dlg.on,#ask.on');
+ if(document.hidden&&safe())return location.reload();
+ const b=document.createElement('div');b.id='updbar';b.setAttribute('role','status');
+ b.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:9999;background:var(--ac,#0a7);color:#fff;padding:10px 16px;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.25);font-weight:600;cursor:pointer;max-width:92vw;text-align:center';
+ b.textContent='🔄 Tessa has been updated. Tap here to load the new version.';b.onclick=()=>location.reload();document.body.appendChild(b);
+ document.addEventListener('visibilitychange',()=>{if(document.hidden&&safe())location.reload()});}
 function webDb(){idFill();const subs={},errs=[];let since=0,first=true,stop=false,timer=null,busyP=false;
  async function call(p,o){let r;try{r=await fetch(p,Object.assign({cache:'no-store'},o||{},{headers:Object.assign(authH(),{'Content-Type':'application/json'})}))}catch(e){const x=new Error('offline');x.code='unavailable';throw x}
   let j={};try{j=await r.json()}catch(e){}
@@ -323,7 +332,7 @@ function webDb(){idFill();const subs={},errs=[];let since=0,first=true,stop=fals
  const snap=L=>({docChanges:()=>L.map(d=>({type:d.x?'removed':'modified',doc:{id:d.id,data:()=>d.d}})),metadata:{fromCache:false}});
  async function poll(){if(stop||busyP)return;clearTimeout(timer);if(!webAuth()){stop=true;return}busyP=true;
   try{const acc={};let more=true;
-   while(more){const j=await call('/api/db?since='+since);(j.docs||[]).forEach(d=>(acc[d.c]=acc[d.c]||[]).push(d));since=j.rev||since;more=!!j.more;
+   while(more){const j=await call('/api/db?since='+since);if(j.appv)appvCheck(j.appv);(j.docs||[]).forEach(d=>(acc[d.c]=acc[d.c]||[]).push(d));since=j.rev||since;more=!!j.more;
     if(!first)for(const c in acc){(subs[c]||[]).forEach(f=>f(snap(acc[c])));delete acc[c]}}
    if(first){first=false;Object.keys(subs).forEach(c=>subs[c].forEach(f=>f(snap(acc[c]||[]))))}
    if(ready&&cstate=='offline'){cstate=dirty?'error':'saved';syncUI();if(dirty)cloudSave()}
@@ -1631,7 +1640,10 @@ function webCusts(){if(WEB.err&&!WEB.cust)return `<div class="card"><p class="ba
  <div id="wcl">${wcList()}</div></div>`}
 function wcList(){const q=(WEB.cq||'').toLowerCase(),L=WEB.cust.filter(c=>!q||[c.name,c.phone,c.email,c.region].join(' ').toLowerCase().includes(q));
  return `${L.map(c=>`<div class="srow"><div class="av">${esc((c.name||'?')[0].toUpperCase())}</div><div class="sinfo"><b>${esc(c.name)}</b> ${c.blocked?'<span class="pill bad">Blocked</span>':''}<br><small><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>${c.email?' · '+esc(c.email):''}${c.region?' · '+esc(c.region):''}</small><br><small class="mut">Joined ${fdt(Date.parse(c.created))} · ${c.orders} order${c.orders==1?'':'s'}</small></div>
-  <div class="sact"><button class="btn sm ${c.blocked?'pri':'del'}" onclick="webBlock('${esc(c.phone)}',${!c.blocked},this)">${c.blocked?'Unblock':'Block'}</button></div></div>`).join('')||'<p class="mut" style="text-align:center;padding:12px 0">No customer accounts yet.</p>'}`}
+  <div class="sact"><button class="btn sm ${c.blocked?'pri':'del'}" onclick="webBlock('${esc(c.phone)}',${!c.blocked},this)">${c.blocked?'Unblock':'Block'}</button>${me&&me.role==='owner'?` <button class="btn sm del" title="Delete account" aria-label="Delete ${esc(c.name)}’s account" onclick="webDelAcct('${esc(c.phone)}',this)">🗑</button>`:''}</div></div>`).join('')||'<p class="mut" style="text-align:center;padding:12px 0">No customer accounts yet.</p>'}`}
+async function webDelAcct(ph,b){const c=WEB.cust.find(x=>x.phone==ph);if(!c)return;
+ if(!await uiConfirm(`Delete ${c.name}’s online shop account (${c.phone})? They are signed out and would need to sign up again to order online.\n\nTheir past orders and their entry in 👥 Customers stay. To remove them from 👥 Customers too, delete them there.`,'Delete account'))return;b.disabled=true;
+ try{await webApi('/api/store/admin/customer',{method:'POST',body:JSON.stringify({phone:ph,delete:true})});WEB.cust=WEB.cust.filter(x=>x.phone!=ph);logit('Deleted online account',c.name+' · '+c.phone);save();render()}catch(e){b.disabled=false;uiAlert(e.message)}}
 async function webBlock(ph,on,b){if(on&&!await uiConfirm('Block this account? They are signed out and can’t sign in or order until you unblock them.'))return;b.disabled=true;
  try{await webApi('/api/store/admin/customer',{method:'POST',body:JSON.stringify({phone:ph,blocked:on})});const c=WEB.cust.find(x=>x.phone==ph);if(c)c.blocked=on;render()}catch(e){b.disabled=false;uiAlert(e.message)}}
 function webSettings(ss){const F=(l,x)=>`<label class="fl" style="margin-top:10px"><span class="mut">${l}</span>${x}</label>`,sw=(k,l,d)=>`<label class="acrow"><span><b>${l}</b><br><small class="mut">${d}</small></span><input type="checkbox" class="sw" id="ws_${k}" ${ss[k]?'checked':''}></label>`;

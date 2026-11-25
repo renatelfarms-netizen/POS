@@ -144,7 +144,7 @@ async function hostGet(id) {
 const sbOn = () => !!(process.env.SUPABASE_URL && process.env.SUPABASE_KEY && process.env.SUPABASE_BACKUP_TOKEN);
 // Per-shop database functions (schema.sql). Called inside a shop, the shop id is added automatically.
 const MT = { shop_db_pull: 'mt_db_pull', shop_db_get: 'mt_db_get', shop_db_put: 'mt_db_put', shop_db_del: 'mt_db_del', shop_ids: 'mt_ids', site_backup_save: 'mt_backup_save', site_backup_list: 'mt_backup_list', site_backup_get: 'mt_backup_get',
-  shop_photo_put: 'mt_photo_put', shop_photo_get: 'mt_photo_get', web_acct_get: 'mt_acct_get', web_acct_put: 'mt_acct_put', web_acct_list: 'mt_acct_list',
+  shop_photo_put: 'mt_photo_put', shop_photo_get: 'mt_photo_get', web_acct_get: 'mt_acct_get', web_acct_put: 'mt_acct_put', web_acct_list: 'mt_acct_list', web_acct_del: 'mt_acct_del',
   site_secret_get: 'mt_ssecret_get', site_secret_set: 'mt_ssecret_set', otp_set: 'mt_otp_set', otp_get: 'mt_otp_get', otp_mark: 'mt_otp_mark',
   web_order_claim: 'mt_order_claim', web_stock_take: 'mt_stock_take', job_once: 'mt_job_once' };
 async function sbCall(fn, args, bodyRaw) {
@@ -491,6 +491,8 @@ async function flagSales(col, doc, cur, st) {
     }
   } catch (e) { console.error('flag sales', e.message); }
 }
+// Version of the app page: changes whenever index.html changes, so apps left open all day know to reload.
+const APP_V = (() => { try { return crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname, 'index.html'))).digest('hex').slice(0, 12); } catch (e) { return String(Date.now()); } })();
 const shopCache = new Map(); // shop id -> {at, doc}
 const scClear = () => shopCache.delete(SID());
 // The currency symbol is shown unescaped on many screens and pages: keep it to plain text.
@@ -793,6 +795,7 @@ async function api(req, res, url) {
           for (const doc of pulled.docs) if (doc && doc.c !== 'shop' && doc.d) cleanDoc(doc.d); // numbers stay numbers on every screen
           for (const doc of pulled.docs) if (doc && doc.c === 'shop' && doc.id === 'main') { doc.d = stripShopDoc(doc.d); if (!own && doc.d && doc.d.set && doc.d.set.rc) doc.d.set.rc = 'hidden'; }
         }
+        if (pulled && typeof pulled === 'object') pulled.appv = APP_V; // open apps compare this and offer to load a new version
         return send(res, 200, pulled);
       }
       if (req.method === 'POST' && (url === '/api/db/put' || url === '/api/db/del')) {

@@ -195,3 +195,13 @@ create or replace function mt_revs(p_token text) returns jsonb language plpgsql 
 begin perform _mt_check(p_token); return coalesce((select jsonb_object_agg(shop_id, rev) from mt_seq), '{}'::jsonb); end $$;
 revoke all on function mt_revs(text) from public, anon, authenticated;
 grant execute on function mt_revs(text) to service_role;
+
+-- Owner deletes an online-shop customer account (server only, like the other mt_ functions).
+create or replace function public.mt_acct_del(p_token text, p_shop uuid, p_phone text)
+returns jsonb language plpgsql security definer set search_path to 'public', 'extensions'
+as $$
+begin perform _mt_check(p_token);
+  delete from mt_accounts where shop_id = p_shop and phone = p_phone;
+  return jsonb_build_object('ok', found);
+end $$;
+revoke all on function public.mt_acct_del(text, uuid, text) from public, anon, authenticated;
