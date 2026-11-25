@@ -1062,20 +1062,20 @@ async function shopView(rec) {
 let adminPw = { at: 0, hash: null };
 async function adminHash(fresh) {
   if (!fresh && Date.now() - adminPw.at < 60000) return adminPw.hash;
-  try { adminPw = { at: Date.now(), hash: (await sbCall('mt_kv_get', { p_k: 'admin_pw' })) || null }; } catch (e) { console.error('admin pw', e.message); }
+  try { adminPw = { at: Date.now(), hash: (await sbCall('mt_kv_get', { p_k: 'admin_pw' })) || null, ok: true }; } catch (e) { console.error('admin pw', e.message); if (!adminPw.ok) throw e; }
   return adminPw.hash;
 }
 // Admin logins are signed with the current password, so changing it signs out every admin session.
 const adminSign = (b) => crypto.createHmac('sha256', secret() + ':admin:' + (adminPw.hash || process.env.PLATFORM_ADMIN_PASSWORD || '')).update(b).digest('base64url');
 async function adminOK(req) {
   const [b, mac] = String(req.headers.authorization || '').replace(/^Bearer /, '').split('.');
-  await adminHash(false);
-  if (!b || !mac || !(adminPw.hash || process.env.PLATFORM_ADMIN_PASSWORD)) return false;
+  try { await adminHash(false); } catch (e) { return false; }
+  if (!b || !mac || !adminPw.ok || !(adminPw.hash || process.env.PLATFORM_ADMIN_PASSWORD)) return false; // saved password unknown: refuse
   const want = adminSign(b); if (mac.length !== want.length || !crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(want))) return false;
   try { return JSON.parse(Buffer.from(b, 'base64url').toString()).exp > Date.now(); } catch (e) { return false; }
 }
 async function adminPwOK(p) {
-  const h = await adminHash(true);
+  let h; try { h = await adminHash(true); } catch (e) { return false; } // couldn't read the saved password: refuse, never fall back to the setup password
   if (h) return pwOK(p, h);
   const want = process.env.PLATFORM_ADMIN_PASSWORD; return !!want && eq(sha(String(p)), sha(want));
 }
@@ -1098,7 +1098,8 @@ async function platformApi(req, res, url) {
   if (req.method === 'POST' && url === '/api/platform/admin/login') {
     const k = 'adm:' + clientIp(req), w = tooMany(k) || tooMany('adm:all'); if (w) return send(res, 429, { error: 'Too many wrong tries. Wait ' + w + ' minutes.' });
     let m; try { m = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
-    if (!(await adminHash(true)) && !process.env.PLATFORM_ADMIN_PASSWORD) return send(res, 503, { error: 'Set PLATFORM_ADMIN_PASSWORD on the server first.' });
+    let hk; try { hk = await adminHash(true); } catch (e) { return send(res, 503, { error: 'Could not check the password right now. Try again in a moment.' }); }
+    if (!hk && !process.env.PLATFORM_ADMIN_PASSWORD) return send(res, 503, { error: 'Set PLATFORM_ADMIN_PASSWORD on the server first.' });
     if (!(await adminPwOK(String(m.password || '').slice(0, 200)))) { failed(k, 6); failed('adm:all', 20); return send(res, 401, { error: 'Wrong admin password.' }); }
     loginFails.delete(k); return send(res, 200, { ok: true, token: adminToken() });
   }
