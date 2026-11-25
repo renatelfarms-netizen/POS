@@ -253,14 +253,15 @@ html,body{overscroll-behavior-y:contain}
 <div id="toast"></div>
 <script>
 const SHOP=window.SHOP||null;
-if(SHOP){try{const R=JSON.parse(localStorage.getItem('tessa-recent')||'[]').filter(x=>x&&x.slug!=SHOP.slug);R.unshift({slug:SHOP.slug,name:SHOP.name});localStorage.setItem('tessa-recent',JSON.stringify(R.slice(0,5)))}catch(e){}const f0=window.fetch.bind(window);window.fetch=(u,o)=>f0(typeof u=='string'&&u.startsWith('/api/')?'/'+SHOP.slug+u:u,o)}
+if(SHOP){/* nothing about the shop is kept in the browser */const f0=window.fetch.bind(window);window.fetch=(u,o)=>f0(typeof u=='string'&&u.startsWith('/api/')?'/'+SHOP.slug+u:u,o)}
 const $=s=>document.querySelector(s), C='GH₵ ', K='shop-pos-v1'+(SHOP?':'+SHOP.slug:''), HOST=location.host||'the website';
 const money=n=>(db.set.cur+' ')+(+n||0).toFixed(2);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let BR={},curB='kum';const BRS=['kum','acc'],brsFix=()=>{const n=db&&db.set&&db.set.branches==1?['kum']:['kum','acc'];if(BRS.join()!=n.join()){BRS.length=0;BRS.push(...n)}},BPFX={kum:'',acc:'accra_'},BKEYS=['products','customers','sales','expenses','deliveries','pos','moves'],BLISTS={sales:'d',expenses:'m',deliveries:'m',pos:'m',moves:'m'},SLISTS={log:'d',whMoves:'m',transfers:'m',trReq:'m',whPos:'m',att:'m',marks:'m',remits:'m'};
 let buyer={phone:'',name:''},me=null,db={products:[],customers:[],sales:[],staff:[],log:[],seq:1},tab='sell',cart=[],q='',range='today',pay='Cash',cust='',split=null,tend='',sdisc='';
 const WEB0=/^https?:$/.test(location.protocol)&&!/claude\.(ai|site)|claudeusercontent|anthropic/.test(location.hostname);
-if(WEB0)try{['','-before-cloud','-before-restore','-dev','-bk','-br','-sess','-auto','-lastu'].forEach(x=>localStorage.removeItem(K+x))}catch(e){}
+if(WEB0)try{['','-before-cloud','-before-restore','-dev','-bk','-br','-sess','-auto','-lastu'].forEach(x=>localStorage.removeItem(K+x));
+ Object.keys(localStorage).filter(k=>/^(rs-wh|tessa-recent|rs-pos-device|rs-seenEd-)/.test(k)).forEach(k=>localStorage.removeItem(k))}catch(e){} // nothing about the shop stays in the browser
 if(!WEB0)try{const s=localStorage.getItem(K);if(s){db=JSON.parse(s);if(db.__BR){BR=db.__BR;curB=db.__curB||'kum';delete db.__BR;delete db.__curB}}}catch(e){}
 if(!WEB0&&!db.products.length&&!db.sales.length){db.products=[
 {id:1,name:'Bottled water',price:3,stock:48,min:10},{id:2,name:'Biscuits',price:5,stock:30,min:8},{id:3,name:'Notebook',price:12,stock:20,min:5},{id:4,name:'Phone charger',price:45,stock:6,min:3}];db.seq=10}
@@ -325,8 +326,20 @@ function appvCheck(v){if(!APPV){APPV=v;return}if(v===APPV||appvNew)return;appvNe
  b.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:9999;background:var(--ac,#0a7);color:#fff;padding:10px 16px;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.25);font-weight:600;cursor:pointer;max-width:92vw;text-align:center';
  b.textContent='🔄 Tessa has been updated. Tap here to load the new version.';b.onclick=()=>location.reload();document.body.appendChild(b);
  document.addEventListener('visibilitychange',()=>{if(document.hidden&&safe())location.reload()});}
+// Tessa only works online: when the internet (or the server) is lost, the app is covered until it's back.
+// Nothing is saved in the browser, so changes made just before are kept on this screen and saved on reconnect.
+let NETUP=true;
+function netState(up){if(!WEB0||up===NETUP)return;NETUP=up;let o=document.getElementById('netblock');
+ if(!up){if(!o){o=document.createElement('div');o.id='netblock';o.setAttribute('role','alertdialog');o.setAttribute('aria-live','assertive');
+   o.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(15,17,20,.94);color:#fff;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center';
+   o.innerHTML='<div style="max-width:420px"><div style="font-size:44px">📶</div><h2 style="margin:8px 0">No internet connection</h2><p style="opacity:.9;line-height:1.5">Tessa needs the internet to work, so selling is paused until the connection is back.</p><p style="opacity:.9;line-height:1.5"><b>Don’t close or refresh Tessa.</b> Anything you did just before is kept on this screen and will be saved as soon as you’re back online.</p><p id="netmsg" style="opacity:.75;margin-top:14px">Trying to reconnect…</p></div>';
+   document.body.appendChild(o)}o.style.display='flex';try{document.activeElement&&document.activeElement.blur()}catch(e){}}
+ else{if(o)o.style.display='none';if(cloud&&cloud.refresh)cloud.refresh();cloudSave();}} // back online: save anything waiting right away
+window.addEventListener('offline',()=>netState(false));
+window.addEventListener('online',()=>{if(cloud&&cloud.refresh)cloud.refresh()}); // confirmed by the next server answer
 function webDb(){idFill();const subs={},errs=[];let since=0,first=true,stop=false,timer=null,busyP=false;
- async function call(p,o){let r;try{r=await fetch(p,Object.assign({cache:'no-store'},o||{},{headers:Object.assign(authH(),{'Content-Type':'application/json'})}))}catch(e){const x=new Error('offline');x.code='unavailable';throw x}
+ async function call(p,o){let r;try{r=await fetch(p,Object.assign({cache:'no-store'},o||{},{headers:Object.assign(authH(),{'Content-Type':'application/json'})}))}catch(e){netState(false);const x=new Error('offline');x.code='unavailable';throw x}
+  netState(!(r.status==502||r.status==503||r.status==504));
   let j={};try{j=await r.json()}catch(e){}
   if(!r.ok){const x=new Error(j.error||('The server answered '+r.status+'.'));x.code=r.status==401?'revoked':r.status==413?'quota_exceeded':r.status==400?'invalid_argument':'unavailable';throw x}return j}
  const snap=L=>({docChanges:()=>L.map(d=>({type:d.x?'removed':'modified',doc:{id:d.id,data:()=>d.d}})),metadata:{fromCache:false}});
@@ -575,7 +588,7 @@ async function doWebReset(){const rc=document.querySelector('input[name=wfm]:che
  if(!n||!c||!p)return pwShow(null,'wf_m',false,rc?'Fill in your email, the recovery code and a new password.':'Fill in your email, the 6-digit code and a new password.');
  b.disabled=true;b.innerHTML=RING()+' Checking…';
  try{const j=await wfPost(rc?'/api/reset':'/api/reset/email',{name:n,code:c,password:p});
-  try{sessionStorage.setItem(K+'-sess',JSON.stringify({t:j.token,sid:j.sid,exp:j.exp}));try{localStorage.setItem('rs-pos-device'+(window.SHOP?':'+window.SHOP.slug:''),'1')}catch(e){}sessionStorage.setItem(K+'-auto',JSON.stringify({sid:j.sid,ts:Date.now()}))}catch(e){}pwShow(null,'wf_m',true,'✔ Password changed. Opening your shop…');setTimeout(()=>location.reload(),600)}
+  try{sessionStorage.setItem(K+'-sess',JSON.stringify({t:j.token,sid:j.sid,exp:j.exp}));sessionStorage.setItem(K+'-auto',JSON.stringify({sid:j.sid,ts:Date.now()}))}catch(e){}pwShow(null,'wf_m',true,'✔ Password changed. Opening your shop…');setTimeout(()=>location.reload(),600)}
  catch(e){b.disabled=false;b.textContent='Reset and log in';pwShow(null,'wf_m',false,'✖ '+e.message)}}
 async function webLoginCall(name,password){const r=await fetch('/api/login',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,password,dev:DEV.id})});let j={};try{j=await r.json()}catch(e){}if(!r.ok)throw new Error(j.error||('The server answered '+r.status+'.'));
  try{sessionStorage.setItem(K+'-sess',JSON.stringify({t:j.token,sid:j.sid,exp:j.exp}))}catch(e){}return j}
@@ -1902,7 +1915,7 @@ const staffBranches=s=>!s?[]:s.role=='owner'||s.branch=='both'?BRS.slice():[BRS.
 /* ---------- several named warehouses: one product list, quantities per warehouse (item.whq) ----------
    p.wh always means "quantity in the warehouse being viewed" (curWh), so the existing warehouse screens work
    per warehouse. Moves, transfers and warehouse purchase orders are tagged with their warehouse (wk; none = main). */
-var curWh;try{curWh=localStorage.getItem('rs-wh')||'main'}catch(e){curWh='main'}
+var curWh='main'; // chosen warehouse: kept in memory only
 function WHS(){const L=db&&db.set&&Array.isArray(db.set.whs)?db.set.whs.filter(w=>w&&w.k):[];return L.some(w=>w.k=='main')?L:[{k:'main',name:'Main warehouse'}].concat(L)}
 function whName(k){return (WHS().find(w=>w.k==(k||'main'))||{name:'Warehouse'}).name}
 function wkOf(x){return (x&&x.wk)||'main'}
@@ -1916,7 +1929,7 @@ function whFix(p,key){if(!p||typeof p!='object')return;const d=Object.getOwnProp
 function whTagPush(a){if(!a||a.__wk)return;Object.defineProperty(a,'__wk',{value:1,enumerable:false});Object.defineProperty(a,'push',{value:function(...x){x.forEach(r=>{if(r&&typeof r=='object'&&r.wk==null&&(curWh||'main')!='main'&&(a!==db.transfers||r.dir)&&(a!==db.whPos||r.loc=='wh'))r.wk=curWh});return Array.prototype.push.apply(this,x)},enumerable:false,configurable:true})}
 function whNorm(key){if(!db)return;(db.whItems||[]).forEach(p=>whFix(p,key));[db.whMoves,db.transfers,db.whPos].forEach(whTagPush);if(!WHS().some(w=>w.k==curWh))curWh='main'}
 function withWh(k,fn){const o=curWh;curWh=k||'main';try{return fn()}finally{curWh=o}}
-function whPick(k){curWh=k;try{localStorage.setItem('rs-wh',k)}catch(e){}whq='';tr.lines=[];render()}
+function whPick(k){curWh=k;whq='';tr.lines=[];render()}
 /* the warehouse keeper receives stock but does not buy: purchase orders and supplier payments are for the owner and managers */
 /* warehouse keepers work with quantities only: no stock values, cost or selling prices */
 function whNoMoney(){return !!me&&me.role=='warehouse'}
@@ -1928,9 +1941,9 @@ function valCard(){if(!valOwnShop()||!me||me.role!='owner')return '';
 /* ---------- product edit alerts (owner), keeper edit window, linked add, services ---------- */
 const EDIT3H=3*3600e3;
 function canEditWh(p){return !whNoMoney()||(!!p&&p.addBy==me.id&&Date.now()-(+p.addTs||0)<EDIT3H)}
-function seenEd(){try{return +localStorage.getItem('rs-seenEd-'+(me&&me.id))||0}catch(e){return 0}}
+const SEENED={};function seenEd(){return SEENED[me&&me.id]||0}
 function editAlerts(){if(!me||me.role!='owner')return [];const t=seenEd();return db.log.filter(l=>l.ts>t&&l.sid!=me.id&&/^(Edited product|Deleted product)/.test(l.a))}
-function edDlg(){const L=editAlerts().slice().reverse();try{localStorage.setItem('rs-seenEd-'+me.id,String(Date.now()))}catch(e){}
+function edDlg(){const L=editAlerts().slice().reverse();SEENED[me.id]=Date.now();
  $('#dlgc').innerHTML=`<b>✏️ Product changes by staff</b><p class="mut ln" style="margin:4px 0 10px">Edits and deletions of products in the shops and the warehouse since you last looked.</p><div class="tw"><table><tr><th>When</th><th>Who</th><th>What</th></tr>${L.map(l=>`<tr><td>${fdt(l.ts)}</td><td>${esc(l.who||'')}</td><td style="white-space:normal"><b>${esc(l.a)}</b><br><small>${esc(l.d||'')}${l.b?' · '+esc(BRN(l.b)):''}</small></td></tr>`).join('')||'<tr><td colspan="3" class="mut">Nothing new.</td></tr>'}</table></div>
  <div class="form" style="margin-top:12px"><button class="btn pri" onclick="$('#dlg').classList.remove('on');render()">Done</button><button class="btn" onclick="$('#dlg').classList.remove('on');go('rep',()=>{})">All activity</button></div>`;$('#dlg').classList.add('on')}
 let edToastN=-1;setInterval(()=>{if(!me||me.role!='owner'||document.hidden)return;const L=editAlerts();if(edToastN>=0&&L.length>edToastN){const l=L[L.length-1];toast('✏️ '+l.a+' by '+(l.who||'staff'),l.d)}edToastN=L.length},20000);
