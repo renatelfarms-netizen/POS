@@ -809,6 +809,8 @@ async function api(req, res, url) {
           if (url === '/api/db/del') { if (cur && (/_server/.test(id) || ((cur.recs || []).some((r) => histLocked(id, r))))) return send(res, 200, { ok: true, kept: true }); } // quietly kept: the app only trims
           else msg.d = limitHist(id, msg.d, cur);
         }
+        const SCREEN_ONLY = { att: ['sch'], marks: ['sch'], notes: ['sch'], students: ['sch'], kot: ['sell', 'kds'], rtabs: ['sell', 'kds'], jobs: ['cour', 'del'], quotes: ['sell', 'docs'] }; // school, kitchen, courier and quote records: only staff with those screens
+        if (!owner && SCREEN_ONLY[base] && !hasTab(powers(who.staff), SCREEN_ONLY[base])) return send(res, 200, { ok: true, kept: true });
         if (!owner && ['rtabs', 'jobs', 'quotes'].includes(base)) { // restaurant bills, courier jobs, quotes: same rules as the app
           const P = powers(who.staff);
           let cur; try { cur = await sbCall('shop_db_get', { p_col: col, p_id: id }); } catch (e) { console.error('limit read', e.message); return send(res, 502, { error: 'Could not save right now. Try again in a moment.' }); }
@@ -900,6 +902,8 @@ async function api(req, res, url) {
 
 // ================= platform: sign up, find a shop, admin =================
 const RESERVED = new Set(['api', 'admin', 'app', 'www', 'login', 'signup', 'sign-up', 'register', 'help', 'support', 'static', 'assets', 'icons', 'shop', 'shops', 'about', 'pricing', 'terms', 'privacy', 'contact', 'mail', 'email', 'billing', 'pay', 'account', 'dashboard', 'robots-txt', 'favicon-ico']);
+// Words new shop links can't use, so nobody can open a shop that looks like an official or payment page (phishing).
+const OFFICIAL = new Set(['tessa', 'tessapos', 'paystack', 'verify', 'verification', 'secure', 'security', 'support', 'official', 'admin', 'login', 'signin', 'password', 'helpdesk', 'customercare', 'refund', 'refunds', 'momopay']);
 const slugOK = (v) => /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/.test(v) && !v.includes('--') && !RESERVED.has(v);
 const slugify = (v) => nmz(v).replace(/ /g, '-').slice(0, 40).replace(/-+$/, '');
 const slugCache = new Map(); // slug -> {at, rec}
@@ -922,6 +926,7 @@ async function signup(req, res) {
   const nb = m.branches === 2 ? 2 : 1, br1 = t(m.br1, 40) || 'Main branch', br2 = t(m.br2, 40) || 'Second branch', cur = t(m.cur, 6) || 'GH₵', biz = ['pharmacy', 'school', 'restaurant', 'courier'].includes(m.biz) ? m.biz : 'retail';
   if (name.length < 2) return send(res, 400, { error: 'Type the name of your shop.', f: 'shopName' });
   if (!slugOK(slug)) return send(res, 400, { error: 'The shop link can use small letters, numbers and dashes (3 to 40), e.g. kofi-mart.', f: 'slug' });
+  if (slug.split('-').some((w) => OFFICIAL.has(w)) || /^tessa(pos)?(-|$)/.test(slug)) return send(res, 400, { error: 'That shop link looks like an official ' + PLATFORM + ' or payment page. Choose a link with your shop’s own name.', f: 'slug' });
   if (owner.length < 2) return send(res, 400, { error: 'Type your full name.', f: 'ownerName' });
   if (!emailOK(email)) return send(res, 400, { error: 'Type a valid email address. Password reset codes are sent there.', f: 'email' });
   const rule = pwRule(pw, {}); if (rule) return send(res, 400, { error: rule, f: 'password' });
