@@ -20,6 +20,7 @@ const path = require('path');
 const os = require('os');
 const zlib = require('zlib');
 const crypto = require('crypto');
+const guard = require('./guard');
 
 const PAGE = path.join(__dirname, 'index.html');
 const PORT = process.env.PORT || 3000;
@@ -30,8 +31,14 @@ const HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'SAMEORIGIN',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
-  'Strict-Transport-Security': 'max-age=31536000',
-  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()'
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  // Only this site's own scripts, styles, pictures and server; fonts from Google Fonts. Blocks injected
+  // scripts from loading code or sending data to other sites, and other sites from framing the pages.
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self'; " +
+    "frame-src 'self' blob: data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'",
+  'Cross-Origin-Opener-Policy': 'same-origin'
 };
 
 let cache = null;
@@ -55,16 +62,18 @@ function clientIp(req) {
 function codeOK(req) {
   const want = process.env.BACKUP_CODE;
   if (!want) return 'off';
-  const ip = clientIp(req), f = fails.get(ip);
-  if (f && f.until > Date.now()) return 'wait';
+  const ip = clientIp(req), f = fails.get(ip), all = fails.get('*all');
+  if ((f && f.until > Date.now()) || (all && all.until > Date.now())) return 'wait';
   const got = String(req.headers['x-backup-code'] || '').trim().toUpperCase();
   const ok = crypto.timingSafeEqual(Buffer.from(sha(got)), Buffer.from(sha(want.trim().toUpperCase())));
   if (ok) { fails.delete(ip); return 'ok'; }
   const n = (f ? f.n : 0) + 1;
   fails.set(ip, { n, until: n >= 8 ? Date.now() + 15 * 60000 : 0 });
+  const a = all && Date.now() - (all.at || 0) < 15 * 60000 ? all : { n: 0, at: Date.now() }; a.n++;
+  a.until = a.n >= 30 ? Date.now() + 15 * 60000 : 0; fails.set('*all', a);
   return 'bad';
 }
-setInterval(() => { const t = Date.now(); for (const [k, v] of fails) if (v.until && v.until < t) fails.delete(k); }, 600000).unref();
+setInterval(() => { const t = Date.now(); for (const [k, v] of fails) if ((v.until && v.until < t) || (k === '*all' && !v.until && t - v.at > 15 * 60000)) fails.delete(k); }, 600000).unref();
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -314,16 +323,17 @@ const pwRule = (p, set) => (set && set.strongPw === false) ? (p.length < 4 ? 'Us
 const mkHash = (p) => new Promise((ok, no) => { const salt = crypto.randomBytes(16).toString('hex'); crypto.pbkdf2(String(p), salt, 150000, 32, 'sha256', (e, k) => e ? no(e) : ok('p2$' + salt + '$' + k.toString('hex'))); });
 async function resetPw(req, res) {
   if (!sbOn()) return send(res, 503, { error: 'The shop database is not set up on the server yet.' });
-  const ip = 'rc:' + clientIp(req), wait = tooMany(ip);
-  if (wait) return send(res, 429, { error: 'Too many wrong codes. Wait ' + wait + ' minutes, then try again.' });
+  const ip = 'rc:' + clientIp(req);
   let msg; try { msg = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, { error: 'Not valid data.' }); }
   const name = String(msg.name || '').slice(0, 80), code = rcNorm(msg.code), pw = String(msg.password || '').slice(0, 200);
+  const wait = tooMany(ip) || tooMany('rc:all') || tooMany('rcname:' + nmz(name));
+  if (wait) return send(res, 429, { error: 'Too many wrong codes. Wait ' + wait + ' minutes, then try again.' });
   let shop; try { shop = await shopMain(true); } catch (e) { return send(res, 502, { error: 'Could not reach the shop database. Try again in a moment.' }); }
   if (!shop) return send(res, 404, { error: 'The shop has not been set up yet.' });
   const s = findStaff(shop.staff || [], name);
   if (!s) return send(res, 400, { error: 'No staff member with that name. Type the name exactly as the owner added it.' });
   if (!shop.set || !shop.set.rc) return send(res, 400, { error: 'This shop has no recovery code yet. Ask the owner.' });
-  if (!code || !(await pwOK('rc:' + code, shop.set.rc))) { console.log('reset failed: wrong recovery code for ' + s.name); serverLog('Failed recovery code', 'on renatel.shop', s); failed(ip, 5); return send(res, 401, { error: 'That recovery code is not right.' }); }
+  if (!code || !(await pwOK('rc:' + code, shop.set.rc))) { console.log('reset failed: wrong recovery code for ' + s.name); serverLog('Failed recovery code', 'on renatel.shop', s); failed(ip, 5); failed('rcname:' + nmz(name), 5); failed('rc:all', 20); return send(res, 401, { error: 'That recovery code is not right.' }); }
   const rule = pwRule(pw, shop.set); if (rule) return send(res, 400, { error: rule });
   await setPin(shop, s.id, pw);
   console.log('password reset with the recovery code: ' + s.name); serverLog('Password reset', 'with the shop recovery code · on renatel.shop', s);
@@ -373,12 +383,13 @@ async function resetCode(req, res) {
   let shop; try { shop = await shopMain(true); } catch (e) { return send(res, 502, { error: 'Could not reach the shop database. Try again in a moment.' }); }
   const s = shop && findStaff(shop.staff || [], String(msg.name || '').slice(0, 80));
   if (!s) { failed(ip, 10); return send(res, 400, { error: 'No staff member with that name. Type your name as the owner added it.' }); }
+  const sw = tooMany('send:' + s.id); if (sw) return send(res, 429, { error: 'Too many codes sent. Wait ' + sw + ' minutes, then try again.' });
   const nm = (shop.set && shop.set.name) || 'Renatel Shop', ph = shopStore.normPhone(s.phone), smsOk = !!ph && await shopStore.smsReady().catch(() => false);
   const via = msg.via === 'email' ? 'email' : msg.via === 'sms' ? 'sms' : (smsOk ? 'sms' : 'email');
   if (via === 'sms' && !smsOk) return send(res, 400, { error: ph ? 'SMS codes are not set up yet. Choose “Email me a code” or the recovery code.' : 'No phone number is saved for ' + s.name + '. Choose “Email me a code”, or ask the owner.' });
   if (via === 'email' && !emailOK(s.email)) return send(res, 400, { error: 'No email is saved for ' + s.name + '.' + (smsOk ? ' Choose “Text me a code” instead.' : ' Use the recovery code, or ask the owner or a manager.') });
   let code; try { code = await shopStore.otpIssue('staff:' + s.id); } catch (e) { return send(res, e.code || 502, { error: e.message }); }
-  failed(ip, 10);
+  failed(ip, 10); failed('send:' + s.id, 5);
   try {
     if (via === 'sms') await shopStore.sendSms(ph, shopStore.otpSms(nm, code));
     else await sendEmail({ to: [s.email], subject: nm + ' - password reset code: ' + code,
@@ -476,7 +487,9 @@ async function api(req, res, url) {
     try {
       if (req.method === 'GET' && url === '/api/db') {
         const since = Math.max(0, parseInt(new URL(req.url, 'http://x').searchParams.get('since') || '0', 10) || 0);
-        return send(res, 200, await sbCall('shop_db_pull', { p_since: since }));
+        const j = await sbCall('shop_db_pull', { p_since: since });
+        for (const d of (j && j.docs) || []) if (d.c === 'shop' && d.id === 'main' && d.d) d.d = guard.hide(d.d, who.staff || null);
+        return send(res, 200, j);
       }
       if (req.method === 'POST' && (url === '/api/db/put' || url === '/api/db/del')) {
         let msg;
@@ -484,7 +497,18 @@ async function api(req, res, url) {
         const col = String(msg && msg.c || ''), id = String(msg && msg.id || '');
         if (!DB_COLS.has(col) || !/^[A-Za-z0-9_.-]{1,120}$/.test(id)) return send(res, 400, { error: 'Unknown document.' });
         if (url === '/api/db/put' && (!msg.d || typeof msg.d !== 'object' || Array.isArray(msg.d))) return send(res, 400, { error: 'Not valid data.' });
-        const out = url === '/api/db/del' ? await sbCall('shop_db_del', { p_col: col, p_id: id }) : await sbCall('shop_db_put', { p_col: col, p_id: id, p_data: msg.d });
+        const owner = who.code || who.staff.role === 'owner';
+        if (url === '/api/db/del' && col === 'shop' && !owner) return send(res, 403, { error: 'Only the owner can do this.' });
+        let data = msg.d;
+        if (url === '/api/db/put' && col === 'shop' && id === 'main') {
+          const g = guard.guard(await shopMain(true), data, who.code ? null : who.staff);
+          data = g.doc;
+          if (g.blocked.length) {
+            console.log('blocked shop change by ' + (who.staff ? who.staff.name : 'shop code') + ': ' + g.blocked.join(', '));
+            serverLog('Blocked change', 'not allowed for ' + (who.staff ? who.staff.role : 'this device') + ': ' + g.blocked.slice(0, 6).join(', ') + (g.blocked.length > 6 ? '…' : ''), who.staff);
+          }
+        }
+        const out = url === '/api/db/del' ? await sbCall('shop_db_del', { p_col: col, p_id: id }) : await sbCall('shop_db_put', { p_col: col, p_id: id, p_data: data });
         if (col === 'shop') shopCache.at = 0; // staff, password or sign-out changes take effect at once
         return send(res, 200, out);
       }

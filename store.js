@@ -521,7 +521,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         // Any logged-in staff member can text a customer their receipt after a sale.
         if (req.method === 'POST' && url === '/api/store/admin/sms/receipt') {
           if (!st || st.locked) return send(res, 403, { error: 'Please log in again.' });
-          if (!allow(req, 120, 'smsr')) return send(res, 429, { error: 'Too many SMS from this device. Try again later.' });
+          if (!allow(req, 120, 'smsr') || !allow(req, 150, 'lpsr' + st.id)) return send(res, 429, { error: 'Too many SMS from this device. Try again later.' });
           const m = await json(req), b = brOf(m && m.b), id = Number(m && m.id), phone = normPhone(m && m.phone);
           if (!id || !phone) return send(res, 400, { error: 'A sale number and a valid phone number are needed.' });
           const sale = await getSale(b, id, 12000);
@@ -574,8 +574,8 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         }
         // Delivery SMS (rider job details, customer updates, instructions): any logged-in staff; the till writes the text.
         if (req.method === 'POST' && url === '/api/store/admin/sms/bulk') { // school: fee reminders, payment receipts, absence notes (sent in the background)
-          if (!st || st.locked || ['warehouse', 'stock'].includes(st.role)) return send(res, 403, { error: 'You can’t send these messages.' });
-          if (!allow(req, 40, 'smsb')) return send(res, 429, { error: 'Too many batches of SMS from this device. Try again in an hour.' });
+          if (!st || st.locked || !['owner', 'manager', 'accountant'].includes(st.role)) return send(res, 403, { error: 'Only the owner, a manager or the accountant can send these messages.' });
+          if (!allow(req, 40, 'smsb') || !allow(req, 20, 'lpsb' + st.id)) return send(res, 429, { error: 'Too many batches of SMS from this device. Try again in an hour.' });
           const m = await json(req) || {}, kind = String(m.kind || 'note').replace(/[^a-z]/g, '').slice(0, 12) || 'note';
           const L = (Array.isArray(m.msgs) ? m.msgs.slice(0, 800) : []).map((x) => ({ to: normPhone(x && x.to), text: String(x && x.text || '').replace(/\s+\n/g, '\n').trim().slice(0, 459) })).filter((x) => x.to && x.text.length >= 5);
           if (!L.length) return send(res, 400, { error: 'No valid phone numbers to send to.' });
@@ -588,7 +588,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
         }
         if (req.method === 'POST' && url === '/api/store/admin/sms/dlv') {
           if (!st || st.locked) return send(res, 403, { error: 'Please log in again.' });
-          if (!allow(req, 200, 'smsd')) return send(res, 429, { error: 'Too many SMS from this device. Try again later.' });
+          if (!allow(req, 200, 'smsd') || !allow(req, 150, 'lpsd' + st.id)) return send(res, 429, { error: 'Too many SMS from this device. Try again later.' });
           const m = await json(req) || {}, to = normPhone(m.to), text = String(m.text || '').replace(/\s+\n/g, '\n').trim().slice(0, 459), kind = String(m.kind || 'note').slice(0, 20), did = String(m.id || '').slice(0, 20);
           if (!to) return send(res, 400, { error: 'That phone number is not valid.' });
           if (text.length < 5) return send(res, 400, { error: 'Type the message.' });
@@ -697,7 +697,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
       }
       // ---- accounts ----
       if (req.method === 'POST' && url === '/api/store/signup') {
-        if (!allow(req, 10, 'su')) return send(res, 429, { error: 'Too many new accounts from here. Try again later.' });
+        if (!allow(req, 10, 'su') || !allow(req, 300, 'lpsu')) return send(res, 429, { error: 'Too many new accounts from here. Try again later.' });
         const m = await json(req); if (!m) return send(res, 400, { error: 'Not valid data.' });
         const name = String(m.name || '').trim().replace(/\s+/g, ' ').slice(0, 80), ph = normPhone(m.phone), email = String(m.email || '').trim().toLowerCase().slice(0, 120), pw = String(m.password || '');
         if (name.length < 2) return send(res, 400, { error: 'Enter your full name.', field: 'name' });
@@ -748,7 +748,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:9px 0;border-b
       if (req.method === 'POST' && url === '/api/store/reset/code') {
         const m = await json(req); const ph = m && normPhone(m.phone);
         if (!ph) return send(res, 400, { error: 'Enter the phone number of your account.' });
-        if (!allow(req, 10, 'rc')) return send(res, 429, { error: 'Too many tries. Try again later.' });
+        if (!allow(req, 10, 'rc') || !allow(req, 5, 'lprc' + ph)) return send(res, 429, { error: 'Too many tries. Try again later.' });
         const a = await acctGet(ph), shop = await shopMain(false), nm = (shop && shop.set && shop.set.name) || 'Renatel Shop', sp = (shop && shop.set && shop.set.phone) || '';
         if (!a) return send(res, 404, { error: 'No account uses that phone number. Create an account instead.' });
         const sms = await smsReady(), via = m.via === 'email' || !sms ? 'email' : 'sms';
