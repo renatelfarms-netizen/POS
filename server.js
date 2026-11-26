@@ -508,6 +508,17 @@ async function api(req, res, url) {
             serverLog('Blocked change', 'not allowed for ' + (who.staff ? who.staff.role : 'this device') + ': ' + g.blocked.slice(0, 6).join(', ') + (g.blocked.length > 6 ? '…' : ''), who.staff);
           }
         }
+        if (col !== 'shop' && !owner) {
+          const base = col.replace(/^accra_/, ''), cur = await sbCall('shop_db_get', { p_col: col, p_id: id });
+          const g = guard.records(base, cur, url === '/api/db/del' ? null : data, who.staff);
+          if (g.blocked.length) {
+            console.log('blocked ' + col + ' change by ' + who.staff.name + ': ' + g.blocked.join(', '));
+            serverLog('Blocked change', 'not allowed for ' + who.staff.role + ': ' + g.blocked.slice(0, 6).join(', ') + (g.blocked.length > 6 ? '…' : ''), who.staff);
+          }
+          // A refused delete puts the record back (with a new version number) so the device gets it again.
+          const out = g.doc === null ? await sbCall('shop_db_del', { p_col: col, p_id: id }) : await sbCall('shop_db_put', { p_col: col, p_id: id, p_data: g.doc });
+          return send(res, 200, out);
+        }
         const out = url === '/api/db/del' ? await sbCall('shop_db_del', { p_col: col, p_id: id }) : await sbCall('shop_db_put', { p_col: col, p_id: id, p_data: data });
         if (col === 'shop') shopCache.at = 0; // staff, password or sign-out changes take effect at once
         return send(res, 200, out);
