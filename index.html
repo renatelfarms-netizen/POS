@@ -306,6 +306,12 @@ function register(){if(WEB0)return;const mine=remote['devices/'+DEV.id];if(mine&
  else{const dns=Object.keys(remote).filter(p=>p.startsWith('devices/')).map(p=>JSON.parse(remote[p]).dn||0);DEV.dn=dns.length?Math.max(...dns)+1:1;DEV.seq=0}
  DEV.seq=Math.max(DEV.seq||0,maxIdFor(DEV.dn),DEV.dn==1?db.seq:0);try{localStorage.setItem(K+'-dev',JSON.stringify(DEV))}catch(e){}}
 function busy(){const a=document.activeElement;if(a&&a.closest&&a.closest('#app,#dlg')&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))return true;return [...document.querySelectorAll('#app input:not([readonly]):not([type=checkbox]):not(#q):not(#iq),#app textarea:not([readonly])')].some(x=>x.value&&x.value!=x.defaultValue)||$('#dlg').classList.contains('on')}
+/* ---------- new version: reload by itself when nobody is in the middle of something ---------- */
+const APPV=(document.querySelector('meta[name=app-version]')||{}).content||'';let appNew=false; /* lastAct: time of the last tap or key (set by the auto-lock code) */
+async function appCheck(){if(!APPV||!WEB0||appNew)return;try{const j=await(await fetch('/api/version',{cache:'no-store'})).json();if(j.v&&j.v!==APPV)appNew=true}catch(e){}}
+function appUpdate(){if(!appNew)return;const quiet=Date.now()-lastAct>45e3||document.hidden,idle=!(typeof cart!='undefined'&&cart.length)&&!busy()&&!(typeof dirty!='undefined'&&dirty)&&!(typeof syncing!='undefined'&&syncing);
+ if(quiet&&idle){try{toast('Updating Renatel POS to the latest version…')}catch(e){}setTimeout(()=>location.reload(),900)}}
+if(APPV){setInterval(appCheck,3*60e3);setInterval(appUpdate,15e3);document.addEventListener('visibilitychange',()=>{if(!document.hidden)appCheck();else appUpdate()});setTimeout(appCheck,20e3)}
 function afterRemote(){setTimeout(sessCheck,0);if(me)me=db.staff.find(s=>s.id==me.id)||null;cart=cart.filter(l=>prod(l.id));lsSave();if(busy()){pendR=true;return}render()}
 document.addEventListener('focusout',()=>setTimeout(()=>{if(pendR&&!busy()){pendR=false;render()}},400));
 function firstLoad(){ready=true;const has=!!remote['shop/main'];

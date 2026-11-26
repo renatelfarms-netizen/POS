@@ -42,9 +42,15 @@ const HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin'
 };
 
-let cache = null;
+// The page carries its version (a fingerprint of index.html); open pages compare it with /api/version
+// and reload themselves when a newer version has been deployed (index.html: appUpdate).
+let cache = null, VERSION = '';
 function page() {
-  if (!cache) cache = fs.readFileSync(PAGE);
+  if (!cache) {
+    const raw = fs.readFileSync(PAGE, 'utf8');
+    VERSION = crypto.createHash('sha256').update(raw).digest('hex').slice(0, 12);
+    cache = Buffer.from(raw.replace('<head>', '<head><meta name="app-version" content="' + VERSION + '">'));
+  }
   return cache;
 }
 
@@ -437,6 +443,7 @@ async function caller(req) {
 
 // ---- API ----
 async function api(req, res, url) {
+  if (url === '/api/version') { page(); return send(res, 200, { v: VERSION }); }
   if (req.method === 'POST' && url === '/api/login') return login(req, res);
   if (req.method === 'POST' && url === '/api/reset') return resetPw(req, res);
   if (req.method === 'POST' && url === '/api/reset/code') return resetCode(req, res);
