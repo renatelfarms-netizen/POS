@@ -24,7 +24,11 @@ const OWNER_ONLY_SET = ['rc', 'sessEpoch', 'strongPw', 'idleMin', 'maxDisc', 'rc
 const FREE = ['fails', 'nextTry'];
 // The page fills these in with its defaults when a shop has never set them (index.html: DEF); that is not a change.
 const SET_DEFAULTS = { maxDisc: 20, rcpts: [] };
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// Compare by content: the same record can come back with its fields in a different order
+// (records written by the page, the online shop and the server list them differently).
+const canon = (v) => Array.isArray(v) ? '[' + v.map(canon).join(',') + ']' : v && typeof v === 'object'
+  ? '{' + Object.keys(v).filter((k) => v[k] !== undefined).sort().map((k) => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}' : JSON.stringify(v === undefined ? null : v);
+const same = (a, b) => canon(a) === canon(b);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
 function hide(doc, me) {
@@ -108,7 +112,8 @@ function guard(cur, next, me) {
 // 3. records(): the same idea for everything else a device saves (sales, stock, expenses, customers,
 //    stock movements and the activity trail). Rules follow what the page lets each role do; a change
 //    the caller may not make is undone and the rest of the save goes through.
-//      - activity trail (log): nobody but the owner can remove or change entries; everyone adds.
+//      - activity trail (log): nobody but the owner can remove or change entries from the last 60 days;
+//        everyone adds.
 //      - stock movements (moves, whMoves): only the owner or a manager removes or changes entries.
 //      - sales: deleting a sale needs the owner or "may delete" permission (canDel in index.html);
 //        changing items, prices, totals, discounts, date, seller or customer needs the owner, a
@@ -117,7 +122,7 @@ function guard(cur, next, me) {
 //      - expenses: only the owner, a manager or the accountant (or staff given Expenses/Purchases)
 //        changes or removes them; everyone may add.
 //      - products: cashiers and delivery staff (no stock, purchases or warehouse access) may only
-//        change the stock count; they can't change prices or delete products.
+//        change the stock count (and show a received product in the shop); not prices, not delete.
 //      - customers: only staff with Customers access delete a customer or lower what they owe.
 //      - deleting a whole record: only the owner or a manager (and sales only with delete permission).
 const ROLE_TABS = {
@@ -134,7 +139,7 @@ const has = (me, t) => tabsOf(me).includes(t);
 const trusted = (me) => !me || me.role === 'owner' || me.role === 'manager';
 const canDel = (me) => !me || me.role === 'owner' || !!(me.perms && me.perms.del);
 const canEditSale = (me) => trusted(me) || !!(me.perms && me.perms.edit);
-const key = (r) => (r && r.id != null ? 'id:' + r.id : 'j:' + JSON.stringify(r));
+const key = (r) => (r && r.id != null ? 'id:' + r.id : 'j:' + canon(r));
 const SALE_CORE = ['id', 'ts', 'items', 'sub', 'disc', 'sdisc', 'total', 'tax', 'taxRate', 'dfee', 'by', 'byName', 'cust', 'custName', 'edits'];
 const sum = (L) => Math.round((L || []).reduce((t, p) => t + (+p.amt || 0), 0) * 100) / 100;
 
@@ -173,7 +178,8 @@ function records(col, cur, next, me) {
   }
   if (!cur) return { doc: next, blocked }; // something new
   const undo = (what) => (o) => { blocked.push('change ' + what + (o.id != null ? ' #' + o.id : '')); return clone(o); };
-  if (col === 'log') return { doc: mergeRecs(cur, next, undo('activity entry'), () => false, blocked, 'activity entry'), blocked };
+  // entries older than 60 days may be trimmed (devices that keep a copy cap it at 2,000 entries)
+  if (col === 'log') return { doc: mergeRecs(cur, next, undo('activity entry'), (o) => +o.ts < Date.now() - 60 * 864e5, blocked, 'activity entry'), blocked };
   if (col === 'moves' || col === 'whMoves') {
     if (trusted(me)) return { doc: next, blocked };
     return { doc: mergeRecs(cur, next, undo('stock movement'), () => false, blocked, 'stock movement'), blocked };
@@ -203,8 +209,9 @@ function records(col, cur, next, me) {
   }
   if (col === 'products') {
     if (trusted(me) || has(me, 'inv') || has(me, 'po') || has(me, 'wh')) return { doc: next, blocked };
-    const t = clone(cur); t.stock = next.stock; // only the count follows the sale
-    const bad = Object.keys(Object.assign({}, cur, next)).filter((k) => k !== 'stock' && !same(cur[k], next[k]));
+    // only the count follows a sale, a cancelled delivery or a received transfer (which also shows the product in the shop)
+    const t = clone(cur), FREEP = ['stock', 'inShop']; FREEP.forEach((k) => { if (next[k] === undefined) delete t[k]; else t[k] = next[k]; });
+    const bad = Object.keys(Object.assign({}, cur, next)).filter((k) => !FREEP.includes(k) && !same(cur[k], next[k]));
     if (bad.length) { blocked.push('change product ' + (cur.name || '') + ' (' + bad.join(', ') + ')'); return { doc: t, blocked }; }
     return { doc: next, blocked };
   }

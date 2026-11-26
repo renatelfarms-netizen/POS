@@ -35,7 +35,8 @@ const HEADERS = {
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   // Only this site's own scripts, styles, pictures and server; fonts from Google Fonts. Blocks injected
   // scripts from loading code or sending data to other sites, and other sites from framing the pages.
-  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+  // The PDF tool (receipts, invoices, PDF reports) loads two exact files from cdnjs, and nothing else from there.
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
     "font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self'; " +
     "frame-src 'self' blob: data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'",
   'Cross-Origin-Opener-Policy': 'same-origin'

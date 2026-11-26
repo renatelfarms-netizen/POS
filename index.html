@@ -273,7 +273,7 @@ function norm(){db.products=db.products||[];db.customers=db.customers||[];db.sal
 function syncCats(){const s=db.set;s.pcats=[...(s.pcats||[])];db.products.forEach(p=>{if(p.cat&&!s.pcats.includes(p.cat))s.pcats.push(p.cat)})}
 const lsSave=()=>{if(window.__rst||WEB0)return;try{syncBR();localStorage.setItem(K,JSON.stringify(Object.assign({},db,{__BR:BR,__curB:curB})))}catch(e){}};
 const save=()=>{whNorm(curWh||'main');(db.products||[]).forEach(p=>{if(p.svc)p.stock=0});lsSave();cloudSave();try{bkDirty()}catch(e){}};
-const logit=(a,d)=>{db.log.push({ts:Date.now(),sid:me?me.id:null,who:me?me.name:'—',a,d:d||'',b:curB});if(db.log.length>2000)db.log.shift();try{ackLog(a,d)}catch(e){}};
+const logit=(a,d)=>{db.log.push({ts:Date.now(),sid:me?me.id:null,who:me?me.name:'—',a,d:d||'',b:curB});if(!WEB0&&db.log.length>2000)db.log.shift();try{ackLog(a,d)}catch(e){}};
 const hash=async p=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('renatel:'+p)))].map(b=>b.toString(16).padStart(2,'0')).join('');
 const id=()=>{if(WEB0)return takeId();if(!DEV.dn)return db.seq++;const n=++DEV.seq;try{localStorage.setItem(K+'-dev',JSON.stringify(DEV))}catch(e){}return (DEV.dn>1?DEV.dn*1e6:0)+n};
 /* ---------- shop database (cloud) ---------- */
